@@ -530,7 +530,7 @@ let activeTab = null;
 function getFacCtx(facId) {
   facId = facId || currentFacilityId;
   if (!facId) return null;
-  if (!facilityData[facId]) facilityData[facId] = { monthData: {}, terminalEntries: [], manualIsha: {} };
+  if (!facilityData[facId]) facilityData[facId] = { monthData: {}, terminalEntries: [], manualIsha: {}, katsudan: { registered: null, staff: [] } };
   return facilityData[facId];
 }
 
@@ -568,11 +568,11 @@ async function loadAllData() {
     allFacilities = (raw.facilities || []).map(f => ({ id: String(f.id), name: String(f.name), createdAt: f.createdAt }));
     facilityData = {};
     allFacilities.forEach(f => {
-      facilityData[f.id] = { monthData: {}, terminalEntries: [], manualIsha: {} };
+      facilityData[f.id] = { monthData: {}, terminalEntries: [], manualIsha: {}, katsudan: { registered: null, staff: [] } };
     });
     (raw.monthlyData || []).forEach(row => {
       const facId = String(row.facilityId);
-      if (!facilityData[facId]) facilityData[facId] = { monthData: {}, terminalEntries: [], manualIsha: {} };
+      if (!facilityData[facId]) facilityData[facId] = { monthData: {}, terminalEntries: [], manualIsha: {}, katsudan: { registered: null, staff: [] } };
       // ym を確実に6桁文字列に正規化（数値・ISO日付など対応）
       const ym = String(row.ym || '').replace(/[^0-9]/g, '').slice(0, 6);
       if (ym.length !== 6) return;
@@ -585,14 +585,23 @@ async function loadAllData() {
     });
     (raw.terminalEntries || []).forEach(row => {
       const facId = String(row.facilityId);
-      if (!facilityData[facId]) facilityData[facId] = { monthData: {}, terminalEntries: [], manualIsha: {} };
+      if (!facilityData[facId]) facilityData[facId] = { monthData: {}, terminalEntries: [], manualIsha: {}, katsudan: { registered: null, staff: [] } };
       facilityData[facId].terminalEntries.push({ ym: String(row.ym), label: String(row.label) });
     });
     (raw.ishaValues || []).forEach(row => {
       const facId = String(row.facilityId);
-      if (!facilityData[facId]) facilityData[facId] = { monthData: {}, terminalEntries: [], manualIsha: {} };
+      if (!facilityData[facId]) facilityData[facId] = { monthData: {}, terminalEntries: [], manualIsha: {}, katsudan: { registered: null, staff: [] } };
       const _parsed = parseFloat(row.value);
       facilityData[facId].manualIsha[String(row.ym)] = isNaN(_parsed) ? '' : _parsed;
+    });
+    (raw.katsudanData || []).forEach(row => {
+      const facId = String(row.facilityId);
+      if (!facilityData[facId]) facilityData[facId] = { monthData: {}, terminalEntries: [], manualIsha: {}, katsudan: { registered: null, staff: [] } };
+      const reg = row.registered;
+      facilityData[facId].katsudan = {
+        registered: reg === true || reg === 'true' ? true : reg === false || reg === 'false' ? false : null,
+        staff: (() => { try { return JSON.parse(row.staffJson || '[]'); } catch(e) { return []; } })()
+      };
     });
     allFacilities.forEach(f => {
       facilityData[f.id].terminalEntries.sort((a,b) => a.ym.localeCompare(b.ym));
@@ -674,7 +683,7 @@ function renderDashboard() {
     const threeM = calcThreeMonths(nextYm, f.id);
     const term   = checkTerminal(nextYm, f.id);
     const isha   = ctx.manualIsha[latestYm];
-    const { r1ok, r2ok } = evalReqs(threeM, term, isha);
+    const { r1ok, r2ok } = evalReqs(threeM, term, isha, getFacCtx(f.id)?.katsudan?.registered);
     if (r2ok) okCount2++;
     if (r1ok) okCount1++;
   });
@@ -713,12 +722,12 @@ function renderDashboard() {
     // 当月算定(latestYm) → 使用: latestYm-1, -2, -3
     const curThreeM = calcThreeMonths(latestYm, f.id);
     const curTerm   = checkTerminal(latestYm, f.id);
-    const { r1ok: cur1ok, r2ok: cur2ok } = evalReqs(curThreeM, curTerm, isha);
+    const { r1ok: cur1ok, r2ok: cur2ok } = evalReqs(curThreeM, curTerm, isha, ctx?.katsudan?.registered);
 
     // 来月算定(nextYm) → 使用: latestYm, latestYm-1, latestYm-2
     const nxtThreeM = calcThreeMonths(nextYm, f.id);
     const nxtTerm   = checkTerminal(nextYm, f.id);
-    const { r1ok: nxt1ok, r2ok: nxt2ok } = evalReqs(nxtThreeM, nxtTerm, isha);
+    const { r1ok: nxt1ok, r2ok: nxt2ok } = evalReqs(nxtThreeM, nxtTerm, isha, ctx?.katsudan?.registered);
 
     // ターミナルケア期限
     const termStatus = getTerminalStatus(latestYm, f.id);
@@ -818,7 +827,7 @@ function renderAddonMatrix() {
     const threeM  = calcThreeMonths(nextYm, f.id);
     const term    = checkTerminal(nextYm, f.id);
     const isha    = ctx.manualIsha[latestYm];
-    const { r1ok, r2ok } = evalReqs(threeM, term, isha);
+    const { r1ok, r2ok } = evalReqs(threeM, term, isha, getFacCtx(f.id)?.katsudan?.registered);
 
     return { fac: f, addonCounts, r1ok, r2ok, latestYm };
   });
@@ -922,7 +931,7 @@ function getTerminalStatus(refYm, facId) {
   return `<span class="status-badge sb-ok">残${minRemain}ヶ月</span>`;
 }
 
-function evalReqs(threeM, termValid, ishaVal) {
+function evalReqs(threeM, termValid, ishaVal, katsudanRegistered) {
   if (!threeM) return { r1ok: false, r2ok: false, noData: true };
   const ishaPct = parseFloat(ishaVal);
   const ishaEntered = !isNaN(ishaPct);
@@ -930,11 +939,23 @@ function evalReqs(threeM, termValid, ishaVal) {
   const { kinkyu, tokubetsu, total } = threeM;
   const kg = calcGap(kinkyu.count, total, 50);
   const tg = calcGap(tokubetsu.count, total, 20);
-  const ikuOk = kg && kg.met && tg && tg.met; // イ・ウ充足
-  // ア未入力の場合はnull（要確認）として返す
+  const ikuOk = kg && kg.met && tg && tg.met;
   const r2ok = !ishaEntered ? null : (ishaOk && ikuOk ? true : false);
-  const r1ok = r2ok !== true ? (r2ok === null && ikuOk ? null : false)
-    : (termValid && termValid.length > 0 ? true : false);
+  // r1ok: r2okがtrue かつ エ(ターミナル) かつ オ(喀痰吸引届出)
+  let r1ok;
+  if (r2ok !== true) {
+    r1ok = (r2ok === null && ikuOk) ? null : false;
+  } else {
+    const termOk = termValid && termValid.length > 0;
+    // katsudanRegistered: null=未入力(要確認), true=届出済, false=未届出
+    if (katsudanRegistered === null || katsudanRegistered === undefined) {
+      r1ok = termOk ? null : false; // 喀痰吸引未入力 → 要確認
+    } else if (katsudanRegistered === true) {
+      r1ok = termOk ? true : false;
+    } else {
+      r1ok = false; // 未届出 → 不可
+    }
+  }
   return { r1ok, r2ok };
 }
 
@@ -1105,8 +1126,8 @@ function buildEmailBody(fac, master, ctx, latestYm) {
   const nxtThreeM = calcThreeMonths(nextYm, fac.id);
   const curTerm = checkTerminal(latestYm, fac.id);
   const nxtTerm = checkTerminal(nextYm, fac.id);
-  const { r1ok: cur1ok, r2ok: cur2ok } = evalReqs(curThreeM, curTerm, isha);
-  const { r1ok: nxt1ok, r2ok: nxt2ok } = evalReqs(nxtThreeM, nxtTerm, isha);
+  const { r1ok: cur1ok, r2ok: cur2ok } = evalReqs(curThreeM, curTerm, isha, ctx?.katsudan?.registered);
+  const { r1ok: nxt1ok, r2ok: nxt2ok } = evalReqs(nxtThreeM, nxtTerm, isha, ctx?.katsudan?.registered);
 
   const badge = v => v === true ? '✓ 算定可' : v === null ? '要確認（ア未入力）' : '✗ 算定不可';
 
@@ -1196,7 +1217,7 @@ async function createFacility() {
     if (res.success) {
       const newFac = { id: res.id, name: res.name };
       allFacilities.push(newFac);
-      facilityData[res.id] = { monthData: {}, terminalEntries: [], manualIsha: {} };
+      facilityData[res.id] = { monthData: {}, terminalEntries: [], manualIsha: {}, katsudan: { registered: null, staff: [] } };
       renderDashboard();
       renderFacilityDropdown();
       hideLoading();
@@ -1466,7 +1487,7 @@ function renderFacilityAll() {
 function setActiveTab(ym) { activeTab = ym; renderFacilityAll(); }
 
 function renderTabs(keys) {
-  document.getElementById('nav-tabs').innerHTML = keys.map(ym => `
+  document.getElementById('nav-tabs').innerHTML = [...keys].reverse().map(ym => `
     <div class="nav-tab ${ym === activeTab ? 'active' : ''}" onclick="setActiveTab('${ym}')">
       <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${monthColor(ym)};margin-right:5px"></span>
       ${getFacCtx(currentFacilityId).monthData[ym].label}
@@ -1476,7 +1497,7 @@ function renderTabs(keys) {
 
 function renderFacilitySidebar() {
   const ctx = getFacCtx(currentFacilityId);
-  const keys = Object.keys(ctx.monthData).sort();
+  const keys = Object.keys(ctx.monthData).sort().reverse();
   // 月リスト
   document.getElementById('month-list').innerHTML = keys.length === 0
     ? '<div class="no-months">データなし</div>'
@@ -1562,6 +1583,27 @@ function _renderTabContent(ym) {
           </button>
           <span id="isha-save-msg-${ym}" style="font-size:11px;color:#38a169;min-width:60px"></span>
           <span style="font-size:11px;color:#718096">※ イ・ウはCSVから自動計算</span>
+        </div>
+        <div style="background:#fef9f0;border:1px solid #f6ad55;border-radius:8px;padding:12px 14px;margin-bottom:14px">
+          <div style="font-size:13px;font-weight:bold;color:#7b341e;margin-bottom:8px">オ. 登録喀痰吸引等事業者・登録特定事業者 届出（看護体制強化加算Ⅰ要件）</div>
+          <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:8px">
+            <label style="font-size:12px;color:#4a5568">届出状況：</label>
+            <label style="font-size:13px;cursor:pointer">
+              <input type="radio" name="katsudan-reg-${ym}" value="true" ${ctx.katsudan?.registered===true?'checked':''} onchange="saveKatsudan('${ym}',true)"> 届出済
+            </label>
+            <label style="font-size:13px;cursor:pointer">
+              <input type="radio" name="katsudan-reg-${ym}" value="false" ${ctx.katsudan?.registered===false?'checked':''} onchange="saveKatsudan('${ym}',false)"> 未届出
+            </label>
+            <label style="font-size:13px;cursor:pointer">
+              <input type="radio" name="katsudan-reg-${ym}" value="null" ${ctx.katsudan?.registered===null||ctx.katsudan?.registered===undefined?'checked':''} onchange="saveKatsudan('${ym}',null)"> 未入力
+            </label>
+          </div>
+          <div style="font-size:12px;color:#4a5568;margin-bottom:6px">届出対象職員（複数名入力可）：</div>
+          <div id="katsudan-staff-list-${ym}">${renderKatsudanStaffList(ctx)}</div>
+          <div style="display:flex;gap:8px;margin-top:6px;flex-wrap:wrap">
+            <input type="text" id="katsudan-staff-input-${ym}" placeholder="職員名を入力" style="border:1px solid #cbd5e0;border-radius:6px;padding:5px 8px;font-size:13px;width:180px">
+            <button onclick="addKatsudanStaff('${ym}')" style="padding:5px 12px;background:#d69e2e;color:white;border:none;border-radius:6px;font-size:12px;cursor:pointer">追加</button>
+          </div>
         </div>
         <div id="scenarios-wrap-${ym}">${renderThreeScenarios(ym, savedIsha)}</div>
       </div>
@@ -1649,6 +1691,58 @@ async function saveIshaImmediate(ym) {
     if (btn) { btn.disabled = false; btn.textContent = '保存'; btn.style.background = '#c53030'; }
     if (msg) { msg.textContent = '⚠ 保存失敗'; msg.style.color = '#e53e3e'; }
   }
+}
+
+function renderKatsudanStaffList(ctx) {
+  const staff = ctx?.katsudan?.staff || [];
+  if (!staff.length) return '<div style="font-size:12px;color:#a0aec0">（未登録）</div>';
+  return staff.map((name, i) => `
+    <span style="display:inline-flex;align-items:center;gap:4px;background:#fef3c7;border:1px solid #f6ad55;border-radius:12px;padding:2px 10px;font-size:12px;margin:2px">
+      ${esc(name)}
+      <button onclick="removeKatsudanStaff(${i})" style="background:none;border:none;cursor:pointer;color:#c05621;font-size:14px;line-height:1;padding:0">×</button>
+    </span>`).join('');
+}
+
+function saveKatsudan(ym, registeredRaw) {
+  const ctx = getFacCtx(currentFacilityId);
+  if (!ctx.katsudan) ctx.katsudan = { registered: null, staff: [] };
+  const val = registeredRaw === 'true' ? true : registeredRaw === 'false' ? false : null;
+  ctx.katsudan.registered = val;
+  document.getElementById('scenarios-wrap-' + ym).innerHTML = renderThreeScenarios(ym, ctx.manualIsha[ym]);
+  renderDashboard();
+  persistKatsudan();
+}
+
+function addKatsudanStaff(ym) {
+  const inp = document.getElementById('katsudan-staff-input-' + ym);
+  const name = (inp?.value || '').trim();
+  if (!name) return;
+  const ctx = getFacCtx(currentFacilityId);
+  if (!ctx.katsudan) ctx.katsudan = { registered: null, staff: [] };
+  if (!ctx.katsudan.staff.includes(name)) ctx.katsudan.staff.push(name);
+  inp.value = '';
+  // Re-render staff list
+  const listEl = document.getElementById('katsudan-staff-list-' + ym);
+  if (listEl) listEl.innerHTML = renderKatsudanStaffList(ctx);
+  persistKatsudan();
+}
+
+function removeKatsudanStaff(idx) {
+  const ctx = getFacCtx(currentFacilityId);
+  if (!ctx.katsudan) return;
+  ctx.katsudan.staff.splice(idx, 1);
+  // Re-render: find the active tab's list
+  const listEl = document.getElementById('katsudan-staff-list-' + activeTab);
+  if (listEl) listEl.innerHTML = renderKatsudanStaffList(ctx);
+  persistKatsudan();
+}
+
+async function persistKatsudan() {
+  if (!hasGasUrl()) return;
+  const ctx = getFacCtx(currentFacilityId);
+  try {
+    await gasPost({ action: 'saveKatsudan', facilityId: currentFacilityId, registered: ctx.katsudan.registered, staffJson: JSON.stringify(ctx.katsudan.staff) });
+  } catch(e) { console.error('saveKatsudan error:', e); }
 }
 
 // ============================================================
@@ -1800,51 +1894,104 @@ function renderTerminalTimeline(calcYm) {
       <span style="font-size:12px">加算Ⅰを算定するには前12ヶ月以内に1名以上の算定が必要です。</span>
     </div>`;
   }
-  const calcDate = ymToDate(calcYm);
-  let html = '';
-  ctx.terminalEntries.forEach(t => {
-    const takeDate = ymToDate(t.ym);
-    const expYm = addMonths(t.ym, 12);
-    const elapsed = Math.max(0, Math.min(12,
-      (calcDate.getFullYear() - takeDate.getFullYear()) * 12 + (calcDate.getMonth() - takeDate.getMonth())));
-    const fillPct = Math.round(elapsed / 12 * 100);
-    const remaining = 12 - elapsed;
-    const fillColor = remaining <= 0 ? '#e53e3e' : remaining <= 3 ? '#d69e2e' : '#38a169';
-    const rowCls = remaining <= 0 ? 'expired' : remaining <= 3 ? 'expiring' : 'valid';
-    const emoji = remaining <= 0 ? '❌' : remaining <= 3 ? '⚠️' : '✅';
-    const remainText = remaining <= 0
-      ? `<span style="color:#c53030;font-weight:bold">期限切れ（${elapsed}ヶ月経過）</span>`
-      : remaining <= 3
-        ? `<span style="color:#b7791f;font-weight:bold">残り ${remaining} ヶ月（${ymLabel(expYm)}まで）⚠️ 要注意</span>`
-        : `<span style="color:#276749;font-weight:bold">残り ${remaining} ヶ月（${ymLabel(expYm)}まで）</span>`;
-    html += `<div class="terminal-row ${rowCls}">
-      <div class="terminal-badge">${emoji}</div>
-      <div class="terminal-info">
-        <div class="ti-month">取得月：${t.label}</div>
-        <div class="ti-exp">有効期限：${ymLabel(expYm)}（取得から12ヶ月）</div>
-        <div style="position:relative;margin:6px 0 3px">
-          <div class="timeline-bg">
-            <div class="timeline-fill" style="width:${fillPct}%;background:${fillColor}"></div>
-            <div class="timeline-marker" style="left:${fillPct}%;position:absolute;top:-4px;width:3px;background:#2d3748;height:28px;border-radius:2px"></div>
-          </div>
-          <div class="timeline-labels"><span>${t.label}（取得）</span><span>${ymLabel(calcYm)}（算定月）</span><span>${ymLabel(expYm)}（期限）</span></div>
-        </div>
-        <div class="ti-remain">${remainText}</div>
-      </div>
-    </div>`;
+
+  // タイムライン範囲: 最古エントリの2ヶ月前〜calcYmの2ヶ月後（最低14ヶ月表示）
+  const entries = [...ctx.terminalEntries].sort((a,b) => a.ym.localeCompare(b.ym));
+  const oldestYm = entries[0].ym;
+  const startYm = addMonths(oldestYm, -2);
+  const endYm = addMonths(calcYm, 2);
+  const totalMonths = monthDiff(startYm, endYm) + 1;
+
+  const pctOf = ym => Math.max(0, Math.min(100, monthDiff(startYm, ym) / (totalMonths - 1) * 100));
+
+  // 有効期間（各エントリの12ヶ月以内）の塗り色を計算
+  const validBands = entries.map(t => ({
+    left: pctOf(t.ym),
+    right: pctOf(addMonths(t.ym, 12)),
+    ym: t.ym
+  }));
+
+  const validEntries = entries.filter(t => {
+    const elapsed = monthDiff(t.ym, calcYm);
+    return elapsed >= 0 && elapsed < 12;
   });
-  const validEntries = ctx.terminalEntries.filter(t => {
-    const elapsed2 = (ymToDate(calcYm).getFullYear() - ymToDate(t.ym).getFullYear()) * 12 +
-      (ymToDate(calcYm).getMonth() - ymToDate(t.ym).getMonth());
-    return elapsed2 < 12;
-  });
-  if (validEntries.length > 0) {
-    const mustTakeBy = addMonths(validEntries.map(t => addMonths(t.ym, 12)).sort().pop(), -1);
-    html += `<div style="background:#ebf8ff;border:1px solid #90cdf4;border-radius:8px;padding:12px;margin-top:8px;font-size:13px;color:#2b6cb0">
-      💡 <strong>次のターミナルケア加算は ${ymLabel(mustTakeBy)} までに算定</strong>することで加算Ⅰの要件を継続できます。
+
+  const currentPct = pctOf(calcYm);
+
+  // 有効帯のSVG要素
+  const bands = validBands.map(b => {
+    const w = Math.max(0, Math.min(100, b.right) - Math.max(0, b.left));
+    const color = monthDiff(b.ym, calcYm) >= 12 ? '#fed7d7' : '#c6f6d5';
+    return `<div style="position:absolute;left:${b.left}%;width:${w}%;height:100%;background:${color};opacity:.5;top:0"></div>`;
+  }).join('');
+
+  // エントリのマーカー
+  const markers = entries.map(t => {
+    const p = pctOf(t.ym);
+    const elapsed = monthDiff(t.ym, calcYm);
+    const valid = elapsed >= 0 && elapsed < 12;
+    const color = elapsed < 0 ? '#90cdf4' : valid ? '#38a169' : '#e53e3e';
+    const label = t.label.replace('年', '/').replace('月', '');
+    return `<div style="position:absolute;left:${p}%;transform:translateX(-50%);top:-18px;display:flex;flex-direction:column;align-items:center;gap:2px">
+      <div style="font-size:9px;color:${color};font-weight:bold;white-space:nowrap">${label}</div>
+      <div style="width:12px;height:12px;border-radius:50%;background:${color};border:2px solid white;box-shadow:0 1px 3px rgba(0,0,0,.3)"></div>
+      <div style="width:1px;height:8px;background:${color}"></div>
     </div>`;
+  }).join('');
+
+  // 月ラベル（3ヶ月おき）
+  const monthLabels = [];
+  for (let i = 0; i < totalMonths; i += 3) {
+    const mYm = addMonths(startYm, i);
+    const p = i / (totalMonths - 1) * 100;
+    monthLabels.push(`<div style="position:absolute;left:${p}%;transform:translateX(-50%);font-size:9px;color:#718096;white-space:nowrap">${ymLabel(mYm).replace('年','/')}</div>`);
   }
-  return html;
+
+  const nextAdvice = validEntries.length > 0
+    ? (() => {
+        const latestValid = validEntries[validEntries.length - 1];
+        const mustBy = addMonths(addMonths(latestValid.ym, 12), -1);
+        return `<div style="background:#ebf8ff;border:1px solid #90cdf4;border-radius:8px;padding:10px 14px;margin-top:12px;font-size:13px;color:#2b6cb0">
+          💡 <strong>次のターミナルケア加算は ${ymLabel(mustBy)} までに算定</strong>することで加算Ⅰの要件を継続できます。
+        </div>`;
+      })()
+    : '';
+
+  const detailRows = entries.map(t => {
+    const elapsed = monthDiff(t.ym, calcYm);
+    const remaining = 12 - elapsed;
+    const valid = elapsed >= 0 && elapsed < 12;
+    const badge = remaining <= 0
+      ? `<span style="background:#fed7d7;color:#c53030;padding:1px 8px;border-radius:8px;font-size:11px">期限切れ</span>`
+      : remaining <= 3
+        ? `<span style="background:#fefcbf;color:#b7791f;padding:1px 8px;border-radius:8px;font-size:11px">⚠️ 残${remaining}ヶ月</span>`
+        : `<span style="background:#c6f6d5;color:#276749;padding:1px 8px;border-radius:8px;font-size:11px">残${remaining}ヶ月</span>`;
+    return `<div style="display:flex;align-items:center;gap:10px;padding:4px 0;font-size:12px">
+      <span style="color:#4a5568;min-width:80px">${t.label}</span>
+      ${valid ? badge : `<span style="background:#edf2f7;color:#718096;padding:1px 8px;border-radius:8px;font-size:11px">期限切れ</span>`}
+    </div>`;
+  }).join('');
+
+  return `
+    <div style="position:relative;margin:30px 16px 20px">
+      ${markers}
+      <div style="position:relative;height:16px;background:#e2e8f0;border-radius:8px;overflow:visible">
+        ${bands}
+        <div style="position:absolute;left:${currentPct}%;top:-6px;width:3px;height:28px;background:#2b6cb0;border-radius:2px;transform:translateX(-50%)" title="${ymLabel(calcYm)}（算定月）"></div>
+      </div>
+      <div style="position:relative;height:20px;margin-top:2px">${monthLabels.join('')}</div>
+    </div>
+    <div style="margin-top:8px;padding:10px 14px;background:#f7fafc;border-radius:8px">
+      <div style="font-size:11px;color:#718096;margin-bottom:6px;font-weight:bold">取得履歴</div>
+      ${detailRows}
+    </div>
+    <div style="margin-top:6px;font-size:11px;color:#718096;display:flex;gap:16px;flex-wrap:wrap">
+      <span><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#38a169;margin-right:3px"></span>有効（12ヶ月以内）</span>
+      <span><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#e53e3e;margin-right:3px"></span>期限切れ</span>
+      <span><span style="display:inline-block;width:3px;height:12px;background:#2b6cb0;margin-right:3px;display:inline-block;vertical-align:middle"></span>算定月</span>
+    </div>
+    ${nextAdvice}
+  `;
 }
 
 // ============================================================
@@ -1945,7 +2092,7 @@ const ADDON_DEFS = [
   },
   {
     no: 7, name: 'サービス提供体制強化加算', unit: '1月につき（Ⅰ:750単位 / Ⅱ:640単位 / Ⅲ:350単位）（区分支給限度基準額管理対象外）',
-    keywords: ['サービス提供体制強化加算'],
+    keywords: ['サービス提供体制強化'],
     req: `職員の研修や会議の開催、人員配置等について一定の要件を満たす事業所によりサービス提供を行った場合算定します。
 
 （Ⅰ）750単位／月：以下のいずれかに該当
@@ -1973,7 +2120,7 @@ const ADDON_DEFS = [
   },
   {
     no: 9, name: '総合マネジメント体制強化加算', unit: '1月につき（Ⅰ:1,200単位 / Ⅱ:800単位）（区分支給限度基準額管理対象外）',
-    keywords: ['総合マネジメント体制強化加算'],
+    keywords: ['総合マネジメント'],
     req: `（Ⅰ）1,200単位／月：次の全てに該当
 ア．個別サービス計画について多職種協働により随時適切に見直しを行っている
 イ．地域住民等との交流を図り、利用者の地域の行事や活動等への参加を積極的に支援している
@@ -2092,24 +2239,24 @@ function closeAddonReqModal() {
 }
 
 function renderAddonChecklist(users) {
-  const countMap = {};
+  const rawCounts = {};
   users.forEach(u => (u.items || []).forEach(i => {
-    if (!i.name) return;
-    countMap[i.name] = (countMap[i.name] || 0) + 1;
+    if (!i.name || i.name.startsWith('【')) return;
+    rawCounts[i.name] = (rawCounts[i.name] || 0) + 1;
   }));
+
   const total = users.length;
+  const matchedKeys = new Set();
 
   const rows = ADDON_DEFS.map(def => {
-    const cnt = def.keywords.reduce((sum, kw) => {
-      return sum + Object.entries(countMap)
-        .filter(([k]) => k.includes(kw))
-        .reduce((s, [, v]) => s + v, 0);
-    }, 0);
+    const cnt = Object.entries(rawCounts)
+      .filter(([k]) => def.keywords.some(kw => k.includes(kw)))
+      .reduce((s, [k, v]) => { matchedKeys.add(k); return s + v; }, 0);
     const claimed = cnt > 0;
+    const pctVal = total > 0 ? Math.round(cnt / total * 100) : 0;
     const badge = claimed
       ? `<span style="background:#c6f6d5;color:#22543d;padding:2px 10px;border-radius:10px;font-size:12px;font-weight:bold">算定あり ${cnt}名</span>`
       : `<span style="background:#edf2f7;color:#a0aec0;padding:2px 10px;border-radius:10px;font-size:12px">未算定</span>`;
-    const pctVal = total > 0 ? Math.round(cnt / total * 100) : 0;
     const bar = claimed
       ? `<div style="height:6px;background:#e2e8f0;border-radius:3px;overflow:hidden;min-width:60px"><div style="height:6px;background:#48bb78;border-radius:3px;width:${pctVal}%"></div></div>`
       : `<div style="height:6px;background:#e2e8f0;border-radius:3px;min-width:60px"></div>`;
@@ -2125,7 +2272,29 @@ function renderAddonChecklist(users) {
       <td style="padding:8px 10px;min-width:80px">${bar}</td>
       <td style="padding:8px 10px;font-size:11px;color:#718096;white-space:nowrap">${def.unit.split('（')[0].trim()}</td>
     </tr>`;
-  }).join('');
+  });
+
+  // マッチしなかったCSV加算を末尾に追加
+  const unmatchedRows = Object.entries(rawCounts)
+    .filter(([k]) => !matchedKeys.has(k))
+    .sort((a,b) => b[1]-a[1])
+    .map(([name, cnt]) => {
+      const short = name.replace('看護小規模多機能型居宅介護', '').replace('看護小規模多機能型', '').replace('看護小規模', '');
+      const isGen = name.includes('減算');
+      const pctVal = total > 0 ? Math.round(cnt / total * 100) : 0;
+      return `<tr style="border-bottom:1px solid #f0f4f8">
+        <td style="padding:8px 10px;font-size:13px;white-space:nowrap;color:${isGen?'#c53030':'#4a5568'}">
+          <span style="color:#a0aec0;font-size:11px;margin-right:4px">CSV</span>${esc(short)}
+        </td>
+        <td style="padding:8px 10px;white-space:nowrap">
+          <span style="background:${isGen?'#fed7d7':'#bee3f8'};color:${isGen?'#9b2c2c':'#2c5282'};padding:2px 10px;border-radius:10px;font-size:12px;font-weight:bold">${cnt}名</span>
+        </td>
+        <td style="padding:8px 10px;min-width:60px">
+          <div style="height:6px;background:#e2e8f0;border-radius:3px;overflow:hidden"><div style="height:6px;background:${isGen?'#fc8181':'#63b3ed'};border-radius:3px;width:${pctVal}%"></div></div>
+        </td>
+        <td style="padding:8px 10px;font-size:11px;color:#718096">${isGen?'減算':'加算'}</td>
+      </tr>`;
+    }).join('');
 
   return `<div style="overflow-x:auto">
     <table style="width:100%;border-collapse:collapse">
@@ -2137,7 +2306,7 @@ function renderAddonChecklist(users) {
           <th style="padding:8px 10px;font-size:12px;color:#4a5568;text-align:left;font-weight:bold;border-bottom:2px solid #e2e8f0">単位数</th>
         </tr>
       </thead>
-      <tbody>${rows}</tbody>
+      <tbody>${rows.join('')}${unmatchedRows}</tbody>
     </table>
   </div>`;
 }
