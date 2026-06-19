@@ -1782,10 +1782,12 @@ function renderScenarioPanel(p, ishaVal) {
   const kinkyuGap   = threeM ? calcGap(kinkyuCount, total, 50) : null;
   const tokGap      = threeM ? calcGap(tokCount, total, 20)    : null;
   const termOk      = terminalValid.length > 0;
+  const katsudanReg = ctx?.katsudan?.registered; // null=未入力, true=届出済, false=未届出
   const req2ok = !isNaN(ishaPct) && ishaOk && kinkyuGap?.met && tokGap?.met;
   const req2ng = (!isNaN(ishaPct) && !ishaOk) || (kinkyuGap && !kinkyuGap.met) || (tokGap && !tokGap.met);
-  const req1ok = req2ok && termOk;
-  const req1ng = req2ng || !termOk;
+  // 加算Ⅰ: req2ok + エ(ターミナル) + オ(喀痰吸引届出)
+  const req1ok = req2ok && termOk && katsudanReg === true;
+  const req1ng = req2ng || !termOk || katsudanReg === false;
   const stColor = (ok, ng) => ok ? '#276749' : ng ? '#c53030' : '#975a16';
   const stLabel = (ok, ng) => ok ? '✓ 充足' : ng ? '✗ 不足' : '△ 要確認';
   const borderColor = tag === 'next' ? '#3182ce' : tag === 'future' ? '#d69e2e' : '#a0aec0';
@@ -1941,10 +1943,18 @@ function renderTerminalTimeline(calcYm) {
 
   // 月ラベル（3ヶ月おき）
   const monthLabels = [];
-  for (let i = 0; i < totalMonths; i += 3) {
+  let prevYear = null;
+  for (let i = 0; i < totalMonths; i++) {
     const mYm = addMonths(startYm, i);
-    const p = i / (totalMonths - 1) * 100;
-    monthLabels.push(`<div style="position:absolute;left:${p}%;transform:translateX(-50%);font-size:9px;color:#718096;white-space:nowrap">${ymLabel(mYm).replace('年','/')}</div>`);
+    const year = Math.floor(parseInt(mYm) / 100);
+    const month = parseInt(mYm) % 100;
+    const p = totalMonths <= 1 ? 0 : i / (totalMonths - 1) * 100;
+    const isYearChange = year !== prevYear;
+    const displayText = isYearChange ? `${year}年${month}月` : `${month}月`;
+    const color = isYearChange ? '#2b6cb0' : '#718096';
+    const weight = isYearChange ? 'bold' : 'normal';
+    monthLabels.push(`<div style="position:absolute;left:${p}%;transform:translateX(-50%);font-size:9px;color:${color};font-weight:${weight};white-space:nowrap">${displayText}</div>`);
+    prevYear = year;
   }
 
   const nextAdvice = validEntries.length > 0
