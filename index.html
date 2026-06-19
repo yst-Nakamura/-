@@ -1,0 +1,2151 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>看護小規模多機能型居宅介護 加算管理ダッシュボード</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'Meiryo', 'Yu Gothic', sans-serif; background: #f0f4f8; color: #2d3748; font-size: 14px; }
+
+/* ===== パスワード画面 ===== */
+#auth-overlay {
+  position: fixed; inset: 0; z-index: 9999;
+  background: linear-gradient(135deg, #1a365d 0%, #2b6cb0 100%);
+  display: flex; align-items: center; justify-content: center;
+}
+.auth-box {
+  background: white; border-radius: 16px; padding: 40px 36px;
+  width: 360px; box-shadow: 0 20px 60px rgba(0,0,0,.3); text-align: center;
+}
+.auth-box .logo { font-size: 36px; margin-bottom: 12px; }
+.auth-box h2 { font-size: 16px; font-weight: bold; color: #1a365d; margin-bottom: 4px; }
+.auth-box .sub { font-size: 12px; color: #718096; margin-bottom: 28px; }
+.auth-field { margin-bottom: 14px; text-align: left; }
+.auth-field label { font-size: 12px; color: #4a5568; display: block; margin-bottom: 4px; }
+.auth-field input {
+  width: 100%; border: 1.5px solid #e2e8f0; border-radius: 8px;
+  padding: 10px 14px; font-size: 14px; outline: none; transition: border-color .2s;
+}
+.auth-field input:focus { border-color: #3182ce; }
+.auth-btn {
+  width: 100%; background: #2b6cb0; color: white; border: none;
+  border-radius: 8px; padding: 12px; font-size: 15px; font-weight: bold;
+  cursor: pointer; margin-top: 6px; transition: background .2s;
+}
+.auth-btn:hover { background: #1a365d; }
+.auth-error { color: #e53e3e; font-size: 12px; margin-top: 8px; min-height: 18px; }
+
+/* ===== ローディング ===== */
+#loading-overlay {
+  position: fixed; inset: 0; z-index: 8888;
+  background: rgba(26,54,93,.85);
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  color: white; gap: 16px;
+}
+#loading-overlay.hidden { display: none; }
+.spinner {
+  width: 40px; height: 40px; border: 4px solid rgba(255,255,255,.3);
+  border-top-color: white; border-radius: 50%;
+  animation: spin .8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ===== GAS設定モーダル ===== */
+.modal-overlay {
+  position: fixed; inset: 0; z-index: 7000;
+  background: rgba(0,0,0,.5);
+  display: flex; align-items: center; justify-content: center;
+}
+.modal-overlay.hidden { display: none; }
+.modal-box {
+  background: white; border-radius: 14px; padding: 32px;
+  width: 480px; max-width: 90vw; box-shadow: 0 20px 60px rgba(0,0,0,.25);
+}
+.modal-box h2 { font-size: 16px; font-weight: bold; margin-bottom: 6px; color: #1a365d; }
+.modal-box .modal-sub { font-size: 12px; color: #718096; margin-bottom: 20px; line-height: 1.7; }
+.modal-box label { font-size: 12px; color: #4a5568; display: block; margin-bottom: 4px; }
+.modal-box input[type=text], .modal-box input[type=url] {
+  width: 100%; border: 1.5px solid #e2e8f0; border-radius: 8px;
+  padding: 10px 14px; font-size: 13px; outline: none; margin-bottom: 16px;
+}
+.modal-box input:focus { border-color: #3182ce; }
+.modal-btns { display: flex; gap: 10px; justify-content: flex-end; }
+.btn-primary { background: #2b6cb0; color: white; border: none; border-radius: 8px; padding: 10px 24px; font-size: 14px; font-weight: bold; cursor: pointer; }
+.btn-primary:hover { background: #1a365d; }
+.btn-secondary { background: #e2e8f0; color: #4a5568; border: none; border-radius: 8px; padding: 10px 20px; font-size: 14px; cursor: pointer; }
+.btn-secondary:hover { background: #cbd5e0; }
+.btn-danger { background: #e53e3e; color: white; border: none; border-radius: 8px; padding: 10px 20px; font-size: 14px; cursor: pointer; }
+.btn-danger:hover { background: #c53030; }
+
+/* ===== ヘッダー / トップナビ ===== */
+header {
+  background: #1a365d; color: white;
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0 20px; height: 54px; flex-shrink: 0; position: sticky; top: 0; z-index: 100;
+}
+.header-title { font-size: 15px; font-weight: bold; white-space: nowrap; }
+.header-title span { font-size: 11px; color: #90cdf4; display: block; font-weight: normal; }
+.top-nav { display: flex; align-items: center; gap: 8px; flex: 1; justify-content: flex-end; }
+.nav-btn {
+  background: rgba(255,255,255,.12); color: white; border: none;
+  border-radius: 6px; padding: 7px 14px; font-size: 13px; cursor: pointer; white-space: nowrap;
+  transition: background .15s;
+}
+.nav-btn:hover { background: rgba(255,255,255,.22); }
+.nav-btn.active { background: #3182ce; }
+.nav-btn.add { background: #38a169; }
+.nav-btn.add:hover { background: #276749; }
+
+/* 事業所セレクター */
+.facility-selector { position: relative; }
+.facility-selector input {
+  background: rgba(255,255,255,.12); border: 1px solid rgba(255,255,255,.25);
+  color: white; border-radius: 6px; padding: 7px 32px 7px 10px;
+  font-size: 13px; outline: none; width: 200px; transition: .2s;
+}
+.facility-selector input::placeholder { color: rgba(255,255,255,.5); }
+.facility-selector input:focus { background: rgba(255,255,255,.2); border-color: rgba(255,255,255,.5); width: 240px; }
+.facility-dropdown {
+  position: absolute; top: calc(100% + 4px); left: 0; right: 0;
+  background: white; border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,.2);
+  max-height: 220px; overflow-y: auto; z-index: 200;
+}
+.facility-dropdown.hidden { display: none; }
+.fac-option {
+  padding: 10px 14px; font-size: 13px; color: #2d3748; cursor: pointer;
+  border-bottom: 1px solid #f0f4f8; display: flex; align-items: center; gap: 8px;
+}
+.fac-option:last-child { border-bottom: none; }
+.fac-option:hover { background: #ebf8ff; }
+.fac-option .fac-status { font-size: 11px; color: #a0aec0; margin-left: auto; white-space: nowrap; }
+.settings-btn {
+  background: none; border: none; color: rgba(255,255,255,.6);
+  font-size: 18px; cursor: pointer; padding: 4px 8px; border-radius: 6px;
+  transition: .2s;
+}
+.settings-btn:hover { color: white; background: rgba(255,255,255,.1); }
+
+/* ===== アプリ本体 ===== */
+#app { display: none; height: 100vh; flex-direction: column; }
+#app.visible { display: flex; }
+
+/* ===== ダッシュボードページ ===== */
+#page-dashboard { flex: 1; overflow-y: auto; padding: 24px; }
+#page-facility { flex: 1; overflow: hidden; display: none; }
+#page-facility.visible { display: flex; flex-direction: column; }
+
+.page-title {
+  font-size: 20px; font-weight: bold; color: #1a365d; margin-bottom: 6px;
+}
+.page-subtitle { font-size: 13px; color: #718096; margin-bottom: 20px; }
+
+/* ダッシュボード サマリーカード */
+.dash-kpi { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 24px; }
+.kpi-card { background: white; border-radius: 10px; padding: 16px; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
+.kpi-card .kl { font-size: 11px; color: #718096; margin-bottom: 4px; }
+.kpi-card .kv { font-size: 28px; font-weight: bold; }
+.kpi-card .ks { font-size: 11px; color: #a0aec0; }
+.kv-blue { color: #3182ce; } .kv-green { color: #38a169; } .kv-red { color: #e53e3e; } .kv-orange { color: #dd6b20; }
+
+/* ダッシュボード テーブル */
+.dash-table-wrap { background: white; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,.08); overflow: hidden; }
+.dash-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.dash-table th {
+  background: #1a365d; color: white; text-align: left;
+  padding: 12px 14px; font-size: 12px; white-space: nowrap;
+}
+.dash-table td { padding: 12px 14px; border-bottom: 1px solid #f0f4f8; vertical-align: middle; }
+.dash-table tr:last-child td { border-bottom: none; }
+.dash-table tr:hover td { background: #f7fafc; }
+.dash-table .fac-name { font-weight: bold; font-size: 14px; }
+.dash-table .no-data { color: #a0aec0; font-size: 12px; text-align: center; }
+.status-badge {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 3px 10px; border-radius: 12px; font-size: 12px; font-weight: bold; white-space: nowrap;
+}
+.sb-ok   { background: #c6f6d5; color: #22543d; }
+.sb-warn { background: #fefcbf; color: #744210; }
+.sb-ng   { background: #fed7d7; color: #9b2c2c; }
+.sb-na   { background: #e2e8f0; color: #718096; }
+.detail-link {
+  background: #ebf8ff; color: #2b6cb0; border: none; border-radius: 6px;
+  padding: 5px 12px; font-size: 12px; cursor: pointer; white-space: nowrap;
+}
+.detail-link:hover { background: #bee3f8; }
+.empty-dashboard {
+  text-align: center; padding: 60px 20px; color: #a0aec0;
+  background: white; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,.08);
+}
+.empty-dashboard .em-icon { font-size: 40px; margin-bottom: 12px; }
+.empty-dashboard p { font-size: 14px; margin-bottom: 6px; }
+
+/* ===== 事業所詳細ページ ===== */
+.facility-breadcrumb {
+  background: white; padding: 10px 20px; display: flex; align-items: center;
+  gap: 10px; font-size: 13px; border-bottom: 1px solid #e2e8f0; flex-shrink: 0;
+}
+.breadcrumb-back {
+  background: none; border: none; color: #3182ce; cursor: pointer; font-size: 13px; padding: 0;
+}
+.breadcrumb-back:hover { text-decoration: underline; }
+.breadcrumb-name { font-weight: bold; color: #1a365d; }
+.breadcrumb-sep { color: #a0aec0; }
+.fac-detail-actions { margin-left: auto; display: flex; gap: 8px; }
+.fac-action-btn {
+  background: #edf2f7; border: none; border-radius: 6px; padding: 5px 12px;
+  font-size: 12px; color: #4a5568; cursor: pointer;
+}
+.fac-action-btn:hover { background: #e2e8f0; }
+.fac-action-btn.danger { background: #fff5f5; color: #c53030; }
+.fac-action-btn.danger:hover { background: #fed7d7; }
+.fac-action-btn.email-btn { background: #ebf8ff; color: #2b6cb0; font-weight: bold; }
+.fac-action-btn.email-btn:hover { background: #bee3f8; }
+
+.facility-body { flex: 1; overflow: hidden; display: flex; }
+
+/* ===== サイドバー ===== */
+.sidebar { width: 240px; background: #1e3a5f; color: white; padding: 16px; flex-shrink: 0; overflow-y: auto; }
+.main { flex: 1; overflow-y: auto; padding: 20px; }
+.sidebar h3 { font-size: 11px; color: #90cdf4; letter-spacing: 1px; margin-bottom: 10px; text-transform: uppercase; }
+.sidebar-section { margin-bottom: 20px; }
+.month-item { display: flex; align-items: center; justify-content: space-between; padding: 7px 10px; border-radius: 6px; cursor: pointer; margin-bottom: 3px; font-size: 13px; }
+.month-item:hover { background: rgba(255,255,255,.15); }
+.month-item.active { background: #3182ce; }
+.month-item .del { opacity: 0; font-size: 14px; cursor: pointer; color: #fc8181; }
+.month-item:hover .del { opacity: 1; }
+.month-dot { width: 8px; height: 8px; border-radius: 50%; margin-right: 8px; flex-shrink: 0; }
+.no-months { color: #90cdf4; font-size: 12px; text-align: center; padding: 12px 0; }
+.drop-zone { border: 2px dashed rgba(255,255,255,.3); border-radius: 8px; padding: 14px; text-align: center; cursor: pointer; transition: .2s; color: rgba(255,255,255,.6); font-size: 13px; margin-bottom: 10px; }
+.drop-zone:hover, .drop-zone.drag { border-color: #63b3ed; background: rgba(255,255,255,.08); color: white; }
+input[type=file] { display: none; }
+.terminal-entry { background: rgba(255,255,255,.08); border-radius: 6px; padding: 8px; margin-bottom: 6px; font-size: 12px; display: flex; justify-content: space-between; align-items: center; }
+.del-t { color: #fc8181; cursor: pointer; }
+.inp-row { display: flex; gap: 6px; margin-top: 6px; }
+.inp-row input { flex: 1; background: rgba(255,255,255,.1); border: 1px solid rgba(255,255,255,.2); color: white; border-radius: 4px; padding: 5px 7px; font-size: 12px; }
+.inp-row input::placeholder { color: rgba(255,255,255,.4); }
+.inp-row button { background: #38a169; color: white; border: none; border-radius: 4px; padding: 5px 10px; font-size: 12px; cursor: pointer; }
+.note { font-size: 11px; color: rgba(255,255,255,.4); margin-top: 6px; }
+
+/* ===== タブ ===== */
+.nav-tabs { display: flex; gap: 4px; margin-bottom: 16px; border-bottom: 2px solid #e2e8f0; padding-bottom: 0; flex-wrap: wrap; }
+.nav-tab { padding: 8px 16px; border-radius: 6px 6px 0 0; cursor: pointer; font-size: 13px; color: #718096; border: 2px solid transparent; border-bottom: none; margin-bottom: -2px; }
+.nav-tab:hover { color: #3182ce; }
+.nav-tab.active { background: white; border-color: #e2e8f0; color: #2d3748; font-weight: bold; }
+
+/* ===== カード ===== */
+.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-bottom: 18px; }
+.card { background: white; border-radius: 10px; padding: 16px; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
+.card .lbl { font-size: 11px; color: #718096; margin-bottom: 4px; }
+.card .val { font-size: 26px; font-weight: bold; }
+.card .sub { font-size: 11px; color: #a0aec0; margin-top: 2px; }
+.c-blue .val { color: #3182ce; } .c-orange .val { color: #dd6b20; }
+.c-green .val { color: #38a169; } .c-red .val { color: #e53e3e; }
+
+/* ===== セクション ===== */
+.section { background: white; border-radius: 10px; padding: 18px; box-shadow: 0 1px 3px rgba(0,0,0,.08); margin-bottom: 16px; }
+.section h2 { font-size: 15px; font-weight: bold; margin-bottom: 14px; padding-bottom: 8px; border-bottom: 2px solid #e2e8f0; }
+
+/* ===== 3シナリオ ===== */
+.scenario-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; margin-bottom: 14px; }
+@media (max-width: 860px) { .scenario-grid { grid-template-columns: 1fr; } }
+.scenario-panel { border: 2px solid #e2e8f0; border-radius: 10px; padding: 14px; }
+.scenario-header { font-size: 13px; font-weight: bold; margin-bottom: 4px; }
+.grade-badges { display: flex; gap: 6px; margin-bottom: 10px; }
+.grade-badge { flex: 1; background: white; border-radius: 6px; padding: 6px 8px; text-align: center; border: 1px solid #e2e8f0; }
+.grade-badge .gb-label { font-size: 10px; color: #718096; }
+.grade-badge .gb-status { font-size: 13px; font-weight: bold; }
+.req-row { display: flex; align-items: center; gap: 6px; padding: 6px 8px; border-radius: 6px; background: rgba(0,0,0,.03); margin-bottom: 5px; }
+.req-row .rr-name { font-size: 11px; color: #4a5568; flex: 1; min-width: 0; }
+.req-row .rr-val  { font-size: 12px; font-weight: bold; white-space: nowrap; }
+.req-row .rr-gap  { font-size: 11px; white-space: nowrap; }
+.rr-gap.ok   { color: #276749; } .rr-gap.warn { color: #b7791f; } .rr-gap.ng { color: #c53030; font-weight: bold; }
+.badge { width: 20px; height: 20px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: bold; flex-shrink: 0; }
+.badge.ok { background: #38a169; color: white; } .badge.ng { background: #e53e3e; color: white; } .badge.na { background: #a0aec0; color: white; }
+
+/* ===== アクション提言 ===== */
+.action-box { background: #1a365d; color: white; border-radius: 10px; padding: 16px 18px; }
+.action-box h3 { font-size: 14px; color: #90cdf4; margin-bottom: 12px; }
+.action-group-label { font-size: 11px; color: #90cdf4; letter-spacing: .5px; margin: 10px 0 6px; border-bottom: 1px solid rgba(255,255,255,.15); padding-bottom: 4px; }
+.action-item { display: flex; gap: 8px; margin-bottom: 8px; font-size: 13px; align-items: flex-start; line-height: 1.5; }
+.action-item.ok { color: #9ae6b4; } .action-item.warn { color: #fbd38d; } .action-item.ng { color: #fc8181; } .action-item.info { color: #bee3f8; }
+.action-icon { font-size: 15px; flex-shrink: 0; margin-top: 1px; }
+
+/* ===== ターミナルタイムライン ===== */
+.timeline-bg { height: 20px; background: #e2e8f0; border-radius: 10px; position: relative; overflow: hidden; }
+.timeline-fill { height: 100%; border-radius: 10px; transition: width .5s; }
+.timeline-marker { position: absolute; top: -4px; width: 3px; background: #2d3748; height: 28px; border-radius: 2px; }
+.timeline-labels { display: flex; justify-content: space-between; font-size: 10px; color: #718096; margin-top: 3px; }
+.terminal-row { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 8px; margin-bottom: 8px; border: 1px solid #e2e8f0; }
+.terminal-row.valid { border-color: #38a169; background: #f0fff4; }
+.terminal-row.expiring { border-color: #d69e2e; background: #fffff0; }
+.terminal-row.expired { border-color: #e53e3e; background: #fff5f5; }
+.terminal-badge { font-size: 20px; flex-shrink: 0; }
+.terminal-info { flex: 1; }
+.ti-month { font-weight: bold; font-size: 14px; }
+.ti-exp { font-size: 12px; color: #718096; }
+.ti-remain { font-size: 12px; font-weight: bold; }
+
+/* ===== 加算テーブル ===== */
+.addon-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.addon-table th { background: #edf2f7; text-align: left; padding: 8px 12px; font-size: 12px; color: #4a5568; border-bottom: 2px solid #e2e8f0; }
+.addon-table td { padding: 8px 12px; border-bottom: 1px solid #f0f4f8; }
+.addon-table tr:hover td { background: #f7fafc; }
+.bar { height: 8px; background: #e2e8f0; border-radius: 4px; position: relative; min-width: 80px; }
+.bar-fill { height: 8px; border-radius: 4px; position: absolute; top: 0; left: 0; }
+.tag { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: bold; }
+.tag.加算 { background: #bee3f8; color: #2b6cb0; } .tag.減算 { background: #fed7d7; color: #9b2c2c; }
+
+/* ===== 利用者カード ===== */
+.user-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 10px; }
+.user-card { border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px; }
+.user-card .uid { font-size: 11px; color: #a0aec0; }
+.user-card .addons { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+.addon-tag { padding: 2px 7px; border-radius: 4px; font-size: 11px; background: #edf2f7; color: #4a5568; }
+.addon-tag.kinkyu    { background: #feebc8; color: #7b341e; }
+.addon-tag.tokubetsu { background: #fefcbf; color: #744210; }
+.addon-tag.kango     { background: #bee3f8; color: #2b6cb0; }
+.user-card .total { text-align: right; font-weight: bold; margin-top: 8px; padding-top: 6px; border-top: 1px solid #e2e8f0; font-size: 13px; }
+
+.empty { text-align: center; color: #a0aec0; padding: 40px; font-size: 14px; }
+.empty-fac { text-align: center; padding: 40px 20px; color: #a0aec0; }
+</style>
+</head>
+<body>
+
+<!-- ===== パスワード認証 ===== -->
+<div id="auth-overlay">
+  <div class="auth-box">
+    <div class="logo">🏥</div>
+    <h2>看護小規模多機能型居宅介護</h2>
+    <div class="sub">加算管理ダッシュボード</div>
+    <div class="auth-field" style="margin-top:24px">
+      <label>パスワード</label>
+      <input type="password" id="inp-pw-login" placeholder="パスワードを入力"
+             onkeydown="if(event.key==='Enter')authSubmit()">
+    </div>
+    <div class="auth-error" id="auth-error"></div>
+    <button class="auth-btn" onclick="authSubmit()">→ ログイン</button>
+  </div>
+</div>
+
+<!-- ===== ローディング ===== -->
+<div id="loading-overlay" class="hidden">
+  <div class="spinner"></div>
+  <div style="font-size:14px;color:rgba(255,255,255,.8)" id="loading-msg">データを読み込み中...</div>
+</div>
+
+<!-- ===== GAS URL 設定モーダル ===== -->
+<div id="modal-gas" class="modal-overlay hidden">
+  <div class="modal-box">
+    <h2>⚙️ GAS URL 設定</h2>
+    <div class="modal-sub">
+      Google Apps Script Web App の URL を入力してください。<br>
+      設定後、全事業所のデータがクラウドに保存・共有されます。
+    </div>
+    <label>GAS Web App URL</label>
+    <input type="url" id="inp-gas-url" placeholder="https://script.google.com/macros/s/...">
+    <div class="modal-btns">
+      <button class="btn-secondary" onclick="closeGasModal()">キャンセル</button>
+      <button class="btn-primary" onclick="saveGasUrl()">保存して再読込</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== 事業所追加モーダル ===== -->
+<div id="modal-add-fac" class="modal-overlay hidden">
+  <div class="modal-box">
+    <h2>＋ 事業所追加</h2>
+    <div class="modal-sub">新しい事業所を追加します。事業所名は後から変更できます。</div>
+    <label>事業所名</label>
+    <input type="text" id="inp-fac-name" placeholder="例: ○○ナーシングホーム 小規模多機能"
+           onkeydown="if(event.key==='Enter')createFacility()">
+    <div id="add-fac-error" style="color:#e53e3e;font-size:12px;margin-top:-10px;margin-bottom:10px;min-height:18px"></div>
+    <div class="modal-btns">
+      <button class="btn-secondary" onclick="closeAddFacModal()">キャンセル</button>
+      <button class="btn-primary" onclick="createFacility()">追加</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== 事業所名変更モーダル ===== -->
+<div id="modal-rename-fac" class="modal-overlay hidden">
+  <div class="modal-box">
+    <h2>✏️ 事業所名変更</h2>
+    <label>新しい事業所名</label>
+    <input type="text" id="inp-rename-fac" placeholder="事業所名"
+           onkeydown="if(event.key==='Enter')doRenameFacility()">
+    <div class="modal-btns">
+      <button class="btn-secondary" onclick="document.getElementById('modal-rename-fac').classList.add('hidden')">キャンセル</button>
+      <button class="btn-primary" onclick="doRenameFacility()">変更</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== 加算要件ポップアップ ===== -->
+<div id="modal-addon-req" class="modal-overlay hidden" onclick="if(event.target===this)closeAddonReqModal()">
+  <div class="modal-box" style="max-width:620px;max-height:80vh;overflow-y:auto">
+    <h2 id="addon-req-title" style="font-size:16px;margin-bottom:8px"></h2>
+    <div id="addon-req-unit" style="font-size:12px;color:#718096;margin-bottom:14px"></div>
+    <div id="addon-req-body" style="font-size:13px;line-height:1.8;white-space:pre-wrap"></div>
+    <div class="modal-btns" style="margin-top:20px">
+      <button class="btn-primary" onclick="closeAddonReqModal()">閉じる</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== アプリ本体 ===== -->
+<div id="app">
+
+  <!-- ヘッダー -->
+  <header>
+    <div class="header-title">
+      <span>看護小規模多機能型居宅介護</span>
+      加算管理ダッシュボード
+    </div>
+    <nav class="top-nav">
+      <button class="nav-btn active" id="btn-dashboard" onclick="showDashboard()">📊 ダッシュボード</button>
+      <div class="facility-selector">
+        <input type="text" id="facility-search" placeholder="事業所を選択・検索..."
+               oninput="filterFacilityDropdown()"
+               onfocus="openFacilityDropdown()"
+               onkeydown="handleFacilitySearchKey(event)"
+               autocomplete="off">
+        <div id="facility-dropdown" class="facility-dropdown hidden"></div>
+      </div>
+      <button class="nav-btn" style="background:rgba(255,255,255,.18);font-size:12px" onclick="bulkCreateFromMaster()" title="組織図マスタから看多機29事業所を一括登録">📋 マスタ一括作成</button>
+      <button class="nav-btn add" onclick="showAddFacModal()">＋ 事業所追加</button>
+      <button class="settings-btn" onclick="showGasModal()" title="GAS URL設定">⚙️</button>
+    </nav>
+  </header>
+
+  <!-- ===== ダッシュボードページ ===== -->
+  <div id="page-dashboard" style="flex:1;overflow-y:auto;padding:24px">
+    <div class="page-title">全事業所 加算状況一覧</div>
+    <div class="page-subtitle" id="dash-subtitle">事業所を追加してCSVをアップロードすると自動で集計されます</div>
+    <div id="dash-kpi" class="dash-kpi"></div>
+    <div id="dash-table-wrap"></div>
+    <div id="dash-addon-matrix" style="margin-top:20px"></div>
+  </div>
+
+  <!-- ===== 事業所詳細ページ ===== -->
+  <div id="page-facility">
+    <div class="facility-breadcrumb">
+      <button class="breadcrumb-back" onclick="showDashboard()">← ダッシュボード</button>
+      <span class="breadcrumb-sep">›</span>
+      <span class="breadcrumb-name" id="breadcrumb-fac-name">—</span>
+      <div class="fac-detail-actions">
+        <button class="fac-action-btn email-btn" onclick="sendAnalysisEmail()" title="エリア長・事業所職員全員に加算状況レポートを送信">📧 加算状況メール送信</button>
+        <button class="fac-action-btn" onclick="showRenameFacModal()">✏️ 名前変更</button>
+        <button class="fac-action-btn danger" onclick="confirmDeleteFacility()">🗑 削除</button>
+      </div>
+    </div>
+    <div class="facility-body">
+      <!-- サイドバー -->
+      <div class="sidebar">
+        <div class="sidebar-section">
+          <h3>月次データ</h3>
+          <div class="drop-zone" id="drop-zone" onclick="document.getElementById('csv-input').click()">
+            📂 CSVをドロップ or クリック
+          </div>
+          <input type="file" id="csv-input" accept=".csv" multiple>
+          <div id="month-list"><div class="no-months">データなし</div></div>
+        </div>
+        <div class="sidebar-section">
+          <h3>ターミナルケア加算 記録</h3>
+          <div id="terminal-list"></div>
+          <div class="inp-row">
+            <input type="month" id="inp-terminal-month">
+            <button onclick="addTerminal()">追加</button>
+          </div>
+          <div class="note">※ターミナルケア加算を算定した月を記録</div>
+        </div>
+      </div>
+      <!-- メインエリア -->
+      <div class="main" id="facility-main">
+        <div class="empty-fac" id="fac-empty-msg">
+          ← 左のメニューから請求CSVを読み込んでください<br>
+          <span style="font-size:12px">複数月のCSVを同時にアップロードできます</span>
+        </div>
+        <div id="dash-area" style="display:none">
+          <div class="nav-tabs" id="nav-tabs"></div>
+          <div id="tab-contents"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div><!-- /#app -->
+
+<script>
+// ============================================================
+// 設定
+// ============================================================
+const CORRECT_HASH = '2b68c603cd53027a45cd35c50e9d75b936cd2628ae0a3144acbbc291ad618275'; // yst0001
+const SESSION_KEY  = 'kango_authed';
+
+// ★ GASデプロイ後にここを書き換える
+const GAS_URL_DEFAULT = 'https://script.google.com/macros/s/AKfycbyy9OTzZaRnb2jyRx1nl3p3h42BXIaUsXXxQ8PHuUnr2Q-ufJqjqUyi8exmljpQgAUK1g/exec';
+
+// ============================================================
+// 認証
+// ============================================================
+async function sha256(str) {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str));
+  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2,'0')).join('');
+}
+async function initAuth() {
+  if (sessionStorage.getItem(SESSION_KEY) === '1') {
+    document.getElementById('auth-overlay').style.display = 'none';
+    onAuthed();
+    return;
+  }
+  setTimeout(() => document.getElementById('inp-pw-login').focus(), 100);
+}
+async function authSubmit() {
+  const errEl = document.getElementById('auth-error');
+  errEl.textContent = '';
+  const pw = document.getElementById('inp-pw-login').value;
+  if (!pw) { errEl.textContent = 'パスワードを入力してください'; return; }
+  const hash = await sha256(pw);
+  if (hash === CORRECT_HASH) {
+    sessionStorage.setItem(SESSION_KEY, '1');
+    document.getElementById('auth-overlay').style.display = 'none';
+    onAuthed();
+  } else {
+    errEl.textContent = 'パスワードが違います';
+    document.getElementById('inp-pw-login').value = '';
+    document.getElementById('inp-pw-login').focus();
+  }
+}
+
+// ============================================================
+// データストア
+// ============================================================
+let allFacilities = [];
+// { facilityId: { monthData: {ym: {ym,label,users}}, terminalEntries: [{ym,label}], manualIsha: {ym: pct} } }
+let facilityData = {};
+let currentFacilityId = null;
+let activeTab = null;
+
+function getFacCtx(facId) {
+  facId = facId || currentFacilityId;
+  if (!facId) return null;
+  if (!facilityData[facId]) facilityData[facId] = { monthData: {}, terminalEntries: [], manualIsha: {} };
+  return facilityData[facId];
+}
+
+// ============================================================
+// GAS通信
+// ============================================================
+function getGasUrl() {
+  return localStorage.getItem('kango_gas_url') || GAS_URL_DEFAULT;
+}
+function hasGasUrl() {
+  const url = getGasUrl();
+  return url && url !== 'YOUR_GAS_URL_HERE' && url.startsWith('http');
+}
+
+async function gasGet() {
+  const res = await fetch(getGasUrl() + '?t=' + Date.now());
+  return res.json();
+}
+
+async function gasPost(payload) {
+  const formData = new FormData();
+  formData.append('data', JSON.stringify(payload));
+  const res = await fetch(getGasUrl(), { method: 'POST', body: formData });
+  return res.json();
+}
+
+// ============================================================
+// データ読込・変換
+// ============================================================
+async function loadAllData() {
+  if (!hasGasUrl()) return;
+  showLoading('データを読み込み中...');
+  try {
+    const raw = await gasGet();
+    allFacilities = (raw.facilities || []).map(f => ({ id: String(f.id), name: String(f.name), createdAt: f.createdAt }));
+    facilityData = {};
+    allFacilities.forEach(f => {
+      facilityData[f.id] = { monthData: {}, terminalEntries: [], manualIsha: {} };
+    });
+    (raw.monthlyData || []).forEach(row => {
+      const facId = String(row.facilityId);
+      if (!facilityData[facId]) facilityData[facId] = { monthData: {}, terminalEntries: [], manualIsha: {} };
+      // ym を確実に6桁文字列に正規化（数値・ISO日付など対応）
+      const ym = String(row.ym || '').replace(/[^0-9]/g, '').slice(0, 6);
+      if (ym.length !== 6) return;
+      let users = {};
+      try { const arr = JSON.parse(row.usersJson || '[]'); arr.forEach(u => { users[u.userId] = u; }); } catch(e) {}
+      // label が日本語形式でなければ再生成
+      const label = (row.label && String(row.label).includes('年'))
+        ? String(row.label) : ymLabel(ym);
+      facilityData[facId].monthData[ym] = { ym, label, users };
+    });
+    (raw.terminalEntries || []).forEach(row => {
+      const facId = String(row.facilityId);
+      if (!facilityData[facId]) facilityData[facId] = { monthData: {}, terminalEntries: [], manualIsha: {} };
+      facilityData[facId].terminalEntries.push({ ym: String(row.ym), label: String(row.label) });
+    });
+    (raw.ishaValues || []).forEach(row => {
+      const facId = String(row.facilityId);
+      if (!facilityData[facId]) facilityData[facId] = { monthData: {}, terminalEntries: [], manualIsha: {} };
+      const _parsed = parseFloat(row.value);
+      facilityData[facId].manualIsha[String(row.ym)] = isNaN(_parsed) ? '' : _parsed;
+    });
+    allFacilities.forEach(f => {
+      facilityData[f.id].terminalEntries.sort((a,b) => a.ym.localeCompare(b.ym));
+    });
+  } catch(e) {
+    console.error('GAS通信エラー:', e);
+  }
+  hideLoading();
+}
+
+// ============================================================
+// ローディング
+// ============================================================
+function showLoading(msg) {
+  document.getElementById('loading-msg').textContent = msg || '';
+  document.getElementById('loading-overlay').classList.remove('hidden');
+}
+function hideLoading() {
+  document.getElementById('loading-overlay').classList.add('hidden');
+}
+
+// ============================================================
+// 認証後の初期化
+// ============================================================
+async function onAuthed() {
+  document.getElementById('app').style.display = 'flex';
+  document.getElementById('app').style.flexDirection = 'column';
+  document.getElementById('app').style.height = '100vh';
+  if (!hasGasUrl()) {
+    showGasModal();
+  } else {
+    await loadAllData();
+  }
+  renderDashboard();
+  renderFacilityDropdown();
+}
+
+// ============================================================
+// ページ切替
+// ============================================================
+function showDashboard() {
+  document.getElementById('page-dashboard').style.display = 'block';
+  document.getElementById('page-facility').style.display = 'none';
+  document.getElementById('btn-dashboard').classList.add('active');
+  document.getElementById('facility-search').value = '';
+  closeFacilityDropdown();
+  renderDashboard();
+}
+
+function showFacility(facId) {
+  currentFacilityId = facId;
+  const fac = allFacilities.find(f => f.id === facId);
+  if (!fac) return;
+  document.getElementById('page-dashboard').style.display = 'none';
+  document.getElementById('page-facility').style.display = 'flex';
+  document.getElementById('page-facility').style.flexDirection = 'column';
+  document.getElementById('btn-dashboard').classList.remove('active');
+  document.getElementById('breadcrumb-fac-name').textContent = fac.name;
+  document.getElementById('facility-search').value = fac.name;
+  closeFacilityDropdown();
+  renderFacilityAll();
+}
+
+// ============================================================
+// ダッシュボード描画
+// ============================================================
+function renderDashboard() {
+  const now = new Date();
+  const currentYm = `${now.getFullYear()}${String(now.getMonth()+1).padStart(2,'0')}`;
+
+  // KPI
+  const total = allFacilities.length;
+  let okCount1 = 0, okCount2 = 0;
+  allFacilities.forEach(f => {
+    const ctx = getFacCtx(f.id);
+    const latestYm = Object.keys(ctx.monthData).sort().pop();
+    if (!latestYm) return;
+    const nextYm = addMonths(latestYm, 1);
+    const threeM = calcThreeMonths(nextYm, f.id);
+    const term   = checkTerminal(nextYm, f.id);
+    const isha   = ctx.manualIsha[latestYm];
+    const { r1ok, r2ok } = evalReqs(threeM, term, isha);
+    if (r2ok) okCount2++;
+    if (r1ok) okCount1++;
+  });
+
+  document.getElementById('dash-kpi').innerHTML = `
+    <div class="kpi-card"><div class="kl">登録事業所数</div><div class="kv kv-blue">${total}</div><div class="ks">事業所</div></div>
+    <div class="kpi-card"><div class="kl">加算Ⅰ 来月算定可</div><div class="kv kv-green">${okCount1}</div><div class="ks">/ ${total} 事業所</div></div>
+    <div class="kpi-card"><div class="kl">加算Ⅱ 来月算定可</div><div class="kv kv-blue">${okCount2}</div><div class="ks">/ ${total} 事業所</div></div>
+    <div class="kpi-card"><div class="kl">要確認事業所</div><div class="kv kv-red">${total - Math.max(okCount1,okCount2)}</div><div class="ks">事業所</div></div>
+  `;
+
+  const wrap = document.getElementById('dash-table-wrap');
+  if (allFacilities.length === 0) {
+    wrap.innerHTML = `<div class="empty-dashboard">
+      <div class="em-icon">🏥</div>
+      <p>事業所がまだ登録されていません</p>
+      <p style="font-size:12px">右上の「＋ 事業所追加」から追加してください</p>
+    </div>`;
+    return;
+  }
+
+  const rows = allFacilities.map(f => {
+    const ctx = getFacCtx(f.id);
+    const latestYm = Object.keys(ctx.monthData).sort().pop();
+    if (!latestYm) {
+      return `<tr>
+        <td class="fac-name">${esc(f.name)}</td>
+        <td colspan="5"><span style="color:#a0aec0;font-size:12px">データなし</span></td>
+        <td><button class="detail-link" onclick="showFacility('${f.id}')">詳細 →</button></td>
+      </tr>`;
+    }
+    const ctx2 = ctx;
+    const isha = ctx2.manualIsha[latestYm];
+    const nextYm = addMonths(latestYm, 1);
+
+    // 当月算定(latestYm) → 使用: latestYm-1, -2, -3
+    const curThreeM = calcThreeMonths(latestYm, f.id);
+    const curTerm   = checkTerminal(latestYm, f.id);
+    const { r1ok: cur1ok, r2ok: cur2ok } = evalReqs(curThreeM, curTerm, isha);
+
+    // 来月算定(nextYm) → 使用: latestYm, latestYm-1, latestYm-2
+    const nxtThreeM = calcThreeMonths(nextYm, f.id);
+    const nxtTerm   = checkTerminal(nextYm, f.id);
+    const { r1ok: nxt1ok, r2ok: nxt2ok } = evalReqs(nxtThreeM, nxtTerm, isha);
+
+    // ターミナルケア期限
+    const termStatus = getTerminalStatus(latestYm, f.id);
+
+    const sb = (ok, na) => na
+      ? `<span class="status-badge sb-na">— 未入力</span>`
+      : ok === null
+        ? `<span class="status-badge sb-na">要確認</span>`
+        : ok
+          ? `<span class="status-badge sb-ok">✓ 可</span>`
+          : `<span class="status-badge sb-ng">✗ 不可</span>`;
+
+    // 平均介護度
+    const users = Object.values(ctx.monthData[latestYm].users);
+    const levels = users.map(u => getLevel(u.baseCode)).filter(l => l !== null);
+    const avgLevel = levels.length
+      ? (levels.reduce((s, l) => s + l, 0) / levels.length).toFixed(2)
+      : null;
+    const avgColor = !avgLevel ? '#a0aec0'
+      : avgLevel >= 4 ? '#c53030'
+      : avgLevel >= 3 ? '#c05621'
+      : '#2b6cb0';
+    const avgCell = avgLevel
+      ? `<span style="font-weight:bold;color:${avgColor};font-size:14px">${avgLevel}</span>
+         <span style="font-size:11px;color:#718096"> (${levels.length}名)</span>`
+      : `<span style="color:#a0aec0;font-size:12px">—</span>`;
+
+    return `<tr>
+      <td class="fac-name">${esc(f.name)}</td>
+      <td style="font-size:12px;color:#718096">${ymLabel(latestYm)}</td>
+      <td style="text-align:center">${avgCell}</td>
+      <td>${sb(cur1ok, !curThreeM)}</td>
+      <td>${sb(cur2ok, !curThreeM)}</td>
+      <td>${sb(nxt1ok, !nxtThreeM)}</td>
+      <td>${sb(nxt2ok, !nxtThreeM)}</td>
+      <td>${termStatus}</td>
+      <td><button class="detail-link" onclick="showFacility('${f.id}')">詳細 →</button></td>
+    </tr>`;
+  }).join('');
+
+  wrap.innerHTML = `<div class="dash-table-wrap">
+    <table class="dash-table">
+      <thead>
+        <tr>
+          <th>事業所名</th>
+          <th>最終連携月</th>
+          <th>平均介護度</th>
+          <th>当月 看護体制強化加算Ⅰ</th>
+          <th>当月 看護体制強化加算Ⅱ</th>
+          <th>次月 看護体制強化加算Ⅰ</th>
+          <th>次月 看護体制強化加算Ⅱ</th>
+          <th>ターミナルケア</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>${rows}</tbody>
+    </table>
+  </div>`;
+
+  try {
+    document.getElementById('dash-addon-matrix').innerHTML = renderAddonMatrix();
+  } catch(e) {
+    console.error('renderAddonMatrix error:', e);
+    document.getElementById('dash-addon-matrix').innerHTML =
+      `<div style="background:#fff5f5;border:1px solid #fc8181;border-radius:8px;padding:16px;color:#c53030;margin-top:16px">⚠️ 加算一覧表示エラー: ${e.message}</div>`;
+  }
+}
+
+// ============================================================
+// 全事業所 加算取得状況マトリックス
+// ============================================================
+function renderAddonMatrix() {
+  const dataFacs = allFacilities.filter(f => {
+    const ctx = getFacCtx(f.id);
+    return Object.keys(ctx.monthData).length > 0;
+  });
+  if (dataFacs.length === 0) return '';
+
+  // 各事業所の最新月データ・加算カウント・看護体制強化加算可否を収集
+  const facStats = dataFacs.map(f => {
+    const ctx = getFacCtx(f.id);
+    const latestYm = Object.keys(ctx.monthData).sort().pop();
+    const users = Object.values(ctx.monthData[latestYm].users);
+
+    // 加算名 → 算定者数
+    const addonCounts = {};
+    users.forEach(u => (u.items || []).forEach(i => {
+      if (!i.name || i.name.startsWith('【')) return;
+      // 看護体制強化加算は別扱いのためCSVカウントから除外
+      if (i.name.includes('看護体制強化加算')) return;
+      const short = i.name.replace('看護小規模多機能型', '').replace('看護小規模', '');
+      addonCounts[short] = (addonCounts[short] || 0) + 1;
+    }));
+
+    // 次月算定 看護体制強化加算 可否
+    const nextYm = addMonths(latestYm, 1);
+    const threeM  = calcThreeMonths(nextYm, f.id);
+    const term    = checkTerminal(nextYm, f.id);
+    const isha    = ctx.manualIsha[latestYm];
+    const { r1ok, r2ok } = evalReqs(threeM, term, isha);
+
+    return { fac: f, addonCounts, r1ok, r2ok, latestYm };
+  });
+
+  // 全事業所で1件以上算定されている加算名を収集・ソート
+  const addonSet = new Set();
+  facStats.forEach(s => Object.keys(s.addonCounts).forEach(k => addonSet.add(k)));
+  // 看護体制強化加算を先頭に固定、残りはアルファベット・五十音順
+  const addonList = [
+    '看護体制強化加算Ⅰ（次月）',
+    '看護体制強化加算Ⅱ（次月）',
+    ...Array.from(addonSet).sort()
+  ];
+
+  // テーブルヘッダー（事業所名 + 最終連携月）
+  const thCells = facStats.map(s =>
+    `<th style="background:#1a365d;color:white;padding:10px 14px;font-size:12px;white-space:nowrap;text-align:center;border-right:1px solid rgba(255,255,255,.15)">
+      ${esc(s.fac.name)}<br>
+      <span style="font-size:10px;font-weight:normal;color:#90cdf4">${ymLabel(s.latestYm)}</span>
+    </th>`
+  ).join('');
+
+  // テーブル行（加算ごと）
+  const tRows = addonList.map(addonName => {
+    const cells = facStats.map(s => {
+      // 看護体制強化加算Ⅰ/Ⅱ は可否バッジ
+      if (addonName === '看護体制強化加算Ⅰ（次月）') {
+        return s.r1ok == null
+          ? `<td style="text-align:center;padding:10px 8px;border-bottom:1px solid #f0f4f8"><span style="color:#a0aec0;font-size:12px">要確認</span></td>`
+          : s.r1ok
+            ? `<td style="text-align:center;padding:10px 8px;border-bottom:1px solid #f0f4f8"><span style="background:#c6f6d5;color:#22543d;padding:3px 10px;border-radius:10px;font-size:12px;font-weight:bold">✓ 算定可</span></td>`
+            : `<td style="text-align:center;padding:10px 8px;border-bottom:1px solid #f0f4f8"><span style="background:#fed7d7;color:#9b2c2c;padding:3px 10px;border-radius:10px;font-size:12px;font-weight:bold">✗ 不可</span></td>`;
+      }
+      if (addonName === '看護体制強化加算Ⅱ（次月）') {
+        return s.r2ok == null
+          ? `<td style="text-align:center;padding:10px 8px;border-bottom:1px solid #f0f4f8"><span style="color:#a0aec0;font-size:12px">要確認</span></td>`
+          : s.r2ok
+            ? `<td style="text-align:center;padding:10px 8px;border-bottom:1px solid #f0f4f8"><span style="background:#c6f6d5;color:#22543d;padding:3px 10px;border-radius:10px;font-size:12px;font-weight:bold">✓ 算定可</span></td>`
+            : `<td style="text-align:center;padding:10px 8px;border-bottom:1px solid #f0f4f8"><span style="background:#fed7d7;color:#9b2c2c;padding:3px 10px;border-radius:10px;font-size:12px;font-weight:bold">✗ 不可</span></td>`;
+      }
+      // その他の加算は算定者数
+      const cnt = s.addonCounts[addonName] || 0;
+      return cnt > 0
+        ? `<td style="text-align:center;padding:10px 8px;border-bottom:1px solid #f0f4f8">
+            <span style="font-size:14px;font-weight:bold;color:#2b6cb0">${cnt}</span>
+            <span style="font-size:11px;color:#718096"> 名</span>
+           </td>`
+        : `<td style="text-align:center;padding:10px 8px;border-bottom:1px solid #f0f4f8;color:#e2e8f0">—</td>`;
+    }).join('');
+
+    // 行の背景（看護体制強化加算は強調）
+    const isKango = addonName.includes('看護体制強化加算');
+    const rowBg = isKango ? 'background:#f0f9ff;' : '';
+    const nameCellStyle = isKango
+      ? 'padding:10px 14px;font-size:13px;font-weight:bold;color:#2b6cb0;border-bottom:1px solid #f0f4f8;white-space:nowrap;border-right:2px solid #e2e8f0'
+      : 'padding:10px 14px;font-size:13px;border-bottom:1px solid #f0f4f8;white-space:nowrap;border-right:2px solid #e2e8f0';
+
+    return `<tr style="${rowBg}">
+      <td style="${nameCellStyle}">${addonName}</td>
+      ${cells}
+    </tr>`;
+  }).join('');
+
+  return `<div style="background:white;border-radius:12px;box-shadow:0 1px 3px rgba(0,0,0,.08);overflow:hidden">
+    <div style="background:#1a365d;padding:14px 18px;display:flex;align-items:baseline;gap:12px">
+      <div style="color:white;font-size:15px;font-weight:bold">全事業所 加算取得状況一覧</div>
+      <div style="color:#90cdf4;font-size:11px">看護体制強化加算は次月算定可否 ／ その他は最終連携月の算定者数</div>
+    </div>
+    <div style="overflow-x:auto">
+      <table style="width:100%;border-collapse:collapse;font-size:13px">
+        <thead>
+          <tr>
+            <th style="background:#2d3748;color:#e2e8f0;padding:10px 14px;text-align:left;font-size:12px;white-space:nowrap;border-right:2px solid rgba(255,255,255,.2)">加算名</th>
+            ${thCells}
+          </tr>
+        </thead>
+        <tbody>${tRows}</tbody>
+      </table>
+    </div>
+  </div>`;
+}
+
+function getTerminalStatus(refYm, facId) {
+  const ctx = getFacCtx(facId);
+  const entries = ctx.terminalEntries;
+  if (entries.length === 0) return `<span class="status-badge sb-ng">未算定</span>`;
+  const nextCalcYm = addMonths(refYm, 1);
+  let minRemain = Infinity;
+  let latestExpiry = null;
+  entries.forEach(t => {
+    const elapsed = monthDiff(t.ym, nextCalcYm);
+    const remain = 12 - elapsed;
+    if (elapsed < 12) {
+      if (remain < minRemain) minRemain = remain;
+      const exp = addMonths(t.ym, 12);
+      if (!latestExpiry || exp > latestExpiry) latestExpiry = exp;
+    }
+  });
+  if (minRemain === Infinity) return `<span class="status-badge sb-ng">期限切れ</span>`;
+  if (minRemain <= 3) return `<span class="status-badge sb-warn">⚠️ 残${minRemain}ヶ月</span>`;
+  return `<span class="status-badge sb-ok">残${minRemain}ヶ月</span>`;
+}
+
+function evalReqs(threeM, termValid, ishaVal) {
+  if (!threeM) return { r1ok: false, r2ok: false, noData: true };
+  const ishaPct = parseFloat(ishaVal);
+  const ishaEntered = !isNaN(ishaPct);
+  const ishaOk = ishaEntered && ishaPct >= 80;
+  const { kinkyu, tokubetsu, total } = threeM;
+  const kg = calcGap(kinkyu.count, total, 50);
+  const tg = calcGap(tokubetsu.count, total, 20);
+  const ikuOk = kg && kg.met && tg && tg.met; // イ・ウ充足
+  // ア未入力の場合はnull（要確認）として返す
+  const r2ok = !ishaEntered ? null : (ishaOk && ikuOk ? true : false);
+  const r1ok = r2ok !== true ? (r2ok === null && ikuOk ? null : false)
+    : (termValid && termValid.length > 0 ? true : false);
+  return { r1ok, r2ok };
+}
+
+function monthDiff(fromYm, toYm) {
+  return (parseInt(toYm.slice(0,4)) - parseInt(fromYm.slice(0,4))) * 12 +
+         (parseInt(toYm.slice(4,6)) - parseInt(fromYm.slice(4,6)));
+}
+
+// ============================================================
+// 事業所ドロップダウン
+// ============================================================
+function renderFacilityDropdown(filter) {
+  const dd = document.getElementById('facility-dropdown');
+  const list = filter
+    ? allFacilities.filter(f => f.name.includes(filter))
+    : allFacilities;
+  if (list.length === 0) {
+    dd.innerHTML = '<div class="fac-option" style="color:#a0aec0">該当なし</div>';
+  } else {
+    dd.innerHTML = list.map(f => {
+      const ctx = getFacCtx(f.id);
+      const latestYm = Object.keys(ctx.monthData).sort().pop();
+      const sub = latestYm ? ymLabel(latestYm) : 'データなし';
+      return `<div class="fac-option" onclick="showFacility('${f.id}')">
+        🏥 ${esc(f.name)}
+        <span class="fac-status">${sub}</span>
+      </div>`;
+    }).join('');
+  }
+}
+function openFacilityDropdown() {
+  renderFacilityDropdown(document.getElementById('facility-search').value || '');
+  document.getElementById('facility-dropdown').classList.remove('hidden');
+}
+function closeFacilityDropdown() {
+  document.getElementById('facility-dropdown').classList.add('hidden');
+}
+function filterFacilityDropdown() {
+  const v = document.getElementById('facility-search').value;
+  renderFacilityDropdown(v);
+  document.getElementById('facility-dropdown').classList.remove('hidden');
+}
+function handleFacilitySearchKey(e) {
+  if (e.key === 'Escape') closeFacilityDropdown();
+}
+document.addEventListener('click', e => {
+  if (!e.target.closest('.facility-selector')) closeFacilityDropdown();
+});
+
+// ============================================================
+// GAS設定モーダル
+// ============================================================
+function showGasModal() {
+  document.getElementById('inp-gas-url').value = getGasUrl() === 'YOUR_GAS_URL_HERE' ? '' : getGasUrl();
+  document.getElementById('modal-gas').classList.remove('hidden');
+  setTimeout(() => document.getElementById('inp-gas-url').focus(), 100);
+}
+function closeGasModal() {
+  document.getElementById('modal-gas').classList.add('hidden');
+}
+async function saveGasUrl() {
+  const url = document.getElementById('inp-gas-url').value.trim();
+  if (!url || !url.startsWith('http')) { alert('正しいURLを入力してください'); return; }
+  localStorage.setItem('kango_gas_url', url);
+  closeGasModal();
+  await loadAllData();
+  renderDashboard();
+  renderFacilityDropdown();
+}
+
+// ============================================================
+// 組織マスタ（組織図20260531.xlsx より自動生成）
+// 看護小規模多機能型居宅介護 29事業所 + エリア長・職員メール
+// ============================================================
+const ORG_MASTER = [{"code":"0001347","name":"看多機かえりえ長野","area":"看護第1ｴﾘｱ","areaManager":{"name":"青木　雪枝","email":"yukie.aoki29.y@sashiite.com","role":"統括参与"},"staff":[{"name":"堀　茜","role":"統括参事","email":"akane.hori@yasashiite.com"},{"name":"小池　健太","role":"主任","email":"kenta.nishio86@yasashiite.com"},{"name":"藤井　菜穂子","role":"主任","email":"naoko.mitsui15@yasashiite.com"},{"name":"冨永　空美","role":"一般","email":"kumi.tominaga56@yasashiite.com"},{"name":"島嵜　龍士","role":"一般","email":"ryushi.shimazaki.038316@yasashiite.com"},{"name":"中島　栄子","role":"","email":"eiko.nakajima.027723@yasashiite.com"},{"name":"加藤　久","role":"","email":"hisashi.kato51@yasashiite.com"},{"name":"梅原　由美","role":"","email":"yumi.umehara81@yasashiite.com"},{"name":"藤沼　教子","role":"","email":"noriko.fujinuma.035022@yasashiite.com"},{"name":"内田　集子","role":"","email":"shuko.uchida.036065@yasashiite.com"},{"name":"青木　政彦","role":"","email":"masahiko.aoki.038543@yasashiite.com"},{"name":"岩堀　雅浩","role":"","email":"masahiro.iwahori.038558@yasashiite.com"},{"name":"青木　実枝","role":"","email":"mie.aoki.039011@yasashiite.com"}]},{"code":"0001325","name":"看多機かえりえ北青木","area":"看護第1ｴﾘｱ","areaManager":{"name":"青木　雪枝","email":"yukie.aoki29.y@sashiite.com","role":"統括参与"},"staff":[{"name":"久保田　麻理","role":"参事","email":"mari.kubota10@yasashiite.com"},{"name":"若林　直江","role":"主任","email":"naoe.wakabayashi.037505@yasashiite.com"},{"name":"塚原　恵","role":"主任","email":"megumi.tsukahara.037769@yasashiite.com"},{"name":"杉原　翔","role":"主任","email":"sho.sugihara.038217@yasashiite.com"},{"name":"小原　桃美","role":"一般","email":"momomi.kohara.037564@yasashiite.com"},{"name":"二瓶　文彦","role":"一般","email":"fumihiko.nihei.040143@yasashiite.com"},{"name":"佐藤　明美","role":"","email":"akemi.sato.037598@yasashiite.com"},{"name":"渡部　奈緒","role":"","email":"nao.watanabe.037687@yasashiite.com"},{"name":"斎藤　裕美","role":"","email":"hiromi.saito.037703@yasashiite.com"},{"name":"湯田　潤一","role":"","email":"junichi.yuda.037719@yasashiite.com"},{"name":"河合　洋一","role":"","email":"yoichi.kawai.038085@yasashiite.com"},{"name":"薄　千香","role":"","email":"chika.usuki.040648@yasashiite.com"}]},{"code":"0001317","name":"看多機かえりえ長岡","area":"看護第1ｴﾘｱ","areaManager":{"name":"青木　雪枝","email":"yukie.aoki29.y@sashiite.com","role":"統括参与"},"staff":[{"name":"柴原　里奈","role":"参事","email":"rina.shibahara.037019@yasashiite.com"},{"name":"荒木田　浩誠","role":"主任","email":"hironobu.arakida.038627@yasashiite.com"},{"name":"茨木　恵美子","role":"一般","email":"emiko.ibaraki.038445@yasashiite.com"},{"name":"大久保　美香","role":"一般","email":"mika.ookubo.039944@yasashiite.com"},{"name":"外山　奈穂子","role":"一般","email":"naoko.toyama.040535@yasashiite.com"},{"name":"今井　祐斗","role":"一般","email":"yuto.imai.040568@yasashiite.com"},{"name":"本地　安代","role":"","email":"yasuyo.motochi.040346@yasashiite.com"},{"name":"齊藤　俊文","role":"","email":"toshifumi.saito.040356@yasashiite.com"},{"name":"山村　望","role":"","email":"nozomi.yamamura.040368@yasashiite.com"},{"name":"渡辺　梨華子","role":"","email":"rikako.watanabe.040394@yasashiite.com"},{"name":"飯塚　遥","role":"","email":"haruka.iizuka.040629@yasashiite.com"},{"name":"小杉　晴香","role":"","email":"haruka.kosugi.040672@yasashiite.com"}]},{"code":"0001341","name":"看多機かえりえ大橋","area":"看護第2ｴﾘｱ","areaManager":{"name":"川北　志乃","email":"shino.kawakita95.y@sashiite.com","role":"参与"},"staff":[{"name":"原口　翼","role":"参事","email":"tsubasa.haraguchi79@yasashiite.com"},{"name":"小河　多佳代","role":"主任","email":"takayo.ogawa10@yasashiite.com"},{"name":"後町　夕羽","role":"主任","email":"yu.gocho.038253@yasashiite.com"},{"name":"ﾌｧﾝ　ﾃｨ　ｳﾞｧﾝ　ｱｲﾝ","role":"一般","email":"ain.fantexivuxan.036532@yasashiite.com"},{"name":"髙橋　優花","role":"一般","email":"yuka.takahashi.039507@yasashiite.com"},{"name":"坂本　優美","role":"","email":"yumi.sakamoto08@yasashiite.com"},{"name":"森　潤子","role":"","email":"junko.mori94@yasashiite.com"},{"name":"平野　浩吉","role":"","email":"kokichi.hirano87@yasashiite.com"},{"name":"木村　佳代子","role":"","email":"kayoko.kimura88@yasashiite.com"},{"name":"白石　聖潤","role":"","email":"sshiraishi034898@yasashiite.com"},{"name":"小林　美代子","role":"","email":"miyoko.kobayashi.036647@yasashiite.com"},{"name":"阿部　一真","role":"","email":"kazuma.abe.037645@yasashiite.com"},{"name":"国安　和浩","role":"","email":"kazuhiro.kuniyasu.039943@yasashiite.com"}]},{"code":"0001344","name":"看多機かえりえ用賀","area":"看護第2ｴﾘｱ","areaManager":{"name":"川北　志乃","email":"shino.kawakita95.y@sashiite.com","role":"参与"},"staff":[{"name":"高橋　歩","role":"参事","email":"ayumu.takahashi.025972@yasashiite.com"},{"name":"熊澤　里恵","role":"主任","email":"rie.kumazawa.037094@yasashiite.com"},{"name":"小林　史典","role":"主任","email":"fuminori.kobayashi.037741@yasashiite.com"},{"name":"井上　大輝","role":"主任","email":"daiki.inoue.039279@yasashiite.com"},{"name":"大竹　康文","role":"主事","email":"yasufumi.ootake.038768@yasashiite.com"},{"name":"ド　ホン　ハイン","role":"一般","email":"hain.dohon.036309@yasashiite.com"},{"name":"高山　孝子","role":"","email":"takako.takayama.019563@yasashiite.com"},{"name":"池畑　知咲","role":"","email":"chisaki.ikehata37@yasashiite.com"},{"name":"高山　エリザベス","role":"","email":"erizabesu.takayama39@yasashiite.com"},{"name":"任　兆清","role":"","email":"chosei.nin18@yasashiite.com"},{"name":"石垣　虹画","role":"","email":"kishigaki034604@yasashiite.com"},{"name":"小野　淳二","role":"","email":"jono034628@yasashiite.com"},{"name":"光永　素生","role":"","email":"motoki.mitsunaga.036448@yasashiite.com"},{"name":"米田　靖弘","role":"","email":"yasuhiro.yoneda.036921@yasashiite.com"}]},{"code":"0001330","name":"看多機かえりえ成城","area":"看護第2ｴﾘｱ","areaManager":{"name":"川北　志乃","email":"shino.kawakita95.y@sashiite.com","role":"参与"},"staff":[{"name":"上原　洵人","role":"参事","email":"nobuto.takahashi89@yasashiite.com"},{"name":"五十嵐　由利子","role":"主任","email":"yuriko.igarashi04@yasashiite.com"},{"name":"柴田　昭宏","role":"主任","email":"akihiro.shibata@yasashiite.com"},{"name":"鎌倉　令賀","role":"主事","email":"reika.kamakura62@yasashiite.com"},{"name":"ｳﾞｫ　ﾃｨ　ｽｱﾝ　ｼﾞｪﾑ","role":"一般","email":"jemu.vuxotexisuan.036538@yasashiite.com"},{"name":"ﾐ ﾔﾀﾅ　ﾓﾝ","role":"一般","email":"mon.miyadana.036575@yasashiite.com"},{"name":"酉田　法子","role":"","email":"noriko.torita.005643@yasashiite.com"},{"name":"柴田　テル子","role":"","email":"teruko.shibata.010454@yasashiite.com"},{"name":"菊地　智之","role":"","email":"tomoyuki.kikuchi.022383@yasashiite.com"},{"name":"鴨下　勝晃","role":"","email":"katsuaki.kamoshita.037030@yasashiite.com"},{"name":"日下　敏明","role":"","email":"toshiaki.kusaka.037191@yasashiite.com"},{"name":"坂本　和雄","role":"","email":"kazuo.sakamoto.037606@yasashiite.com"},{"name":"西村　恵美","role":"","email":"megumi.nishimura.039550@yasashiite.com"},{"name":"山部　麻由子","role":"","email":"mayuko.yamabe.039823@yasashiite.com"}]},{"code":"0001326","name":"看多機かえりえ給田","area":"看護第2ｴﾘｱ","areaManager":{"name":"川北　志乃","email":"shino.kawakita95.y@sashiite.com","role":"参与"},"staff":[{"name":"小松　周平","role":"参事","email":"shuhei.komatsu@yasashiite.com"},{"name":"稲岡　深穂","role":"主任","email":"miho.inaoka@yasashiite.com"},{"name":"渡邉　美穂","role":"主任","email":"miho.isobe@yasashiite.com"},{"name":"山川　史帆","role":"主任","email":"shiho.yamakawa.039798@yasashiite.com"},{"name":"小澤　正男","role":"一般","email":"mozawa034751@yasashiite.com"},{"name":"ｸﾞｴﾝ　ﾃィ　ﾌｫﾝ　ﾘﾝ","role":"一般","email":"fonrin.guentexi.036314@yasashiite.com"},{"name":"小倉　英里","role":"","email":"eri.ogura.017902@yasashiite.com"},{"name":"夏目　美佳","role":"","email":"mika.natsume.021300@yasashiite.com"},{"name":"今沢　良介","role":"","email":"ryosuke.imazawa.037498@yasashiite.com"},{"name":"坂田　善弘","role":"","email":"yoshihiro.sakata.037713@yasashiite.com"},{"name":"武田　未岐","role":"","email":"miki.takeda.038062@yasashiite.com"},{"name":"熊王　城二","role":"","email":"joji.kumao.038418@yasashiite.com"},{"name":"長島　田鶴子","role":"","email":"tazuko.nagashima.038421@yasashiite.com"}]},{"code":"0001319","name":"看多機かえりえ上北沢","area":"看護第2ｴﾘｱ","areaManager":{"name":"川北　志乃","email":"shino.kawakita95.y@sashiite.com","role":"参与"},"staff":[{"name":"中村　豊","role":"参事","email":"yutaka.nakamura.y@sashiite.com"},{"name":"旭　恵","role":"主任","email":"megumi.asahi33@yasashiite.com"},{"name":"水品　圭市","role":"主任","email":"keiichi.mizushina21@yasashiite.com"},{"name":"菅原　理絵","role":"一般","email":"rsugawara034990@yasashiite.com"},{"name":"ﾀｲ　ﾚ　ｸﾞｴﾝ　ﾌｫﾝ","role":"一般","email":"fon.taireguen.036530@yasashiite.com"},{"name":"竹野　栞","role":"一般","email":"shiori.takeno.040052@yasashiite.com"},{"name":"片岡　昭彦","role":"","email":"akihiko.kataoka09@yasashiite.com"},{"name":"鳥居　香奈子","role":"","email":"kanako.torii.024184@yasashiite.com"},{"name":"笠岡　智子","role":"","email":"satoko.kasaoka.032591@yasashiite.com"},{"name":"黒柳　周司","role":"","email":"shuji.kuroyanagi.039576@yasashiite.com"},{"name":"ミ　ミ　ウィン　コ","role":"","email":"miuxinko.mi.039976@yasashiite.com"},{"name":"新井　健二","role":"","email":"kenji.arai.040476@yasashiite.com"},{"name":"大久保　清美","role":"","email":"kiyomi.ookubo.040507@yasashiite.com"}]},{"code":"0001337","name":"看多機かえりえ上石神井","area":"看護第3ｴﾘｱ","areaManager":{"name":"田辺　由佳","email":"yuka.tanabe37.y@sashiite.com","role":"統括参与"},"staff":[{"name":"猪口　恭平","role":"統括参事","email":"kyohei.yamaguchi89@yasashiite.com"},{"name":"牛越　莉穂","role":"主任","email":"riho.matsumoto07@yasashiite.com"},{"name":"前田　貢","role":"主任","email":"mitsugu.maeda52@yasashiite.com"},{"name":"中澤　裕夢","role":"一般","email":"hiromu.nakazawa53@yasashiite.com"},{"name":"呉竹　知恵","role":"一般","email":"tomoe.kuretake54@yasashiite.com"},{"name":"小林　万里","role":"一般","email":"mari.kobayashi.035692@yasashiite.com"},{"name":"ﾎｱﾝ　ﾃｨ　ｽﾞﾝ","role":"一般","email":"zun.hoantexi.036536@yasashiite.com"},{"name":"若林　大樹","role":"一般","email":"daiki.wakabayashi.039222@yasashiite.com"},{"name":"増田　一也","role":"","email":"kazuya.masuda48@yasashiite.com"},{"name":"小野寺　慎","role":"","email":"makoto.onodera01@yasashiite.com"},{"name":"酒井　和明","role":"","email":"kazuaki.sakai27@yasashiite.com"},{"name":"岩崎　恵子","role":"","email":"keiko.iwasaki93@yasashiite.com"},{"name":"高道　直子","role":"","email":"naoko.takamichi.039443@yasashiite.com"},{"name":"大竹　由加子","role":"","email":"yukako.ootake.039740@yasashiite.com"},{"name":"岩戸　美保子","role":"","email":"mihoko.iwato.040473@yasashiite.com"},{"name":"北村　愛里","role":"","email":"airi.kitamura.040632@yasashiite.com"}]},{"code":"0001343","name":"看多機かえりえ平尾","area":"看護第3ｴﾘｱ","areaManager":{"name":"田辺　由佳","email":"yuka.tanabe37.y@sashiite.com","role":"統括参与"},"staff":[{"name":"清水　朗文","role":"参事","email":"akifumi.shimizu99@yasashiite.com"},{"name":"須賀　織栄","role":"主任","email":"orie.suga50@yasashiite.com"},{"name":"内山　希","role":"主任","email":"nozomi.uchiyama69@yasashiite.com"},{"name":"ﾏ　ﾃｨ　ﾀｲﾝ　ﾏｲ","role":"一般","email":"mai.matexitain.036531@yasashiite.com"},{"name":"儀間　智子","role":"一般","email":"tomoko.gima.040531@yasashiite.com"},{"name":"白河　育子","role":"","email":"ikuko.shirakawa.024248@yasashiite.com"},{"name":"冨田　順子","role":"","email":"junko.tomita.027624@yasashiite.com"},{"name":"國頭　美好紀","role":"","email":"mizuki.sueyoshi37@yasashiite.com"},{"name":"徐　京秀","role":"","email":"kso034539@yasashiite.com"},{"name":"佐々木　俊和","role":"","email":"tsasaki034936@yasashiite.com"},{"name":"出口　洋子","role":"","email":"youko.deguchi.035710@yasashiite.com"},{"name":"大和田　瑞","role":"","email":"mizuki.oowada.037817@yasashiite.com"},{"name":"三宅　智美","role":"","email":"tomomi.miyake.038004@yasashiite.com"},{"name":"白井　由美子","role":"","email":"yumiko.shirai.039355@yasashiite.com"},{"name":"二藤部　瑞恵","role":"","email":"mizue.nitobe.039511@yasashiite.com"},{"name":"坂本　早苗","role":"","email":"sanae.sakamoto.039812@yasashiite.com"},{"name":"森　良廣","role":"","email":"yoshihiro.mori.040191@yasashiite.com"}]},{"code":"0001321","name":"看多機かえりえ荏田西","area":"看護第3ｴﾘｱ","areaManager":{"name":"田辺　由佳","email":"yuka.tanabe37.y@sashiite.com","role":"統括参与"},"staff":[{"name":"岩本　嘉見磨","role":"参事","email":"karuma.iwamoto36@yasashiite.com"},{"name":"安食　知香","role":"主任","email":"chika.ajiki@yasashiite.com"},{"name":"ﾆﾝ　ﾆﾝｱｳﾝ","role":"主任","email":"hnin.hnin.aung62@yasashiite.com"},{"name":"重松　美佳","role":"一般","email":"mika.shigematsu79@yasashiite.com"},{"name":"ｳｴ- ﾅｲﾝ　ﾋﾟｮ-","role":"一般","email":"pyo.uenain.039022@yasashiite.com"},{"name":"金築　喜昭","role":"一般","email":"yoshiaki.kanetsuki.039138@yasashiite.com"},{"name":"五十嵐　早苗","role":"","email":"sanae.igarashi.005893@yasashiite.com"},{"name":"青島　幸江","role":"","email":"sachie.aoshima.039116@yasashiite.com"},{"name":"鈴木　良治","role":"","email":"yoshiharu.suzuki.039239@yasashiite.com"},{"name":"吉岡　愛美","role":"","email":"manami.yoshioka.039747@yasashiite.com"},{"name":"小牟禮　広美","role":"","email":"hiromi.komure.039938@yasashiite.com"},{"name":"毛利　由衣","role":"","email":"yui.mouri.040251@yasashiite.com"}]},{"code":"0001331","name":"看多機かえりえ南生田","area":"看護第3ｴﾘｱ","areaManager":{"name":"田辺　由佳","email":"yuka.tanabe37.y@sashiite.com","role":"統括参与"},"staff":[{"name":"石川　正泰","role":"統括参事","email":"masayasu.ishikawa@yasashiite.com"},{"name":"小林　祐介","role":"参事","email":"yusuke.kobayashi97@yasashiite.com"},{"name":"ﾃｯｼｰ　ｳｨﾝ","role":"主任","email":"htet.yi.win66@yasashiite.com"},{"name":"神野　理紗","role":"主任","email":"risa.jinno76@yasashiite.com"},{"name":"黒沢　琢磨","role":"一般","email":"takuma.kurosawa.035760@yasashiite.com"},{"name":"スエー　ゼインモー","role":"一般","email":"zein.mo.sue.040275@yasashiite.com"},{"name":"佐野　浩","role":"","email":"hsano035009@yasashiite.com"},{"name":"荷山　由紀","role":"","email":"ykayama035400@yasashiite.com"},{"name":"樋浦　かおる","role":"","email":"khiura035419@yasashiite.com"},{"name":"杉浦　祐子","role":"","email":"yuko.sugiura.036883@yasashiite.com"},{"name":"森田　圭祐","role":"","email":"keisuke.morita.037501@yasashiite.com"},{"name":"八木　眞吾","role":"","email":"shingo.yagi.037949@yasashiite.com"},{"name":"荒野　麻美","role":"","email":"mami.arano.039415@yasashiite.com"},{"name":"川口　さおり","role":"","email":"saori.kawaguchi.040633@yasashiite.com"},{"name":"中台　聡美","role":"","email":"satomi.nakadai.040634@yasashiite.com"},{"name":"藤田　憲一","role":"","email":"kenichi.fujita.040665@yasashiite.com"}]},{"code":"0001339","name":"看多機かえりえ河原塚","area":"看護第4ｴﾘｱ","areaManager":{"name":"高橋　佑輔","email":"yusuke.takahashi.y@sashiite.com","role":"統括参与"},"staff":[{"name":"奥窪　邦彬","role":"参事","email":"kuniaki.okukubo28@yasashiite.com"},{"name":"安孫子　愛美","role":"参事","email":"manami.abiko@yasashiite.com"},{"name":"高橋　悠人","role":"主任","email":"yuto.takahashi90@yasashiite.com"},{"name":"ｱﾆﾀﾞ ｼﾞｬﾔ　ﾙﾝﾊﾟﾝ ｶﾞｵﾙ","role":"一般","email":"jayarumpangaoru.anida.040369@yasashiite.com"},{"name":"山下　達","role":"","email":"tatsuru.yamashita72@yasashiite.com"},{"name":"斉藤　あけみ","role":"","email":"akemi.saito19@yasashiite.com"},{"name":"荷川取　智美","role":"","email":"tomomi.nikawadori18@yasashiite.com"},{"name":"大黒　隆","role":"","email":"takashi.daikoku86@yasashiite.com"},{"name":"秦野　佐知枝","role":"","email":"sachie.hatano.035609@yasashiite.com"},{"name":"永山　綾子","role":"","email":"ayako.nagayama.037482@yasashiite.com"},{"name":"奥田　彩","role":"","email":"aya.okuda.037712@yasashiite.com"},{"name":"伊藤　京美","role":"","email":"kyomi.ito.038177@yasashiite.com"},{"name":"田中　芽久実","role":"","email":"megumi.tanaka.039518@yasashiite.com"}]},{"code":"0001345","name":"看多機かえりえ八柱","area":"看護第4ｴﾘｱ","areaManager":{"name":"高橋　佑輔","email":"yusuke.takahashi.y@sashiite.com","role":"統括参与"},"staff":[{"name":"多田　邦洋","role":"参事","email":"kunihiro.tada66@yasashiite.com"},{"name":"菅　香","role":"主任","email":"kaori.kan14@yasashiite.com"},{"name":"青木　智美","role":"主任","email":"taoki034513@yasashiite.com"},{"name":"木島　遼太","role":"主任","email":"rkishima034762@yasashiite.com"},{"name":"平間　恵里香","role":"主任","email":"ehirama034777@yasashiite.com"},{"name":"梅津　英津子","role":"主事","email":"etsuko.umetsu83@yasashiite.com"},{"name":"ｳﾞｧﾆｼｭﾘﾔﾝ　ﾌﾟﾄｩﾘ ｾﾞﾌﾞｱ","role":"一般","email":"juriyamputoxurizebua.vuxani.040364@yasashiite.com"},{"name":"大友　雅雄","role":"","email":"masao.ootomo54@yasashiite.com"},{"name":"鈴木　直江","role":"","email":"naoe.suzuki90@yasashiite.com"},{"name":"山口　利夫","role":"","email":"toshio.yamaguchi93@yasashiite.com"},{"name":"吉田　格","role":"","email":"itaru.yoshida.036962@yasashiite.com"},{"name":"柴田　みち子","role":"","email":"michiko.shibata.037145@yasashiite.com"},{"name":"川北　会美","role":"","email":"emi.kawakita.037956@yasashiite.com"},{"name":"倉田　利枝","role":"","email":"toshie.kurata.038212@yasashiite.com"},{"name":"則常　智宏","role":"","email":"tomohiro.noritsune.039574@yasashiite.com"}]},{"code":"0001328","name":"看多機かえりえ南佐津間","area":"看護第4ｴﾘｱ","areaManager":{"name":"高橋　佑輔","email":"yusuke.takahashi.y@sashiite.com","role":"統括参与"},"staff":[{"name":"藤原　正仁","role":"統括参事","email":"masahito.fujiwara24@yasashiite.com"},{"name":"河邉　理恵","role":"主任","email":"rie.kawabe86@yasashiite.com"},{"name":"澤野　雄","role":"主任","email":"yu.sawano60@yasashiite.com"},{"name":"田邊　芳隆","role":"主任","email":"yoshitaka.tanabe.036496@yasashiite.com"},{"name":"宇賀　佑里子","role":"一般","email":"yuriko.uga.024006@yasashiite.com"},{"name":"鈴木　あゆ美","role":"一般","email":"ayumi.suzuki.040140@yasashiite.com"},{"name":"ｼﾌｧ　ｱﾙﾀﾞﾝﾅ ﾚｽﾜﾘ","role":"一般","email":"arudannaresuwari.shifa.040361@yasashiite.com"},{"name":"小川　五月","role":"","email":"satsuki.ogawa.037395@yasashiite.com"},{"name":"佐々木　薫里","role":"","email":"kaori.sasaki.037942@yasashiite.com"},{"name":"並木　友宏","role":"","email":"tomohiro.namiki.039883@yasashiite.com"},{"name":"松永　茂子","role":"","email":"shigeko.matsunaga.040345@yasashiite.com"},{"name":"吉岡　美智子","role":"","email":"michiko.yoshioka.040509@yasashiite.com"}]},{"code":"0001318","name":"看多機かえりえ結城","area":"看護第4ｴﾘｱ","areaManager":{"name":"高橋　佑輔","email":"yusuke.takahashi.y@sashiite.com","role":"統括参与"},"staff":[{"name":"石川　瞳","role":"参事","email":"hitomi.ioka.036387@yasashiite.com"},{"name":"角田　美希恵","role":"主任","email":"mikie.tsunoda.017821@yasashiite.com"},{"name":"関根　芳明","role":"主任","email":"yoshiaki.sekine.037675@yasashiite.com"},{"name":"倉益　裕子","role":"一般","email":"yuko.kuramasu.037511@yasashiite.com"},{"name":"富岡　郁実","role":"","email":"ikumi.tomioka@yasashiite.com"},{"name":"馬場　悠喜","role":"","email":"yuki.baba.029453@yasashiite.com"},{"name":"稲見　美穂","role":"","email":"miho.inami.033011@yasashiite.com"},{"name":"岩井　奏歌","role":"","email":"kanata.iwai.039979@yasashiite.com"},{"name":"西東　雅弘","role":"","email":"masahiro.saito.039980@yasashiite.com"},{"name":"増田　恵子","role":"","email":"keiko.masuda.040106@yasashiite.com"},{"name":"ﾌｧﾗﾏﾝﾄﾞ　ｱﾝﾅ","role":"","email":"anna.faramando.040228@yasashiite.com"}]},{"code":"0001334","name":"看多機かえりえ竹ノ塚","area":"看護第5ｴﾘｱ","areaManager":{"name":"及川　真由美","email":"mayumi.oikawa.y@sashiite.com","role":"統括参与"},"staff":[{"name":"青山　卓也","role":"統括参事","email":"takuya.aoyama@yasashiite.com"},{"name":"永里　巴砂","role":"主任","email":"hazuna.ito59@yasashiite.com"},{"name":"上之原　一生","role":"主任","email":"issei.uenohara.035819@yasashiite.com"},{"name":"小林　由美","role":"一般","email":"yumi.kobayashi.036146@yasashiite.com"},{"name":"カオ　ティ　キム　リエン","role":"一般","email":"kimurien.kaotexi.036307@yasashiite.com"},{"name":"山田　英子","role":"一般","email":"eiko.yamada.039336@yasashiite.com"},{"name":"清水　翔太","role":"一般","email":"shota.shimizu.040064@yasashiite.com"},{"name":"富井　清美","role":"","email":"kiyomi.tomii88@yasashiite.com"},{"name":"指首　勝昭","role":"","email":"katsuaki.sashikubi.037189@yasashiite.com"},{"name":"金子　朋代","role":"","email":"tomoyo.kaneko.039832@yasashiite.com"},{"name":"齊藤　大也","role":"","email":"hiroya.saito.040285@yasashiite.com"},{"name":"高山　暁子","role":"","email":"akiko.takayama.040293@yasashiite.com"},{"name":"海老原　一行","role":"","email":"kazuyuki.ebihara.040326@yasashiite.com"},{"name":"高橋　浩司","role":"","email":"koji.takahashi.040332@yasashiite.com"},{"name":"大野　美雪","role":"","email":"miyuki.oono.040407@yasashiite.com"}]},{"code":"0001342","name":"看多機かえりえ東大宮","area":"看護第5ｴﾘｱ","areaManager":{"name":"及川　真由美","email":"mayumi.oikawa.y@sashiite.com","role":"統括参与"},"staff":[{"name":"竹口　雅昭","role":"参事","email":"masaaki.takeguchi77@yasashiite.com"},{"name":"菊池　千代子","role":"主任","email":"chiyoko.kikuchi89@yasashiite.com"},{"name":"西川　大樹","role":"主任","email":"taiki.nishikawa86@yasashiite.com"},{"name":"新井　俊介","role":"一般","email":"shunsuke.arai75@yasashiite.com"},{"name":"齋藤　真一","role":"一般","email":"shinichi.saito.040042@yasashiite.com"},{"name":"ｱﾆｻ ｱｸﾞﾝ　ｲｻ ﾌﾞﾗｼﾞﾄﾉ","role":"一般","email":"agunisaburajitono.anisa.040363@yasashiite.com"},{"name":"子島　幹子","role":"","email":"motoko.nejima64@yasashiite.com"},{"name":"本寺　郁美","role":"","email":"ikumi.kondo78@yasashiite.com"},{"name":"吉岡　真理子","role":"","email":"mariko.yoshioka68@yasashiite.com"},{"name":"武藤　順子","role":"","email":"junko.muto12@yasashiite.com"},{"name":"村尾　恵美","role":"","email":"mmurao035329@yasashiite.com"},{"name":"平山　貴代子","role":"","email":"kiyoko.hirayama.037640@yasashiite.com"},{"name":"木下　千恵","role":"","email":"chie.kinoshita.038181@yasashiite.com"},{"name":"沖田　和之","role":"","email":"kazuyuki.okita.038384@yasashiite.com"},{"name":"福井　麻子","role":"","email":"asako.fukui.039410@yasashiite.com"},{"name":"馮　寧寧","role":"","email":"neinei.hyo.039992@yasashiite.com"}]},{"code":"0001333","name":"看多機かえりえ奈良町","area":"看護第5ｴﾘｱ","areaManager":{"name":"及川　真由美","email":"mayumi.oikawa.y@sashiite.com","role":"統括参与"},"staff":[{"name":"川島　翔","role":"参事","email":"sho.kawashima97@yasashiite.com"},{"name":"本橋　ひろみ","role":"主任","email":"hiromi.tsuri13@yasashiite.com"},{"name":"鈴木　里美","role":"主任","email":"ssuzuki035426@yasashiite.com"},{"name":"岸　広子","role":"一般","email":"hiroko.kishi75@yasashiite.com"},{"name":"山根　美佳","role":"一般","email":"mika.yamane.035281@yasashiite.com"},{"name":"高橋　倫子","role":"一般","email":"michiko.takahashi.035886@yasashiite.com"},{"name":"ﾃﾞｨｱﾆﾀ　ｳﾗﾝﾀﾞﾘ","role":"一般","email":"urandari.dhianita.040362@yasashiite.com"},{"name":"服部　久美子","role":"","email":"kumiko.hattori.024130@yasashiite.com"},{"name":"水野　由貴","role":"","email":"ymizuno029349@yasashiite.com"},{"name":"神尾　恭平","role":"","email":"kyohei.kamio.035906@yasashiite.com"},{"name":"富樫　貴美子","role":"","email":"kimiko.togashi.036518@yasashiite.com"},{"name":"阿波谷　志保","role":"","email":"shiho.awatani.038263@yasashiite.com"},{"name":"舘川　裕一","role":"","email":"yuichi.tatekawa.038413@yasashiite.com"},{"name":"室田　正","role":"","email":"tadashi.murota.039772@yasashiite.com"},{"name":"酒井　公美","role":"","email":"kumi.sakai.040358@yasashiite.com"},{"name":"矢澤　勇","role":"","email":"isamu.yazawa.040412@yasashiite.com"}]},{"code":"0001329","name":"看多機かえりえ南大塚","area":"看護第5ｴﾘｱ","areaManager":{"name":"及川　真由美","email":"mayumi.oikawa.y@sashiite.com","role":"統括参与"},"staff":[{"name":"岡田　一馬","role":"参事","email":"kokada034948@yasashiite.com"},{"name":"吉原　成美","role":"主任","email":"narumi.yoshihara08@yasashiite.com"},{"name":"高安　佑治","role":"主任","email":"yuji.takayasu.036121@yasashiite.com"},{"name":"今井　天元","role":"一般","email":"timai035138@yasashiite.com"},{"name":"ライ　ハナ","role":"一般","email":"hana.rai.040360@yasashiite.com"},{"name":"竹内　博史","role":"一般","email":"hiroshi.takeuchi.040477@yasashiite.com"},{"name":"森田　弘子","role":"","email":"hiroko.morita.031722@yasashiite.com"},{"name":"渋谷　賀子","role":"","email":"noriko.shibuya.036826@yasashiite.com"},{"name":"川口　美紀","role":"","email":"miki.kawaguchi.037375@yasashiite.com"},{"name":"榊　留美子","role":"","email":"rumiko.sakaki.037732@yasashiite.com"},{"name":"本多　幸和","role":"","email":"masakazu.honda.038568@yasashiite.com"},{"name":"岡本　美穂","role":"","email":"miho.okamoto.038757@yasashiite.com"},{"name":"菊池　政勝","role":"","email":"masakatsu.kikuchi.038898@yasashiite.com"},{"name":"森　さゆり","role":"","email":"sayuri.mori.039171@yasashiite.com"},{"name":"髙橋　知恵美","role":"","email":"chiemi.takahashi.039830@yasashiite.com"},{"name":"北村　礼子","role":"","email":"reiko.kitamura.040189@yasashiite.com"},{"name":"安楽　智子","role":"","email":"tomoko.anraku.040313@yasashiite.com"}]},{"code":"0001340","name":"看多機かえりえ西明石","area":"看護第6ｴﾘｱ","areaManager":null,"staff":[{"name":"森　秀作","role":"参事","email":"shuusaku.mori@yasashiite.com"},{"name":"土岐　敦","role":"主任","email":"atsushi.toki72@yasashiite.com"},{"name":"渡邉　義希","role":"主任","email":"yoshiki.watanabe.037107@yasashiite.com"},{"name":"奥田　明史","role":"一般","email":"aokuda035489@yasashiite.com"},{"name":"伊東　奨之","role":"一般","email":"shono.ito.039304@yasashiite.com"},{"name":"ﾛｼﾝﾀ　ｻﾘﾄｩｱ","role":"一般","email":"saritoxuaparudede.roshinta.039966@yasashiite.com"},{"name":"松本　ヒロミ","role":"","email":"hiromi.matsumoto36@yasashiite.com"},{"name":"有村　晶子","role":"","email":"shoko.arimura45@yasashiite.com"},{"name":"根木　誠","role":"","email":"mneki030170@yasashiite.com"},{"name":"堀　俊輔","role":"","email":"shunsuke.hori.036351@yasashiite.com"},{"name":"坂井　奈央","role":"","email":"nao.sakai.036446@yasashiite.com"},{"name":"中田　ゆかり","role":"","email":"yukari.nakata.038204@yasashiite.com"},{"name":"益田　和紀","role":"","email":"kazuki.masuda.038723@yasashiite.com"},{"name":"松浦　はるみ","role":"","email":"harumi.matsuura.039062@yasashiite.com"},{"name":"松野　麻紀","role":"","email":"maki.matsuno.039389@yasashiite.com"}]},{"code":"0001346","name":"看多機かえりえ東灘","area":"看護第6ｴﾘｱ","areaManager":null,"staff":[{"name":"サトリア　ハプラブ","role":"参事","email":"hapurabu.satoria.036035@yasashiite.com"},{"name":"坊野　泰啓","role":"主任","email":"yasuhiro.bono19@yasashiite.com"},{"name":"前田　航兵","role":"主任","email":"kouhei.maeda.036805@yasashiite.com"},{"name":"明石　美穂子","role":"一般","email":"mihoko.nagahama00@yasashiite.com"},{"name":"井筒　聡","role":"一般","email":"satoshi.izutsu.038559@yasashiite.com"},{"name":"神田　真緒","role":"一般","email":"mao.kanda.038982@yasashiite.com"},{"name":"ｲｻﾍﾞﾝﾅ　ｱﾙｳﾞｨｴﾗ","role":"一般","email":"aruvuxieratamuina.isabenna.039962@yasashiite.com"},{"name":"ｻﾌｧ　ｻﾙｻﾋﾞﾗ","role":"一般","email":"sarusabira.safa.039969@yasashiite.com"},{"name":"中野　美希","role":"","email":"miki.nakano85@yasashiite.com"},{"name":"園田　千鶴","role":"","email":"chizuru.sonoda55@yasashiite.com"},{"name":"河地　恵理","role":"","email":"eri.kawachi.036350@yasashiite.com"},{"name":"里原　美由起","role":"","email":"miyuki.satohara.037313@yasashiite.com"},{"name":"影井　由佳","role":"","email":"yuka.kagei.037626@yasashiite.com"},{"name":"橋本　邦子","role":"","email":"kuniko.hashimoto.037627@yasashiite.com"},{"name":"谷　安紀子","role":"","email":"akiko.tani.037915@yasashiite.com"},{"name":"河野　梨津子","role":"","email":"ritsuko.kawano.037924@yasashiite.com"},{"name":"久田　茂子","role":"","email":"hisako.hisada.038598@yasashiite.com"},{"name":"今井　紗季","role":"","email":"saki.imai.038611@yasashiite.com"},{"name":"安福　元章","role":"","email":"motoaki.yasufuku.039432@yasashiite.com"},{"name":"浜　尚子","role":"","email":"naoko.hama.040674@yasashiite.com"}]},{"code":"0001338","name":"看多機かえりえ楠","area":"看護第6ｴﾘｱ","areaManager":null,"staff":[{"name":"渋谷　友紀","role":"参事","email":"yuki.shibuya80@yasashiite.com"},{"name":"後藤　千秋","role":"主任","email":"chiaki.goto.038056@yasashiite.com"},{"name":"ﾗﾋﾟﾙ　ﾍｲｾﾞﾙ ｳﾞｧﾆｱ","role":"一般","email":"heizeruvuxaniamisoresu.rapiru.037894@yasashiite.com"},{"name":"阿部　拓未","role":"一般","email":"takumi.abe.040566@yasashiite.com"},{"name":"宮原　由香","role":"","email":"yuka.miyahara16@yasashiite.com"},{"name":"中原　幸恵","role":"","email":"yukie.nakahara68@yasashiite.com"},{"name":"前平　豊","role":"","email":"yutaka.maehira61@yasashiite.com"},{"name":"井口　加奈子","role":"","email":"kanako.iguchi14@yasashiite.com"},{"name":"饒波　正明","role":"","email":"masaaki.noha.033296@yasashiite.com"},{"name":"山本　直子","role":"","email":"naoko.yamamoto.033516@yasashiite.com"},{"name":"小田　茂男","role":"","email":"shigeo.oda89@yasashiite.com"},{"name":"小早川　幸子","role":"","email":"sachiko.kobayakawa.038973@yasashiite.com"},{"name":"安藤　静香","role":"","email":"shizuka.ando.039095@yasashiite.com"},{"name":"林　直美","role":"","email":"naomi.hayashi.040352@yasashiite.com"}]},{"code":"0001332","name":"看多機かえりえ伊川谷有瀬","area":"看護第6ｴﾘｱ","areaManager":null,"staff":[{"name":"鄭　在容","role":"参事","email":"jeyon.jon99@yasashiite.com"},{"name":"中道　聡","role":"主任","email":"satoru.nakamichi47@yasashiite.com"},{"name":"今川　大幹","role":"一般","email":"daiki.imagawa15@yasashiite.com"},{"name":"森重　良","role":"一般","email":"ryo.morishige.039315@yasashiite.com"},{"name":"ﾇﾙ　ｲﾝﾀﾝｻﾌｨﾗ","role":"一般","email":"intansafira.nuru.039970@yasashiite.com"},{"name":"井上　佳津世","role":"","email":"kazuyo.inoue47@yasashiite.com"},{"name":"石塚　紀子","role":"","email":"noriko.ishizuka.033098@yasashiite.com"},{"name":"中嶋　一美","role":"","email":"kazumi.nakajima.035814@yasashiite.com"},{"name":"郷原　孝","role":"","email":"takashi.gohara.036746@yasashiite.com"},{"name":"牧野　樹惟","role":"","email":"jui.yoshimatsu.037327@yasashiite.com"},{"name":"橋本　和恵","role":"","email":"kazue.hashimoto.037500@yasashiite.com"},{"name":"笹谷　美樹","role":"","email":"miki.sasatani.039852@yasashiite.com"}]},{"code":"0001323","name":"看多機かえりえ加古川尾上","area":"看護第6ｴﾘｱ","areaManager":null,"staff":[{"name":"佐々木　洋太","role":"統括参事","email":"youta.sasaki@yasashiite.com"},{"name":"北岡　いずみ","role":"参事","email":"izumi.kitaoka@yasashiite.com"},{"name":"越智　勇貴","role":"主任","email":"yuki.ochi70@yasashiite.com"},{"name":"小田垣　直美","role":"主任","email":"naomi.odagaki52@yasashiite.com"},{"name":"前田　直樹","role":"主任","email":"naoki.maeda.039219@yasashiite.com"},{"name":"ｱﾕ　ｱﾙﾃﾞｨﾆﾝｼｰ","role":"一般","email":"arudhininshi.ayu.039968@yasashiite.com"},{"name":"山岡　愛佳","role":"一般","email":"aika.yamaoka.040301@yasashiite.com"},{"name":"熊谷　友紀","role":"","email":"yuki.kumagai.038117@yasashiite.com"},{"name":"鈴木　香理","role":"","email":"kaori.suzuki.038696@yasashiite.com"},{"name":"稲岡　範子","role":"","email":"noriko.inaoka.039357@yasashiite.com"},{"name":"山本　優子","role":"","email":"yuko.yamamoto.039391@yasashiite.com"},{"name":"前原　嘉寿美","role":"","email":"kazumi.maehara.040062@yasashiite.com"},{"name":"藤田　玲侍","role":"","email":"reiji.fujita.040270@yasashiite.com"}]},{"code":"0001320","name":"看多機かえりえ万成西町","area":"看護第7ｴﾘｱ","areaManager":{"name":"大吉　聖子","email":"seiko.ooyoshi60.y@sashiite.com","role":"統括参与"},"staff":[{"name":"仲宗根　悠","role":"参事","email":"haruka.nakasone39@yasashiite.com"},{"name":"柳井　勇介","role":"主任","email":"yusuke.yanai.035588@yasashiite.com"},{"name":"森　栄一郎","role":"主任","email":"eiichiro.mori.038868@yasashiite.com"},{"name":"塚本　祥子","role":"一般","email":"shoko.tsukamoto.039110@yasashiite.com"},{"name":"柴原　雄介","role":"一般","email":"yusuke.shibahara.039575@yasashiite.com"},{"name":"二宮　弘子","role":"一般","email":"hiroko.ninomiya.040045@yasashiite.com"},{"name":"小橋　誠","role":"","email":"makoto.kobashi.039083@yasashiite.com"},{"name":"森　友葉","role":"","email":"tomoha.mori.039513@yasashiite.com"},{"name":"角　和也","role":"","email":"kazuya.sumi.039994@yasashiite.com"},{"name":"林　久美","role":"","email":"kumi.hayashi.040288@yasashiite.com"},{"name":"三宅　優花","role":"","email":"yuka.miyake.040314@yasashiite.com"},{"name":"薗田　聖子","role":"","email":"seiko.sonoda.040402@yasashiite.com"},{"name":"鳥居　至恩","role":"","email":"shion.torii.040444@yasashiite.com"}]},{"code":"0001327","name":"看多機かえりえ中津","area":"看護第7ｴﾘｱ","areaManager":{"name":"大吉　聖子","email":"seiko.ooyoshi60.y@sashiite.com","role":"統括参与"},"staff":[{"name":"古江　佳織","role":"参事","email":"kaori.furue.036946@yasashiite.com"},{"name":"林田　美由紀","role":"主任","email":"miyuki.hayashida76@yasashiite.com"},{"name":"川端　佳央梨","role":"一般","email":"kaori.kawabata.038936@yasashiite.com"},{"name":"早瀬　良樹","role":"一般","email":"yoshiki.hayase.040033@yasashiite.com"},{"name":"清水　愛","role":"","email":"ai.shimizu.037237@yasashiite.com"},{"name":"山本　佳枝","role":"","email":"yoshie.yamamoto.038044@yasashiite.com"},{"name":"大石　圭介","role":"","email":"keisuke.ooishi.038813@yasashiite.com"},{"name":"元吉　郁子","role":"","email":"ikuko.motoyoshi.038900@yasashiite.com"},{"name":"川崎　幸代","role":"","email":"sachiyo.kawasaki.038967@yasashiite.com"},{"name":"宮本　富貴子","role":"","email":"fukiko.miyamoto.038974@yasashiite.com"},{"name":"小笠　恒大","role":"","email":"kota.ogasa.039096@yasashiite.com"},{"name":"片山　実樹","role":"","email":"miki.katayama.040271@yasashiite.com"},{"name":"福永　沙希","role":"","email":"saki.fukunaga.040446@yasashiite.com"}]},{"code":"0001324","name":"看多機かえりえ鶴崎","area":"看護第7ｴﾘｱ","areaManager":{"name":"大吉　聖子","email":"seiko.ooyoshi60.y@sashiite.com","role":"統括参与"},"staff":[{"name":"大吉　敬太","role":"参事","email":"keita.ooyoshi.037978@yasashiite.com"},{"name":"武吉　友美","role":"主任","email":"tomomi.takeyoshi.037896@yasashiite.com"},{"name":"湯口　明日香","role":"一般","email":"asuka.yuguchi.039319@yasashiite.com"},{"name":"甲斐　好彰","role":"一般","email":"yoshiaki.kai.039455@yasashiite.com"},{"name":"高見　洋平","role":"一般","email":"youhei.takami.039959@yasashiite.com"},{"name":"津曲　杏菜","role":"","email":"anna.tsumagari.037303@yasashiite.com"},{"name":"阿部　凌輔","role":"","email":"ryosuke.abe.038049@yasashiite.com"},{"name":"江藤　智恵","role":"","email":"tomoe.eto.038089@yasashiite.com"},{"name":"安東　優香","role":"","email":"yuka.ando.038561@yasashiite.com"},{"name":"広岡　優奈","role":"","email":"yuna.hirooka.040067@yasashiite.com"},{"name":"後藤　あゆみ","role":"","email":"ayumi.goto.040108@yasashiite.com"},{"name":"井上　香織","role":"","email":"kaori.inoue.040131@yasashiite.com"},{"name":"竹野　歩","role":"","email":"ayumi.takeno.040180@yasashiite.com"},{"name":"佐々木　果優","role":"","email":"miyu.sasaki.040247@yasashiite.com"},{"name":"小坂　純未","role":"","email":"ayami.kosaka.040355@yasashiite.com"},{"name":"篠田　康弘","role":"","email":"yasuhiro.shinoda.040393@yasashiite.com"},{"name":"谷川　薫","role":"","email":"kaori.tanigawa.040406@yasashiite.com"}]},{"code":"0001322","name":"看多機かえりえ高見馬場","area":"看護第7ｴﾘｱ","areaManager":{"name":"大吉　聖子","email":"seiko.ooyoshi60.y@sashiite.com","role":"統括参与"},"staff":[{"name":"山田　松代","role":"参事","email":"matsuyo.yamada17@yasashiite.com"},{"name":"川畠　正之","role":"一般","email":"masayuki.kawabata.035506@yasashiite.com"},{"name":"日高　辰也","role":"一般","email":"tatsuya.hidaka.037932@yasashiite.com"},{"name":"西村　優衣","role":"一般","email":"yui.nishimura.038261@yasashiite.com"},{"name":"北村　夢香利","role":"一般","email":"yukari.kitamura.039069@yasashiite.com"},{"name":"染川　睦子","role":"","email":"mutsuko.somekawa.032495@yasashiite.com"},{"name":"白濱　望","role":"","email":"nozomi.shirahama.037529@yasashiite.com"},{"name":"池畠　久美子","role":"","email":"kumiko.ikehata.038272@yasashiite.com"},{"name":"黒木　美帆","role":"","email":"miho.kuroki.039739@yasashiite.com"},{"name":"下茂　勝洋","role":"","email":"katsuhiro.shimo.039781@yasashiite.com"},{"name":"東　鈴乃","role":"","email":"rinno.higashi.039858@yasashiite.com"},{"name":"新村　直介","role":"","email":"naosuke.shimmura.039983@yasashiite.com"},{"name":"福元　裕樹","role":"","email":"hiroki.fukumoto.040128@yasashiite.com"},{"name":"立和名　勇希","role":"","email":"yuki.tachiwana.040153@yasashiite.com"},{"name":"中野　崇江","role":"","email":"takae.nakano.040451@yasashiite.com"},{"name":"村川　結寧","role":"","email":"yune.murakawa.040650@yasashiite.com"},{"name":"西森　貴信","role":"","email":"takanobu.nishimori.040669@yasashiite.com"}]}];
+
+// 現在の事業所名にマッチするマスタを取得
+function getOrgMaster(facName) {
+  return ORG_MASTER.find(m => m.name === facName) || null;
+}
+
+// ============================================================
+// マスタから事業所を一括作成
+// ============================================================
+async function bulkCreateFromMaster() {
+  if (!hasGasUrl()) { showGasModal(); return; }
+  const existing = new Set(allFacilities.map(f => f.name));
+  const toCreate = ORG_MASTER.filter(m => !existing.has(m.name));
+  if (toCreate.length === 0) {
+    alert('マスタの全事業所（29件）はすでに登録済みです。');
+    return;
+  }
+  if (!confirm(`組織図マスタから ${toCreate.length} 件の事業所を一括登録します。\n\n` +
+    toCreate.map(m => `・${m.name}（${m.area}）`).join('\n') + '\n\n続けますか？')) return;
+
+  let created = 0, failed = 0;
+  for (const m of toCreate) {
+    try {
+      const res = await gasPost({ action: 'addFacility', name: m.name });
+      if (res.success) created++;
+      else failed++;
+    } catch(e) { failed++; }
+  }
+  alert(`完了: ${created}件 登録, ${failed}件 失敗`);
+  await loadFromGas();
+  renderDashboard();
+  updateFacilityDropdown();
+}
+
+// ============================================================
+// 加算状況メール送信
+// ============================================================
+function sendAnalysisEmail() {
+  const fac = allFacilities.find(f => f.id === currentFacilityId);
+  if (!fac) return;
+  const master = getOrgMaster(fac.name);
+  if (!master) {
+    alert(`「${fac.name}」は組織マスタに見つかりません。\nマスタ一括作成で作成した事業所か確認してください。`);
+    return;
+  }
+
+  const ctx = getFacCtx(fac.id);
+  const latestYm = Object.keys(ctx.monthData).sort().pop();
+
+  // 宛先：事業所職員全員
+  const toEmails = master.staff.map(s => s.email).filter(Boolean);
+  // CC：エリア長
+  const ccEmails = master.areaManager ? [master.areaManager.email] : [];
+
+  const subject = `【加算取得状況報告】${fac.name} ${latestYm ? ymLabel(latestYm) : ''}`;
+  const body = buildEmailBody(fac, master, ctx, latestYm);
+
+  // Gmail Compose URL で直接 Gmail を開く
+  const gmailUrl = 'https://mail.google.com/mail/?view=cm' +
+    '&to=' + encodeURIComponent(toEmails.join(',')) +
+    (ccEmails.length ? '&cc=' + encodeURIComponent(ccEmails.join(',')) : '') +
+    '&su=' + encodeURIComponent(subject) +
+    '&body=' + encodeURIComponent(body);
+
+  window.open(gmailUrl, '_blank');
+}
+
+function buildEmailBody(fac, master, ctx, latestYm) {
+  const now = new Date();
+  const dateStr = `${now.getFullYear()}年${now.getMonth()+1}月${now.getDate()}日`;
+  const areaName = master.area;
+  const managerName = master.areaManager ? master.areaManager.name : '（未登録）';
+
+  let body = `${managerName} ${master.areaManager ? master.areaManager.role : ''}様\n`;
+  body += `${fac.name} 職員の皆様\n\n`;
+  body += `お疲れ様です。\n`;
+  body += `${dateStr}時点の加算取得状況をご報告いたします。\n\n`;
+  body += `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+  body += `■ ${fac.name}（${areaName}）\n`;
+  body += `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
+
+  if (!latestYm) {
+    body += `※ データが未連携です。RMデータを取り込んでください。\n`;
+    return body;
+  }
+
+  body += `【最終データ連携月】${ymLabel(latestYm)}\n\n`;
+
+  // 当月・次月の看護体制強化加算判定
+  const nextYm = addMonths(latestYm, 1);
+  const isha = ctx.manualIsha[latestYm];
+  const curThreeM = calcThreeMonths(latestYm, fac.id);
+  const nxtThreeM = calcThreeMonths(nextYm, fac.id);
+  const curTerm = checkTerminal(latestYm, fac.id);
+  const nxtTerm = checkTerminal(nextYm, fac.id);
+  const { r1ok: cur1ok, r2ok: cur2ok } = evalReqs(curThreeM, curTerm, isha);
+  const { r1ok: nxt1ok, r2ok: nxt2ok } = evalReqs(nxtThreeM, nxtTerm, isha);
+
+  const badge = v => v === true ? '✓ 算定可' : v === null ? '要確認（ア未入力）' : '✗ 算定不可';
+
+  body += `【看護体制強化加算 算定可否】\n`;
+  body += `  当月（${ymLabel(latestYm)}算定）\n`;
+  body += `    加算Ⅱ: ${badge(cur2ok)}\n`;
+  body += `    加算Ⅰ: ${badge(cur1ok)}\n`;
+  body += `  次月（${ymLabel(nextYm)}算定）\n`;
+  body += `    加算Ⅱ: ${badge(nxt2ok)}\n`;
+  body += `    加算Ⅰ: ${badge(nxt1ok)}\n\n`;
+
+  // 要件詳細
+  body += `【要件充足状況（次月算定・前3ヶ月実績）】\n`;
+  if (nxtThreeM) {
+    const { kinkyu, tokubetsu, total } = nxtThreeM;
+    const kg = calcGap(kinkyu.count, total, 50);
+    const tg = calcGap(tokubetsu.count, total, 20);
+    const ishaVal = parseFloat(isha);
+    body += `  ア）医師連携率 80%以上: `;
+    if (isNaN(ishaVal)) body += `未入力 ← 要入力\n`;
+    else body += `${ishaVal}% → ${ishaVal >= 80 ? '✓ 充足' : `✗ 不足（あと ${(80 - ishaVal).toFixed(1)}% 不足）`}\n`;
+    body += `  イ）緊急時対応加算 50%以上: `;
+    body += `${kinkyu.count}名/${total}名（${total > 0 ? Math.round(kinkyu.count/total*100) : 0}%）`;
+    body += ` → ${kg && kg.met ? '✓ 充足' : `✗ 不足（あと ${kg ? kg.need : '?'}名必要）`}\n`;
+    body += `  ウ）特別管理加算 20%以上: `;
+    body += `${tokubetsu.count}名/${total}名（${total > 0 ? Math.round(tokubetsu.count/total*100) : 0}%）`;
+    body += ` → ${tg && tg.met ? '✓ 充足' : `✗ 不足（あと ${tg ? tg.need : '?'}名必要）`}\n`;
+    body += `  エ）ターミナルケア加算（直近12ヶ月）: `;
+    body += nxtTerm && nxtTerm.length > 0 ? `✓ 算定あり（${nxtTerm.length}件）\n` : `✗ 未算定\n`;
+  } else {
+    body += `  （データ不足のため計算できません）\n`;
+  }
+
+  // アクションプラン
+  const actions = [];
+  if (nxtThreeM) {
+    const { kinkyu, tokubetsu, total } = nxtThreeM;
+    const kg = calcGap(kinkyu.count, total, 50);
+    const tg = calcGap(tokubetsu.count, total, 20);
+    const ishaVal = parseFloat(isha);
+    if (isNaN(ishaVal)) actions.push('【緊急】ア要件：医師連携率をシステムに入力してください');
+    else if (ishaVal < 80) actions.push(`ア要件：医師連携率を ${(80 - ishaVal).toFixed(1)}% 改善（現在${ishaVal}%→目標80%）`);
+    if (kg && !kg.met) actions.push(`イ要件：緊急時対応加算をあと ${kg.need} 名に算定（現在${kinkyu.count}名→目標${kg.target}名）`);
+    if (tg && !tg.met) actions.push(`ウ要件：特別管理加算をあと ${tg.need} 名に算定（現在${tokubetsu.count}名→目標${tg.target}名）`);
+    if (!nxtTerm || nxtTerm.length === 0) actions.push('エ要件：ターミナルケア加算の算定を目指してください（直近12ヶ月以内に1件必要）');
+  }
+
+  if (actions.length > 0) {
+    body += `\n【次月算定に向けたアクションプラン】\n`;
+    actions.forEach((a, i) => { body += `  ${i+1}. ${a}\n`; });
+  } else if (nxt1ok === true) {
+    body += `\n【アクションプラン】\n`;
+    body += `  次月の看護体制強化加算Ⅰ・Ⅱともに算定要件を満たしています。\n`;
+    body += `  現状を維持してください。\n`;
+  }
+
+  body += `\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+  body += `※ 本メールは看護小規模多機能型居宅介護 加算管理ダッシュボードより自動生成されました。\n`;
+  body += `   詳細確認: https://imaginative-sprinkles-74ecb5.netlify.app/\n`;
+  return body;
+}
+
+// ============================================================
+// 事業所追加
+// ============================================================
+function showAddFacModal() {
+  if (!hasGasUrl()) { showGasModal(); return; }
+  document.getElementById('inp-fac-name').value = '';
+  document.getElementById('add-fac-error').textContent = '';
+  document.getElementById('modal-add-fac').classList.remove('hidden');
+  setTimeout(() => document.getElementById('inp-fac-name').focus(), 100);
+}
+function closeAddFacModal() {
+  document.getElementById('modal-add-fac').classList.add('hidden');
+}
+async function createFacility() {
+  const name = document.getElementById('inp-fac-name').value.trim();
+  if (!name) { document.getElementById('add-fac-error').textContent = '事業所名を入力してください'; return; }
+  if (allFacilities.some(f => f.name === name)) {
+    document.getElementById('add-fac-error').textContent = `「${name}」はすでに登録済みです`;
+    return;
+  }
+  closeAddFacModal();
+  showLoading('事業所を追加中...');
+  try {
+    const res = await gasPost({ action: 'addFacility', name });
+    if (res.success) {
+      const newFac = { id: res.id, name: res.name };
+      allFacilities.push(newFac);
+      facilityData[res.id] = { monthData: {}, terminalEntries: [], manualIsha: {} };
+      renderDashboard();
+      renderFacilityDropdown();
+      hideLoading();
+      showFacility(res.id);
+    } else {
+      hideLoading();
+      alert('エラー: ' + (res.error || '不明なエラー'));
+    }
+  } catch(e) {
+    hideLoading();
+    alert('通信エラー: ' + e.message);
+  }
+}
+
+// ============================================================
+// 事業所名変更
+// ============================================================
+function showRenameFacModal() {
+  const fac = allFacilities.find(f => f.id === currentFacilityId);
+  if (!fac) return;
+  document.getElementById('inp-rename-fac').value = fac.name;
+  document.getElementById('modal-rename-fac').classList.remove('hidden');
+  setTimeout(() => document.getElementById('inp-rename-fac').focus(), 100);
+}
+async function doRenameFacility() {
+  const name = document.getElementById('inp-rename-fac').value.trim();
+  if (!name) return;
+  document.getElementById('modal-rename-fac').classList.add('hidden');
+  showLoading('名前を変更中...');
+  await gasPost({ action: 'renameFacility', facilityId: currentFacilityId, name });
+  const fac = allFacilities.find(f => f.id === currentFacilityId);
+  if (fac) fac.name = name;
+  document.getElementById('breadcrumb-fac-name').textContent = name;
+  renderFacilityDropdown();
+  renderDashboard();
+  hideLoading();
+}
+
+// ============================================================
+// 事業所削除
+// ============================================================
+async function confirmDeleteFacility() {
+  const fac = allFacilities.find(f => f.id === currentFacilityId);
+  if (!fac) return;
+  if (!confirm(`「${fac.name}」を削除します。\n全データが削除されます。よろしいですか？`)) return;
+  showLoading('削除中...');
+  await gasPost({ action: 'deleteFacility', facilityId: currentFacilityId });
+  allFacilities = allFacilities.filter(f => f.id !== currentFacilityId);
+  delete facilityData[currentFacilityId];
+  currentFacilityId = null;
+  hideLoading();
+  showDashboard();
+}
+
+// ============================================================
+// CSV読み込み
+// ============================================================
+const dropZone = document.getElementById('drop-zone');
+const csvInput = document.getElementById('csv-input');
+dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag'));
+dropZone.addEventListener('drop', e => { e.preventDefault(); dropZone.classList.remove('drag'); loadFiles(e.dataTransfer.files); });
+csvInput.addEventListener('change', e => { loadFiles(e.target.files); csvInput.value = ''; });
+
+function loadFiles(files) {
+  if (!currentFacilityId) { alert('事業所を選択してください'); return; }
+  Array.from(files).forEach(file => {
+    const reader = new FileReader();
+    reader.onload = e => {
+      const text = new TextDecoder('shift-jis').decode(e.target.result);
+      parseCSV(text);
+    };
+    reader.readAsArrayBuffer(file);
+  });
+}
+
+function parseCSV(text) {
+  const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+  const header = lines[0].split(',');
+  const ymRaw = (header[2] || '').trim();
+  if (!ymRaw.match(/^\d{6}$/)) { alert('CSVのヘッダー形式が認識できません'); return; }
+  const ym = ymRaw;
+  const label = ymLabel(ym);
+  const users = {};
+  const skipShortTerm = {}; // userId -> 短期セクション中フラグ
+  for (let i = 1; i < lines.length; i++) {
+    const cols = lines[i].split(',');
+    if (cols.length < 12) continue;
+    // D列（index 3）の月が請求月（C1）と一致しない行は過去月データのためスキップ
+    // 数字のみ抽出して6桁(YYYYMM)形式の場合のみ比較（それ以外の形式はスキップしない）
+    const rowYmRaw = (cols[3] || '').replace(/[^0-9]/g, '');
+    if (rowYmRaw.length === 6 && rowYmRaw !== ym) continue;
+    const svcType = cols[4], userId = cols[5], rowType = cols[7];
+    const itemName = cols[9];
+    const tanka = parseInt(cols[10]) || 0, kaisu = parseInt(cols[11]) || 0;
+    const goukei = parseInt(cols[12]) || 0;
+    if (!userId) continue;
+    if (!users[userId]) users[userId] = { userId, items: [], baseCode: null, totalRec: 0, insuranceTotal: 0 };
+    if (skipShortTerm[userId] === undefined) skipShortTerm[userId] = false;
+    const u = users[userId];
+
+    // 短期看護小規模セクション開始を検知
+    if (rowType === '3' && itemName.match(/短期看護小規模[１-５1-5]/)) {
+      skipShortTerm[userId] = true;
+    }
+
+    // 【領収金額合計】は常に処理してフラグリセット
+    if (rowType === '3' && itemName === '【領収金額合計】') {
+      u.totalRec = goukei;
+      skipShortTerm[userId] = false;
+      continue;
+    }
+
+    // 短期セクション中はスキップ
+    if (skipShortTerm[userId]) continue;
+
+    if (svcType === '36' && rowType === '3') {
+      if (itemName.match(/看護小規模[１-９1-9]+/)) {
+        u.baseCode = itemName;
+      } else if (itemName === '【保険給付対象計】') {
+        u.insuranceTotal = goukei;
+      } else if (itemName && !itemName.startsWith('【')) {
+        u.items.push({ name: itemName, tanka, kaisu });
+      }
+    }
+  }
+
+  const ctx = getFacCtx(currentFacilityId);
+  ctx.monthData[ym] = { ym, label, users };
+
+  saveMonthlyDataToGas(ym, label, Object.values(users));
+  renderFacilityAll();
+  setActiveTab(ym);
+}
+
+async function saveMonthlyDataToGas(ym, label, usersArr) {
+  if (!hasGasUrl()) return;
+  try {
+    await gasPost({
+      action: 'saveMonthlyData',
+      facilityId: currentFacilityId,
+      ym, label,
+      users: usersArr
+    });
+    renderDashboard();
+  } catch(e) { console.error('GAS保存エラー:', e); }
+}
+
+// ============================================================
+// ターミナルケア
+// ============================================================
+function addTerminal() {
+  const val = document.getElementById('inp-terminal-month').value;
+  if (!val || !currentFacilityId) return;
+  const ym = val.replace('-', '');
+  const ctx = getFacCtx(currentFacilityId);
+  if (ctx.terminalEntries.find(t => t.ym === ym)) { alert('すでに登録済みです'); return; }
+  ctx.terminalEntries.push({ ym, label: ymLabel(ym) });
+  ctx.terminalEntries.sort((a, b) => a.ym.localeCompare(b.ym));
+  saveTerminalToGas();
+  renderFacilitySidebar();
+  renderFacilityAll();
+}
+function removeTerminal(ym) {
+  const ctx = getFacCtx(currentFacilityId);
+  ctx.terminalEntries = ctx.terminalEntries.filter(t => t.ym !== ym);
+  saveTerminalToGas();
+  renderFacilitySidebar();
+  renderFacilityAll();
+}
+async function saveTerminalToGas() {
+  if (!hasGasUrl() || !currentFacilityId) return;
+  const ctx = getFacCtx(currentFacilityId);
+  try {
+    await gasPost({ action: 'saveTerminal', facilityId: currentFacilityId, entries: ctx.terminalEntries });
+    renderDashboard();
+  } catch(e) { console.error('GAS保存エラー:', e); }
+}
+
+// ============================================================
+// ユーティリティ
+// ============================================================
+function esc(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function pct(n, d) { return d ? Math.round(n / d * 100) : 0; }
+
+function getLevel(baseCode) {
+  if (!baseCode) return null;
+  if (baseCode.includes('１１')) return 1;
+  if (baseCode.includes('１２')) return 2;
+  if (baseCode.includes('１３')) return 3;
+  if (baseCode.includes('１４')) return 4;
+  if (baseCode.includes('１５')) return 5;
+  return null;
+}
+
+function ymToDate(ym) { return new Date(parseInt(ym.slice(0,4)), parseInt(ym.slice(4,6))-1, 1); }
+function addMonths(ym, n) {
+  const d = ymToDate(ym);
+  d.setMonth(d.getMonth() + n);
+  return `${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}`;
+}
+function ymLabel(ym) { return `${ym.slice(0,4)}年${parseInt(ym.slice(4,6))}月`; }
+
+const MONTH_COLORS = ['#3182ce','#38a169','#d69e2e','#e53e3e','#805ad5','#dd6b20','#319795','#2c7a7b'];
+function monthColor(ym, facId) {
+  const ctx = getFacCtx(facId || currentFacilityId);
+  const keys = Object.keys(ctx.monthData).sort();
+  return MONTH_COLORS[keys.indexOf(ym) % MONTH_COLORS.length];
+}
+
+// ============================================================
+// 前3ヶ月 実人数計算
+// ============================================================
+function calcThreeMonths(calcYm, facId) {
+  const ctx = getFacCtx(facId || currentFacilityId);
+  if (!ctx) return null;
+  const md = ctx.monthData;
+  const prev3 = [addMonths(calcYm,-1), addMonths(calcYm,-2), addMonths(calcYm,-3)];
+  const available = prev3.filter(ym => md[ym]);
+  if (available.length === 0) return null;
+  const allUserIds = new Set(), kinkyuIds = new Set(), tokIds = new Set();
+  available.forEach(ym => {
+    Object.values(md[ym].users).forEach(u => {
+      allUserIds.add(u.userId);
+      const items = u.items || [];
+      if (items.some(i => i.name && i.name.includes('緊急時対応加算'))) kinkyuIds.add(u.userId);
+      if (items.some(i => i.name && i.name.includes('特別管理加算')))   tokIds.add(u.userId);
+    });
+  });
+  const total = allUserIds.size;
+  return {
+    months: available,
+    missingMonths: prev3.filter(ym => !md[ym]),
+    total,
+    kinkyu:    { count: kinkyuIds.size, pct: pct(kinkyuIds.size, total) },
+    tokubetsu: { count: tokIds.size,    pct: pct(tokIds.size, total) },
+  };
+}
+
+function checkTerminal(calcYm, facId) {
+  const ctx = getFacCtx(facId || currentFacilityId);
+  if (!ctx) return [];
+  const from = addMonths(calcYm, -12);
+  return ctx.terminalEntries.filter(t => t.ym >= from && t.ym < calcYm);
+}
+
+// ============================================================
+// 事業所詳細ページ
+// ============================================================
+function renderFacilityAll() {
+  const ctx = getFacCtx(currentFacilityId);
+  if (!ctx) return;
+  renderFacilitySidebar();
+  const keys = Object.keys(ctx.monthData).sort();
+  if (keys.length === 0) {
+    document.getElementById('fac-empty-msg').style.display = 'block';
+    document.getElementById('dash-area').style.display = 'none';
+    return;
+  }
+  document.getElementById('fac-empty-msg').style.display = 'none';
+  document.getElementById('dash-area').style.display = 'block';
+  if (!activeTab || !ctx.monthData[activeTab]) activeTab = keys[keys.length - 1];
+  renderTabs(keys);
+  renderTabContent(activeTab);
+}
+
+function setActiveTab(ym) { activeTab = ym; renderFacilityAll(); }
+
+function renderTabs(keys) {
+  document.getElementById('nav-tabs').innerHTML = keys.map(ym => `
+    <div class="nav-tab ${ym === activeTab ? 'active' : ''}" onclick="setActiveTab('${ym}')">
+      <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${monthColor(ym)};margin-right:5px"></span>
+      ${getFacCtx(currentFacilityId).monthData[ym].label}
+    </div>
+  `).join('');
+}
+
+function renderFacilitySidebar() {
+  const ctx = getFacCtx(currentFacilityId);
+  const keys = Object.keys(ctx.monthData).sort();
+  // 月リスト
+  document.getElementById('month-list').innerHTML = keys.length === 0
+    ? '<div class="no-months">データなし</div>'
+    : keys.map(ym => `
+        <div class="month-item ${ym === activeTab ? 'active' : ''}" onclick="setActiveTab('${ym}')">
+          <div style="display:flex;align-items:center">
+            <div class="month-dot" style="background:${monthColor(ym)}"></div>
+            ${ctx.monthData[ym].label}
+          </div>
+          <span class="del" onclick="event.stopPropagation();deleteMonth('${ym}')">✕</span>
+        </div>`).join('');
+  // ターミナルケアリスト
+  document.getElementById('terminal-list').innerHTML = ctx.terminalEntries.length === 0
+    ? '<div class="no-months">記録なし</div>'
+    : ctx.terminalEntries.map(t => `
+        <div class="terminal-entry">
+          <span>${t.label}</span>
+          <span class="del-t" onclick="removeTerminal('${t.ym}')">✕</span>
+        </div>`).join('');
+}
+
+async function deleteMonth(ym) {
+  const ctx = getFacCtx(currentFacilityId);
+  delete ctx.monthData[ym];
+  if (activeTab === ym) activeTab = null;
+  if (hasGasUrl()) {
+    try { await gasPost({ action: 'deleteMonth', facilityId: currentFacilityId, ym }); } catch(e) {}
+  }
+  renderFacilityAll();
+  renderDashboard();
+}
+
+// ============================================================
+// タブコンテンツ
+// ============================================================
+function renderTabContent(ym) {
+  try {
+    _renderTabContent(ym);
+  } catch(e) {
+    console.error('renderTabContent error:', e);
+    document.getElementById('tab-contents').innerHTML =
+      `<div style="background:#fff5f5;border:1px solid #fc8181;border-radius:8px;padding:20px;color:#c53030;margin:16px">
+        ⚠️ 表示エラー: ${e.message}<br>
+        <span style="font-size:12px">コンソールで詳細を確認してください</span>
+      </div>`;
+  }
+}
+function _renderTabContent(ym) {
+  const ctx = getFacCtx(currentFacilityId);
+  const data = ctx.monthData[ym];
+  const users = Object.values(data.users);
+  const total = users.length;
+  const kinkyuUsers    = users.filter(u => u.items.some(i => i.name.includes('緊急時対応加算')));
+  const tokubetsuUsers = users.filter(u => u.items.some(i => i.name.includes('特別管理加算')));
+  const savedIsha = ctx.manualIsha[ym] !== undefined ? ctx.manualIsha[ym] : '';
+  const nextCalcYm = addMonths(ym, 1);
+  const terminalForNext = checkTerminal(nextCalcYm);
+
+  document.getElementById('tab-contents').innerHTML = `
+    <div>
+      <div class="cards">
+        <div class="card c-blue"><div class="lbl">登録利用者数（本月）</div><div class="val">${total}</div><div class="sub">名</div></div>
+        <div class="card c-orange"><div class="lbl">緊急時対応加算（本月）</div><div class="val">${kinkyuUsers.length}</div><div class="sub">${pct(kinkyuUsers.length, total)}%</div></div>
+        <div class="card c-green"><div class="lbl">特別管理加算（本月）</div><div class="val">${tokubetsuUsers.length}</div><div class="sub">${pct(tokubetsuUsers.length, total)}%</div></div>
+        <div class="card ${terminalForNext.length > 0 ? 'c-green' : 'c-red'}">
+          <div class="lbl">ターミナルケア（12ヶ月内）</div>
+          <div class="val">${terminalForNext.length > 0 ? '✓' : '✗'}</div>
+          <div class="sub">${terminalForNext.length > 0 ? terminalForNext.map(t=>t.label).join('・') : '未算定'}</div>
+        </div>
+      </div>
+      <div class="section">
+        <h2>看護体制強化加算 Ⅰ / Ⅱ — 当月・来月・再来月 算定可否</h2>
+        <div style="background:#edf2f7;border-radius:8px;padding:10px 14px;margin-bottom:14px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+          <label style="font-size:12px;color:#4a5568;white-space:nowrap">ア. 主治医指示の看護サービス割合（手動入力）</label>
+          <input type="number" id="inp-isha-${ym}" min="0" max="100" value="${savedIsha}" placeholder="例: 85"
+            oninput="saveIsha('${ym}')"
+            onkeydown="if(event.key==='Enter')saveIshaImmediate('${ym}')"
+            style="width:70px;border:1px solid #cbd5e0;border-radius:6px;padding:5px 8px;font-size:13px">
+          <span style="font-size:13px">%</span>
+          <button id="isha-save-btn-${ym}" onclick="saveIshaImmediate('${ym}')"
+            style="padding:5px 14px;background:#2b6cb0;color:white;border:none;border-radius:6px;font-size:12px;font-weight:bold;cursor:pointer;transition:background .2s">
+            保存
+          </button>
+          <span id="isha-save-msg-${ym}" style="font-size:11px;color:#38a169;min-width:60px"></span>
+          <span style="font-size:11px;color:#718096">※ イ・ウはCSVから自動計算</span>
+        </div>
+        <div id="scenarios-wrap-${ym}">${renderThreeScenarios(ym, savedIsha)}</div>
+      </div>
+      <div class="section">
+        <h2>ターミナルケア加算 12ヶ月タイムライン（加算Ⅰ要件エ）</h2>
+        ${renderTerminalTimeline(nextCalcYm)}
+      </div>
+      <div class="section">
+        <h2>加算一覧（重要事項説明書掲載）— ${data.label}</h2>
+        <div style="font-size:12px;color:#718096;margin-bottom:10px">加算名をクリックすると算定要件が表示されます。</div>
+        ${renderAddonChecklist(users)}
+      </div>
+      <div class="section">
+        <h2>加算算定状況一覧（${data.label}）</h2>
+        ${renderAddonTable(users, total)}
+      </div>
+      <div class="section">
+        <h2>利用者別 加算明細（${data.label}）</h2>
+        ${renderUserGrid(users)}
+      </div>
+    </div>`;
+}
+
+// デバウンス用タイマー（"facilityId:ym" → timeoutId）
+const _ishaTimers = {};
+
+function saveIsha(ym) {
+  // ① 即時：ローカル状態とシナリオ表示だけ更新（画面はすぐ反映）
+  const val = parseFloat(document.getElementById('inp-isha-' + ym).value);
+  const facId = currentFacilityId;           // ← 現時点の事業所IDを確定
+  const ctx = getFacCtx(facId);
+  ctx.manualIsha[ym] = isNaN(val) ? '' : val;
+  document.getElementById('scenarios-wrap-' + ym).innerHTML = renderThreeScenarios(ym, ctx.manualIsha[ym]);
+  renderDashboard();
+
+  // ② GAS保存はデバウンス（600ms後に最後の値だけ送信 → 競合防止）
+  // キーに facilityId を含めることで別事業所のタイマーと干渉しない
+  if (!hasGasUrl()) return;
+  const timerKey = facId + ':' + ym;
+  clearTimeout(_ishaTimers[timerKey]);
+  _ishaTimers[timerKey] = setTimeout(async () => {
+    const latestVal = getFacCtx(facId).manualIsha[ym];  // ← 確定済みfacIdを使用
+    try {
+      await gasPost({ action: 'saveIsha', facilityId: facId, ym, value: latestVal === '' ? '' : latestVal });
+    } catch(e) {
+      console.error('saveIsha GAS error:', e);
+    }
+  }, 600);
+}
+
+// 保存ボタン押下 or Enter → デバウンスをキャンセルして即時GAS保存
+async function saveIshaImmediate(ym) {
+  const facId = currentFacilityId;
+  const timerKey = facId + ':' + ym;
+  clearTimeout(_ishaTimers[timerKey]);   // デバウンス中のタイマーをキャンセル
+
+  const val = parseFloat(document.getElementById('inp-isha-' + ym).value);
+  const ctx = getFacCtx(facId);
+  ctx.manualIsha[ym] = isNaN(val) ? '' : val;
+  document.getElementById('scenarios-wrap-' + ym).innerHTML = renderThreeScenarios(ym, ctx.manualIsha[ym]);
+  renderDashboard();
+
+  // ボタンをローディング状態に
+  const btn = document.getElementById('isha-save-btn-' + ym);
+  const msg = document.getElementById('isha-save-msg-' + ym);
+  if (btn) { btn.disabled = true; btn.textContent = '保存中…'; btn.style.background = '#a0aec0'; }
+  if (msg) msg.textContent = '';
+
+  if (!hasGasUrl()) {
+    if (btn) { btn.disabled = false; btn.textContent = '保存'; btn.style.background = '#2b6cb0'; }
+    if (msg) { msg.textContent = '※GAS未設定'; msg.style.color = '#e53e3e'; }
+    return;
+  }
+
+  try {
+    await gasPost({ action: 'saveIsha', facilityId: facId, ym, value: ctx.manualIsha[ym] === '' ? '' : ctx.manualIsha[ym] });
+    if (btn) { btn.disabled = false; btn.textContent = '保存'; btn.style.background = '#2b6cb0'; }
+    if (msg) {
+      msg.textContent = '✓ 保存完了';
+      msg.style.color = '#38a169';
+      setTimeout(() => { if (msg) msg.textContent = ''; }, 2500);
+    }
+  } catch(e) {
+    console.error('saveIshaImmediate error:', e);
+    if (btn) { btn.disabled = false; btn.textContent = '保存'; btn.style.background = '#c53030'; }
+    if (msg) { msg.textContent = '⚠ 保存失敗'; msg.style.color = '#e53e3e'; }
+  }
+}
+
+// ============================================================
+// 3シナリオ
+// ============================================================
+function calcGap(count, total, thresholdPct) {
+  if (!total) return null;
+  const needed = Math.ceil(total * thresholdPct / 100);
+  const gap = Math.max(0, needed - count);
+  const surplus = Math.max(0, count - needed);
+  return { needed, gap, surplus, met: count >= needed };
+}
+
+function renderThreeScenarios(ym, ishaVal) {
+  const scenarios = [
+    { calcYm: ym,              label: '当月算定',   sublabel: ymLabel(ym)+'に算定',                tag: 'current' },
+    { calcYm: addMonths(ym,1), label: '来月算定',   sublabel: ymLabel(addMonths(ym,1))+'に算定',   tag: 'next'    },
+    { calcYm: addMonths(ym,2), label: '再来月算定', sublabel: ymLabel(addMonths(ym,2))+'に算定 (予測)', tag: 'future'  },
+  ];
+  const panels = scenarios.map(s => {
+    const prev3 = [addMonths(s.calcYm,-1), addMonths(s.calcYm,-2), addMonths(s.calcYm,-3)];
+    return { ...s, prev3, threeM: calcThreeMonths(s.calcYm), terminalValid: checkTerminal(s.calcYm) };
+  });
+  return `<div class="scenario-grid">${panels.map(p => renderScenarioPanel(p, ishaVal)).join('')}</div>
+    ${renderActionAdvice(ym, panels, ishaVal)}`;
+}
+
+function renderScenarioPanel(p, ishaVal) {
+  const { tag, label, sublabel, calcYm, prev3, threeM, terminalValid } = p;
+  const ishaPct = parseFloat(ishaVal);
+  const ishaOk = !isNaN(ishaPct) && ishaPct >= 80;
+  const ctx = getFacCtx(currentFacilityId);
+  const md = ctx.monthData;
+  const kinkyuCount = threeM ? threeM.kinkyu.count : 0;
+  const tokCount    = threeM ? threeM.tokubetsu.count : 0;
+  const total       = threeM ? threeM.total : 0;
+  const kinkyuGap   = threeM ? calcGap(kinkyuCount, total, 50) : null;
+  const tokGap      = threeM ? calcGap(tokCount, total, 20)    : null;
+  const termOk      = terminalValid.length > 0;
+  const req2ok = !isNaN(ishaPct) && ishaOk && kinkyuGap?.met && tokGap?.met;
+  const req2ng = (!isNaN(ishaPct) && !ishaOk) || (kinkyuGap && !kinkyuGap.met) || (tokGap && !tokGap.met);
+  const req1ok = req2ok && termOk;
+  const req1ng = req2ng || !termOk;
+  const stColor = (ok, ng) => ok ? '#276749' : ng ? '#c53030' : '#975a16';
+  const stLabel = (ok, ng) => ok ? '✓ 充足' : ng ? '✗ 不足' : '△ 要確認';
+  const borderColor = tag === 'next' ? '#3182ce' : tag === 'future' ? '#d69e2e' : '#a0aec0';
+  const bgColor     = tag === 'next' ? '#ebf8ff' : tag === 'future' ? '#fffff0' : '#f7fafc';
+  const hColor      = tag === 'next' ? '#2b6cb0' : tag === 'future' ? '#975a16' : '#4a5568';
+  const monthChips = prev3.map(m => {
+    const avail = !!md[m];
+    return `<span style="font-size:11px;padding:2px 6px;border-radius:4px;background:${avail?'#c6f6d5':'#fed7d7'};color:${avail?'#22543d':'#9b2c2c'}">${ymLabel(m)}</span>`;
+  }).join(' ');
+  const kinkyuRow = renderReqRow('イ. 緊急時対応加算', kinkyuCount, total, kinkyuGap, '≥50%', !threeM);
+  const tokRow    = renderReqRow('ウ. 特別管理加算',   tokCount,    total, tokGap,    '≥20%', !threeM);
+  const ishaRow = `<div class="req-row">
+    <div class="badge ${isNaN(ishaPct)?'na':ishaOk?'ok':'ng'}">${isNaN(ishaPct)?'?':ishaOk?'✓':'✗'}</div>
+    <div class="rr-name">ア. 主治医指示看護</div>
+    <div class="rr-val" style="color:${isNaN(ishaPct)?'#a0aec0':ishaOk?'#276749':'#c53030'}">${isNaN(ishaPct)?'未入力':ishaPct+'%'}</div>
+    <div class="rr-gap" style="color:#a0aec0">手動</div></div>`;
+  const termRow = `<div class="req-row">
+    <div class="badge ${termOk?'ok':'ng'}">${termOk?'✓':'✗'}</div>
+    <div class="rr-name">エ. ターミナルケア</div>
+    <div class="rr-val" style="color:${termOk?'#276749':'#c53030'}">${termOk?'算定あり':'未算定'}</div>
+    <div class="rr-gap" style="color:#a0aec0">Ⅰのみ</div></div>`;
+  const missing = prev3.filter(m => !md[m]);
+  return `<div class="scenario-panel" style="border-color:${borderColor};background:${bgColor}">
+    <div class="scenario-header" style="color:${hColor}">${tag==='next'?'★ ':''}<strong>${label}</strong></div>
+    <div style="font-size:12px;color:#718096;margin-bottom:6px">${sublabel}</div>
+    <div style="margin-bottom:10px;line-height:2">使用データ：<br>${monthChips}</div>
+    <div class="grade-badges">
+      <div class="grade-badge"><div class="gb-label">加算Ⅰ</div><div class="gb-status" style="color:${stColor(req1ok,req1ng)}">${stLabel(req1ok,req1ng)}</div></div>
+      <div class="grade-badge"><div class="gb-label">加算Ⅱ</div><div class="gb-status" style="color:${stColor(req2ok,req2ng)}">${stLabel(req2ok,req2ng)}</div></div>
+    </div>
+    ${ishaRow}${kinkyuRow}${tokRow}${termRow}
+    ${missing.length>0?`<div style="font-size:10px;color:#a0aec0;margin-top:5px">※未読込: ${missing.map(m=>ymLabel(m)).join('・')}</div>`:''}
+  </div>`;
+}
+
+function renderReqRow(name, count, total, gap, threshold, noData) {
+  if (noData || !gap) return `<div class="req-row">
+    <div class="badge na">?</div>
+    <div class="rr-name">${name}</div>
+    <div class="rr-val" style="color:#a0aec0">-</div>
+    <div class="rr-gap" style="color:#a0aec0">データ不足</div></div>`;
+  const p2 = Math.round(count / total * 100);
+  const gapCls = gap.met ? (gap.surplus <= 1 ? 'warn' : 'ok') : 'ng';
+  const gapText = gap.met
+    ? (gap.surplus === 0 ? `ギリギリ (必要:${gap.needed}件)` : `余裕 +${gap.surplus}件`)
+    : `⚠️ あと${gap.gap}件不足`;
+  return `<div class="req-row">
+    <div class="badge ${gap.met?'ok':'ng'}">${gap.met?'✓':'✗'}</div>
+    <div class="rr-name">${name} <span style="font-size:10px;color:#a0aec0">${threshold}</span></div>
+    <div class="rr-val" style="color:${gap.met?'#276749':'#c53030'}">${p2}% (${count}/${total}名)</div>
+    <div class="rr-gap ${gapCls}">${gapText}</div></div>`;
+}
+
+function renderActionAdvice(ym, panels, ishaVal) {
+  const items = [];
+  const nextLabel   = ymLabel(addMonths(ym, 1));
+  const futureLabel = ymLabel(addMonths(ym, 2));
+  const np = panels[1];
+  if (np.threeM) {
+    const { kinkyu, tokubetsu, total } = np.threeM;
+    const kg = calcGap(kinkyu.count, total, 50);
+    const tg = calcGap(tokubetsu.count, total, 20);
+    if (!kg.met) items.push({ grp:'next', type:'ng', text:`緊急時対応加算があと <strong>${kg.gap}件不足</strong>（現在 ${kinkyu.pct}%、必要 50%以上）。今月中に${kg.gap}件取得で${nextLabel}算定が可能になります。` });
+    else if (kg.surplus === 0) items.push({ grp:'next', type:'warn', text:`緊急時対応加算はギリギリ充足中（${kinkyu.pct}%、必要:${kg.needed}件 / 現在:${kinkyu.count}件）。1件でも減ると${nextLabel}算定の要件を外れます。` });
+    else items.push({ grp:'next', type:'ok', text:`緊急時対応加算 充足（${kinkyu.pct}%）。余裕 +${kg.surplus}件。` });
+    if (!tg.met) items.push({ grp:'next', type:'ng', text:`特別管理加算があと <strong>${tg.gap}件不足</strong>（現在 ${tokubetsu.pct}%、必要 20%以上）。今月中に${tg.gap}件取得で${nextLabel}算定が可能になります。` });
+    else if (tg.surplus === 0) items.push({ grp:'next', type:'warn', text:`特別管理加算はギリギリ充足中（${tokubetsu.pct}%、必要:${tg.needed}件 / 現在:${tokubetsu.count}件）。1件でも減ると${nextLabel}算定の要件を外れます。` });
+    else items.push({ grp:'next', type:'ok', text:`特別管理加算 充足（${tokubetsu.pct}%）。余裕 +${tg.surplus}件。` });
+  } else {
+    items.push({ grp:'next', type:'info', text:`来月算定の判定に必要な前3ヶ月データが不足しています。過去2ヶ月分のCSVを追加読み込みすると精度が上がります。` });
+  }
+  const fp = panels[2];
+  if (fp.threeM) {
+    const { kinkyu, tokubetsu, total } = fp.threeM;
+    const kg = calcGap(kinkyu.count, total, 50);
+    const tg = calcGap(tokubetsu.count, total, 20);
+    if (!kg.met) items.push({ grp:'future', type:'warn', text:`${futureLabel}算定に向けて、来月に緊急時対応加算を最低 <strong>${kg.gap}件</strong> 追加算定が必要です（既知データのみの試算）。` });
+    else items.push({ grp:'future', type:'info', text:`緊急時対応加算 — 現状水準が続けば${futureLabel}算定も充足見込み（余裕 +${kg.surplus}件）。` });
+    if (!tg.met) items.push({ grp:'future', type:'warn', text:`${futureLabel}算定に向けて、来月に特別管理加算を最低 <strong>${tg.gap}件</strong> 追加算定が必要です（既知データのみの試算）。` });
+    else items.push({ grp:'future', type:'info', text:`特別管理加算 — 現状水準が続けば${futureLabel}算定も充足見込み（余裕 +${tg.surplus}件）。` });
+  }
+  if (!items.length) return '';
+  const icon = t => t==='ok'?'✅':t==='warn'?'⚠️':t==='ng'?'❌':'💡';
+  const nextItems   = items.filter(i => i.grp==='next');
+  const futureItems = items.filter(i => i.grp==='future');
+  let html = `<div class="action-box"><h3>📋 アクション提言</h3>`;
+  if (nextItems.length) {
+    html += `<div class="action-group-label">▶ ${nextLabel}算定に向けて（今月中の対応）</div>`;
+    nextItems.forEach(i => html += `<div class="action-item ${i.type}"><span class="action-icon">${icon(i.type)}</span><div>${i.text}</div></div>`);
+  }
+  if (futureItems.length) {
+    html += `<div class="action-group-label">▶ ${futureLabel}算定に向けて（来月中の対応）</div>`;
+    futureItems.forEach(i => html += `<div class="action-item ${i.type}"><span class="action-icon">${icon(i.type)}</span><div>${i.text}</div></div>`);
+  }
+  return html + '</div>';
+}
+
+// ============================================================
+// ターミナルタイムライン
+// ============================================================
+function renderTerminalTimeline(calcYm) {
+  const ctx = getFacCtx(currentFacilityId);
+  if (!ctx || ctx.terminalEntries.length === 0) {
+    return `<div style="background:#fff5f5;border:1px solid #fc8181;border-radius:8px;padding:14px;color:#c53030;font-size:13px">
+      ⚠️ ターミナルケア加算の記録がありません。左メニューから取得月を登録してください。<br>
+      <span style="font-size:12px">加算Ⅰを算定するには前12ヶ月以内に1名以上の算定が必要です。</span>
+    </div>`;
+  }
+  const calcDate = ymToDate(calcYm);
+  let html = '';
+  ctx.terminalEntries.forEach(t => {
+    const takeDate = ymToDate(t.ym);
+    const expYm = addMonths(t.ym, 12);
+    const elapsed = Math.max(0, Math.min(12,
+      (calcDate.getFullYear() - takeDate.getFullYear()) * 12 + (calcDate.getMonth() - takeDate.getMonth())));
+    const fillPct = Math.round(elapsed / 12 * 100);
+    const remaining = 12 - elapsed;
+    const fillColor = remaining <= 0 ? '#e53e3e' : remaining <= 3 ? '#d69e2e' : '#38a169';
+    const rowCls = remaining <= 0 ? 'expired' : remaining <= 3 ? 'expiring' : 'valid';
+    const emoji = remaining <= 0 ? '❌' : remaining <= 3 ? '⚠️' : '✅';
+    const remainText = remaining <= 0
+      ? `<span style="color:#c53030;font-weight:bold">期限切れ（${elapsed}ヶ月経過）</span>`
+      : remaining <= 3
+        ? `<span style="color:#b7791f;font-weight:bold">残り ${remaining} ヶ月（${ymLabel(expYm)}まで）⚠️ 要注意</span>`
+        : `<span style="color:#276749;font-weight:bold">残り ${remaining} ヶ月（${ymLabel(expYm)}まで）</span>`;
+    html += `<div class="terminal-row ${rowCls}">
+      <div class="terminal-badge">${emoji}</div>
+      <div class="terminal-info">
+        <div class="ti-month">取得月：${t.label}</div>
+        <div class="ti-exp">有効期限：${ymLabel(expYm)}（取得から12ヶ月）</div>
+        <div style="position:relative;margin:6px 0 3px">
+          <div class="timeline-bg">
+            <div class="timeline-fill" style="width:${fillPct}%;background:${fillColor}"></div>
+            <div class="timeline-marker" style="left:${fillPct}%;position:absolute;top:-4px;width:3px;background:#2d3748;height:28px;border-radius:2px"></div>
+          </div>
+          <div class="timeline-labels"><span>${t.label}（取得）</span><span>${ymLabel(calcYm)}（算定月）</span><span>${ymLabel(expYm)}（期限）</span></div>
+        </div>
+        <div class="ti-remain">${remainText}</div>
+      </div>
+    </div>`;
+  });
+  const validEntries = ctx.terminalEntries.filter(t => {
+    const elapsed2 = (ymToDate(calcYm).getFullYear() - ymToDate(t.ym).getFullYear()) * 12 +
+      (ymToDate(calcYm).getMonth() - ymToDate(t.ym).getMonth());
+    return elapsed2 < 12;
+  });
+  if (validEntries.length > 0) {
+    const mustTakeBy = addMonths(validEntries.map(t => addMonths(t.ym, 12)).sort().pop(), -1);
+    html += `<div style="background:#ebf8ff;border:1px solid #90cdf4;border-radius:8px;padding:12px;margin-top:8px;font-size:13px;color:#2b6cb0">
+      💡 <strong>次のターミナルケア加算は ${ymLabel(mustTakeBy)} までに算定</strong>することで加算Ⅰの要件を継続できます。
+    </div>`;
+  }
+  return html;
+}
+
+// ============================================================
+// 加算テーブル・利用者カード
+// ============================================================
+function renderAddonTable(users, total) {
+  const countMap = {};
+  users.forEach(u => (u.items || []).forEach(i => {
+    if (!i.name || i.name.startsWith('【')) return;
+    countMap[i.name] = (countMap[i.name] || 0) + 1;
+  }));
+  const sorted = Object.entries(countMap).sort((a,b) => b[1]-a[1]);
+  if (!sorted.length) return '<div class="empty">加算データなし</div>';
+  return `<table class="addon-table">
+    <thead><tr><th>加算名</th><th>算定者数</th><th>割合</th><th style="width:180px">グラフ</th><th>区分</th></tr></thead>
+    <tbody>${sorted.map(([name, cnt]) => {
+      const r = pct(cnt, total);
+      const short = name.replace('看護小規模', '');
+      const isGen = name.includes('減算');
+      const color = isGen ? '#fc8181' : '#63b3ed';
+      return `<tr><td>${short}</td><td><strong>${cnt}</strong> 名</td><td>${r}%</td>
+        <td><div class="bar"><div class="bar-fill" style="width:${r}%;background:${color}"></div></div></td>
+        <td><span class="tag ${isGen?'減算':'加算'}">${isGen?'減算':'加算'}</span></td></tr>`;
+    }).join('')}</tbody></table>`;
+}
+
+function renderUserGrid(users) {
+  return `<div class="user-grid">${users.map(u => {
+    const lv = getLevel(u.baseCode);
+    const lvColor = (lv===4||lv===5)?'#c53030':lv===3?'#d69e2e':'#2d3748';
+    const tags = (u.items || []).map(i => {
+      const short = (i.name || '').replace('看護小規模','');
+      let cls = '';
+      if (i.name.includes('緊急時対応加算')) cls = 'kinkyu';
+      else if (i.name.includes('特別管理加算')) cls = 'tokubetsu';
+      else if (i.name.includes('看護体制強化加算')) cls = 'kango';
+      return `<span class="addon-tag ${cls}">${short}</span>`;
+    }).join('');
+    return `<div class="user-card">
+      <div class="uid">ID: ${u.userId}</div>
+      <div style="font-weight:bold;color:${lvColor};font-size:13px;margin-top:3px">要介護${lv||'?'}</div>
+      <div class="addons">${tags}</div>
+      <div class="total">${(u.totalRec||0).toLocaleString()} 円</div>
+    </div>`;
+  }).join('')}</div>`;
+}
+
+// ============================================================
+// 加算定義マスタ
+// ============================================================
+const ADDON_DEFS = [
+  {
+    no: 1, name: '初期加算', unit: '1日につき30単位',
+    keywords: ['初期加算'],
+    req: `登録日から起算して30日以内の期間を算定します。\n30日を超える入院後に利用を再開した場合も同様に算定します。`
+  },
+  {
+    no: 2, name: '認知症加算', unit: '1月につき（Ⅰ:920単位 / Ⅱ:890単位 / Ⅲ:760単位 / Ⅳ:460単位）',
+    keywords: ['認知症加算'],
+    req: `（Ⅰ）920単位／月：ア〜オ全て該当
+ア．認知症介護実践リーダー研修等修了者を所定人数以上配置
+イ．日常生活自立度Ⅲ以上の者に対し専門的な認知症ケアを実施
+ウ．従業者に対し認知症ケアに関する留意事項の伝達・技術指導に係る会議を定期的に開催
+エ．認知症介護指導者研修修了者を１名以上配置し、事業所全体の認知症ケアを指導
+オ．介護職員・看護職員ごとの認知症ケアに関する研修計画を作成し実施または実施予定
+
+（Ⅱ）890単位／月：上記ア〜ウに該当
+（Ⅲ）760単位／月：日常生活自立度Ⅲ・Ⅳ・Ｍの認知症利用者にサービスを提供した場合
+（Ⅳ）460単位／月：要介護2かつ日常生活自立度Ⅱの認知症利用者にサービスを提供した場合`
+  },
+  {
+    no: 3, name: '退院時共同指導加算', unit: '1回につき600単位',
+    keywords: ['退院時共同指導'],
+    req: `病院・診療所・老人保健施設から退院または退所するにあたり、看護小規模多機能型居宅介護事業所の看護師等が退院時共同指導を行った後、訪問看護サービスを行った場合、退院または退所につき1回限り（特別な管理を必要とする利用者の場合は2回）算定します。`
+  },
+  {
+    no: 4, name: '緊急時対応加算', unit: '1月につき774単位（区分支給限度基準額管理対象外）',
+    keywords: ['緊急時対応加算', '緊急時訪問看護加算'],
+    req: `24時間連絡できる体制をとり、計画的に訪問することになっていない緊急時における訪問、および計画的に宿泊することになっていない緊急時における宿泊を必要に応じて行う体制にある場合に算定します。\nただし訪問については訪問看護を行う場合に限ります。`
+  },
+  {
+    no: 5, name: '特別管理加算', unit: '1月につき（Ⅰ:500単位 / Ⅱ:250単位）（区分支給限度基準額管理対象外）',
+    keywords: ['特別管理加算'],
+    req: `（Ⅰ）500単位／月：次のいずれかの状態の方
+ア．在宅悪性腫瘍等患者指導管理、在宅気管切開患者指導管理を受けている状態
+イ．気管カニューレ、もしくは留置カテーテルを使用している状態
+
+（Ⅱ）250単位／月：次のいずれかの状態の方
+ア．在宅自己腹膜かん流指導管理、在宅血液透析指導管理、在宅酸素療法指導管理、在宅中心静脈栄養法指導管理、在宅成分栄養経管栄養法指導管理、在宅自己導尿指導管理、在宅持続陽圧呼吸法指導管理、在宅自己疼痛管理指導管理または在宅肺高血圧症患者指導管理を受けている状態
+イ．人工肛門または人工膀胱を設置している状態
+ウ．真皮を超える褥瘡の状態
+エ．点滴注射を週3回以上行う必要があると認められる状態`
+  },
+  {
+    no: 6, name: 'ターミナルケア加算', unit: '死亡月につき2,500単位（区分支給限度基準額管理対象外）',
+    keywords: ['ターミナルケア加算'],
+    req: `在宅または当事業所で死亡した利用者に対して、その死亡日および死亡日前14日以内に2日以上ターミナルケアを行った場合に算定します（ターミナルケアを行った後、24時間以内に在宅または当事業所以外の場所で死亡した場合を含みます）。\n「人生の最終段階における医療の決定プロセスにおけるガイドライン」等の内容を踏まえ、利用者本人と話し合いを行い、利用者本人の意思決定を基本に、他の医療および介護関係者との連携の上、対応します。`
+  },
+  {
+    no: 7, name: 'サービス提供体制強化加算', unit: '1月につき（Ⅰ:750単位 / Ⅱ:640単位 / Ⅲ:350単位）（区分支給限度基準額管理対象外）',
+    keywords: ['サービス提供体制強化加算'],
+    req: `職員の研修や会議の開催、人員配置等について一定の要件を満たす事業所によりサービス提供を行った場合算定します。
+
+（Ⅰ）750単位／月：以下のいずれかに該当
+ア．介護福祉士70％以上配置
+イ．勤続10年以上の介護福祉士25％以上配置
+
+（Ⅱ）640単位／月：介護福祉士50％以上配置
+
+（Ⅲ）350単位／月：以下のいずれかに該当
+ア．介護福祉士40％以上配置
+イ．常勤職員60％以上配置
+ウ．勤続7年以上の者を30％以上配置`
+  },
+  {
+    no: 8, name: '看護体制強化加算', unit: '1月につき（Ⅰ:3,000単位 / Ⅱ:2,500単位）（区分支給限度基準額管理対象外）',
+    keywords: ['看護体制強化加算'],
+    req: `（Ⅰ）3,000単位／月：次の全てに該当
+ア．前3月の利用者総数のうち、主治医の指示に基づく看護サービスを提供した利用者の割合が80％以上
+イ．前3月の利用者総数のうち、緊急時対応加算を算定した利用者の割合が50％以上
+ウ．前3月の利用者総数のうち、特別管理加算を算定した利用者の割合が20％以上
+エ．前12月においてターミナルケア加算の算定者が1名以上
+オ．登録特定事業者または登録喀痰吸引等事業者として届出していること
+
+（Ⅱ）2,500単位／月：上記ア〜ウの全てに該当（エ・オ要件なし）`
+  },
+  {
+    no: 9, name: '総合マネジメント体制強化加算', unit: '1月につき（Ⅰ:1,200単位 / Ⅱ:800単位）（区分支給限度基準額管理対象外）',
+    keywords: ['総合マネジメント体制強化加算'],
+    req: `（Ⅰ）1,200単位／月：次の全てに該当
+ア．個別サービス計画について多職種協働により随時適切に見直しを行っている
+イ．地域住民等との交流を図り、利用者の地域の行事や活動等への参加を積極的に支援している
+ウ．地域の病院・診療所・老健等に対し、提供可能なサービス内容に関する情報提供を行っている
+エ．日常的に利用者と関わりのある地域住民等の相談に対応する体制を確保している
+オ．必要に応じてインフォーマルサービスを含む生活支援サービスが包括的に提供される居宅サービス計画を作成
+カ．地域資源の活用、障害福祉施設等との協働、地域の事例検討会・研修会実施、地域支援事業参加のうち1つ以上実施
+
+（Ⅱ）800単位／月：上記ア〜ウの全てに該当`
+  },
+  {
+    no: 10, name: '訪問体制強化加算', unit: '1月につき1,000単位（区分支給限度基準額管理対象外）',
+    keywords: ['訪問体制強化加算'],
+    req: `次の全てに該当する場合算定します。
+ア．訪問サービス（看護サービスを除く）の提供に当たる常勤従業者を2名以上配置
+イ．全ての登録者に対する訪問サービスの提供回数が延べ200回／月以上
+ウ．同一建物に集合住宅を併設する場合は、登録者のうち同一建物居住者以外の者の占める割合が50％以上`
+  },
+  {
+    no: 11, name: '若年性認知症加算', unit: '1月につき800単位',
+    keywords: ['若年性認知症加算'],
+    req: `受け入れた若年性認知症利用者ごとに個別の担当者を定めていること。`
+  },
+  {
+    no: 12, name: '科学的介護推進体制加算', unit: '1月につき40単位',
+    keywords: ['科学的介護推進体制加算', 'LIFE', 'CHASE'],
+    req: `利用者ごとのADL値、栄養状態、口腔機能、認知症の状況その他の心身の状況等に係る基本的な情報を、厚生労働省（LIFE）に提出した場合算定します。`
+  },
+  {
+    no: 13, name: '口腔栄養スクリーニング加算', unit: '1回につき（Ⅰ:20単位 / Ⅱ:5単位）（6月に1回を限度）',
+    keywords: ['口腔栄養スクリーニング加算'],
+    req: `（Ⅰ）20単位：利用開始時および利用中6か月ごとに、利用者の口腔の健康状態および栄養状態について確認を行い、担当介護支援専門員に文書で共有した場合算定します。
+
+（Ⅱ）5単位：利用者が栄養改善加算や口腔機能向上加算を算定している場合に、口腔の健康状態と栄養状態のいずれかの確認を行い、担当介護支援専門員に文書で共有した場合算定します。`
+  },
+  {
+    no: 14, name: '口腔機能向上加算', unit: '1回につき（Ⅰ:150単位 / Ⅱ:160単位）',
+    keywords: ['口腔機能向上加算'],
+    req: `（Ⅰ）150単位：次の全てに該当
+ア．言語聴覚士、歯科衛生士、看護職員のいずれかを1名以上配置
+イ．利用者の口腔機能を把握し、多職種共同で口腔機能改善管理指導計画を作成
+ウ．計画に従い口腔機能向上サービスを行い、定期的に記録
+エ．計画の進捗について定期的な評価を行う
+
+（Ⅱ）160単位：Ⅰの取り組みに加え、口腔機能改善管理指導計画書等の情報をLIFEに提出し、サービスの実施に当たって当該情報を活用している場合`
+  },
+  {
+    no: 15, name: '栄養アセスメント加算', unit: '1月につき50単位',
+    keywords: ['栄養アセスメント加算'],
+    req: `次の全てに該当する場合算定します。
+ア．管理栄養士を1名以上配置（外部連携も可）
+イ．利用者ごとに、管理栄養士・看護職員・介護職員・生活相談員等が共同して栄養アセスメントを実施し、利用者またはその家族に結果を説明
+ウ．利用者ごとの栄養状態等の情報をLIFEに提出し、栄養管理の実施に当たって活用していること`
+  },
+  {
+    no: 16, name: '栄養改善加算', unit: '1回につき200単位（原則3月以内月2回を限度）',
+    keywords: ['栄養改善加算'],
+    req: `次の全てに該当する場合算定します。
+ア．管理栄養士を1名以上配置（外部との連携も可）
+イ．利用者ごとの摂食・嚥下機能および食形態にも配慮した栄養ケア計画を作成し、状態を定期的に記録
+ウ．栄養改善サービス提供の手順を実施すること
+エ．計画の進捗状況を定期的に評価すること
+オ．栄養改善サービスの提供に当たって、必要に応じ居宅を訪問すること`
+  },
+  {
+    no: 17, name: '褥瘡マネジメント加算', unit: '1月につき（Ⅰ:3単位 / Ⅱ:13単位）',
+    keywords: ['褥瘡マネジメント加算'],
+    req: `（Ⅰ）3単位／月：次の全てに該当
+ア．利用者ごとに褥瘡発生リスクを入所時等に評価するとともに、少なくとも3月に1回評価し、結果をLIFEに提出して活用
+イ．リスクありとされた利用者ごとに、医師・看護師・管理栄養士・介護職員・介護支援専門員等が共同して褥瘡ケア計画を作成
+ウ．計画に従い褥瘡管理を実施するとともに、内容や利用者の状態を定期的に記録
+エ．少なくとも3月に1回、褥瘡ケア計画を見直すこと
+
+（Ⅱ）13単位：Ⅰの算定要件を満たしている施設において、褥瘡発生リスクがあるとされた利用者について、褥瘡の発生のないこと`
+  },
+  {
+    no: 18, name: '排泄支援加算', unit: '1月につき（Ⅰ:10単位 / Ⅱ:15単位 / Ⅲ:20単位）',
+    keywords: ['排泄支援加算'],
+    req: `（Ⅰ）10単位／月：次の全てに該当
+ア．排泄に介護を要する利用者ごとに、医師または医師と連携した看護師が入所時等に評価し、少なくとも6月に1回評価を行い、結果をLIFEに提出して活用
+イ．要介護状態の軽減が見込まれる者について、医師・看護師・介護支援専門員等が共同して排泄支援計画を作成し、支援を継続して実施
+ウ．少なくとも3月に1回、支援計画を見直すこと
+
+（Ⅱ）15単位／月：Ⅰの要件を満たし、施設入所時等と比較して排尿・排便の状態の少なくとも一方が改善し、いずれにも悪化がない、またはおむつ使用ありから使用なしに改善していること
+
+（Ⅲ）20単位／月：Ⅰの要件を満たし、施設入所時等と比較して排尿・排便の状態の少なくとも一方が改善し、いずれにも悪化がなく、かつおむつ使用ありから使用なしに改善していること`
+  },
+  {
+    no: 19, name: '専門管理加算', unit: '1月につき250単位',
+    keywords: ['専門管理加算'],
+    req: `以下ア・イのいずれかの看護師が訪問看護の実施に関する計画的な管理を行った場合に算定します。
+
+ア．緩和ケア、褥瘡ケアまたは人工肛門ケアおよび人工膀胱ケアに係る専門の研修を受けた看護師
+　・悪性腫瘍の鎮痛療法または化学療法を行っている利用者
+　・真皮を越える褥瘡の状態にある利用者
+　・人工肛門または人工膀胱を造設している者で管理が困難な利用者
+
+イ．特定行為研修を修了した看護師
+　・診療報酬における手順書加算を算定する利用者
+　※対象の特定行為：気管カニューレの交換、胃ろう・腸ろうカテーテル交換、膀胱ろうカテーテルの交換、褥瘡または慢性創傷の治療における壊死組織の除去、創傷に対する陰圧閉鎖療法、持続点滴中の高カロリー輸液の投与量調整、脱水症状に対する輸液による補正`
+  },
+];
+
+function showAddonReqModal(no) {
+  const def = ADDON_DEFS.find(d => d.no === no);
+  if (!def) return;
+  document.getElementById('addon-req-title').textContent = `⑨ ${def.no}. ${def.name}`.replace('⑨ ', '');
+  document.getElementById('addon-req-title').textContent = `${def.no}. ${def.name}`;
+  document.getElementById('addon-req-unit').textContent = `【単位数】${def.unit}`;
+  document.getElementById('addon-req-body').textContent = def.req;
+  document.getElementById('modal-addon-req').classList.remove('hidden');
+}
+
+function closeAddonReqModal() {
+  document.getElementById('modal-addon-req').classList.add('hidden');
+}
+
+function renderAddonChecklist(users) {
+  const countMap = {};
+  users.forEach(u => (u.items || []).forEach(i => {
+    if (!i.name) return;
+    countMap[i.name] = (countMap[i.name] || 0) + 1;
+  }));
+  const total = users.length;
+
+  const rows = ADDON_DEFS.map(def => {
+    const cnt = def.keywords.reduce((sum, kw) => {
+      return sum + Object.entries(countMap)
+        .filter(([k]) => k.includes(kw))
+        .reduce((s, [, v]) => s + v, 0);
+    }, 0);
+    const claimed = cnt > 0;
+    const badge = claimed
+      ? `<span style="background:#c6f6d5;color:#22543d;padding:2px 10px;border-radius:10px;font-size:12px;font-weight:bold">算定あり ${cnt}名</span>`
+      : `<span style="background:#edf2f7;color:#a0aec0;padding:2px 10px;border-radius:10px;font-size:12px">未算定</span>`;
+    const pctVal = total > 0 ? Math.round(cnt / total * 100) : 0;
+    const bar = claimed
+      ? `<div style="height:6px;background:#e2e8f0;border-radius:3px;overflow:hidden;min-width:60px"><div style="height:6px;background:#48bb78;border-radius:3px;width:${pctVal}%"></div></div>`
+      : `<div style="height:6px;background:#e2e8f0;border-radius:3px;min-width:60px"></div>`;
+    return `<tr style="border-bottom:1px solid #f0f4f8${claimed ? '' : ';opacity:.7'}">
+      <td style="padding:8px 10px;font-size:13px;white-space:nowrap;color:#4a5568">
+        <span style="color:#a0aec0;font-size:11px;margin-right:4px">${def.no}.</span>
+        <a href="#" onclick="event.preventDefault();showAddonReqModal(${def.no})"
+           style="color:#2b6cb0;text-decoration:none;font-weight:${claimed?'bold':'normal'}" title="要件を確認">
+          ${esc(def.name)} <span style="font-size:10px;color:#90cdf4">▶ 要件</span>
+        </a>
+      </td>
+      <td style="padding:8px 10px;white-space:nowrap">${badge}</td>
+      <td style="padding:8px 10px;min-width:80px">${bar}</td>
+      <td style="padding:8px 10px;font-size:11px;color:#718096;white-space:nowrap">${def.unit.split('（')[0].trim()}</td>
+    </tr>`;
+  }).join('');
+
+  return `<div style="overflow-x:auto">
+    <table style="width:100%;border-collapse:collapse">
+      <thead>
+        <tr style="background:#f7fafc">
+          <th style="padding:8px 10px;font-size:12px;color:#4a5568;text-align:left;font-weight:bold;border-bottom:2px solid #e2e8f0">加算名称（クリックで要件確認）</th>
+          <th style="padding:8px 10px;font-size:12px;color:#4a5568;text-align:left;font-weight:bold;border-bottom:2px solid #e2e8f0">算定状況</th>
+          <th style="padding:8px 10px;font-size:12px;color:#4a5568;text-align:left;font-weight:bold;border-bottom:2px solid #e2e8f0">割合</th>
+          <th style="padding:8px 10px;font-size:12px;color:#4a5568;text-align:left;font-weight:bold;border-bottom:2px solid #e2e8f0">単位数</th>
+        </tr>
+      </thead>
+      <tbody>${rows}</tbody>
+    </table>
+  </div>`;
+}
+
+// ============================================================
+// 起動
+// ============================================================
+initAuth();
+</script>
+</body>
+</html>
