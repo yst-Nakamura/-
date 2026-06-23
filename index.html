@@ -486,6 +486,23 @@ const SESSION_KEY  = 'kango_authed';
 // ★ GASデプロイ後にここを書き換える
 const GAS_URL_DEFAULT = 'https://script.google.com/macros/s/AKfycbw5vg_DYk2oMifFJmkPng6ms8-9BbN-JykrVbqYGu9MBJsDU73c58cNVX8Q3Gfb0no6/exec';
 
+const AREA_DEFS = [
+  { area: '第１エリア', color: '#2b6cb0', bg: '#ebf8ff', keys: ['長野', '北青木', '長岡'] },
+  { area: '第２エリア', color: '#276749', bg: '#f0fff4', keys: ['大橋', '用賀', '成城', '給田', '上北沢'] },
+  { area: '第３エリア', color: '#7b341e', bg: '#fff5f0', keys: ['上石神井', '平尾', '荏田西', '南生田'] },
+  { area: '第４エリア', color: '#553c9a', bg: '#faf5ff', keys: ['河原塚', '松戸八柱', '南佐津間', '結城'] },
+  { area: '第５エリア', color: '#c05621', bg: '#fffaf0', keys: ['竹ノ塚', '東大宮', '奈良町', '南大塚'] },
+  { area: '第６エリア', color: '#234e52', bg: '#e6fffa', keys: ['西明石', '東灘', '楠', '伊川谷', '加古川'] },
+  { area: '第７エリア', color: '#702459', bg: '#fff5f7', keys: ['万成西町', '中津', '鶴崎', '高見馬場'] },
+];
+
+function getAreaDef(facName) {
+  for (const a of AREA_DEFS) {
+    if (a.keys.some(k => facName.includes(k))) return a;
+  }
+  return null;
+}
+
 // ============================================================
 // 認証
 // ============================================================
@@ -705,15 +722,15 @@ function renderDashboard() {
     return;
   }
 
-  const rows = allFacilities.map(f => {
+  const rowData = allFacilities.map(f => {
     const ctx = getFacCtx(f.id);
     const latestYm = Object.keys(ctx.monthData).sort().pop();
     if (!latestYm) {
-      return `<tr>
+      return { f, row: `<tr>
         <td class="fac-name">${esc(f.name)}</td>
         <td colspan="5"><span style="color:#a0aec0;font-size:12px">データなし</span></td>
         <td><button class="detail-link" onclick="showFacility('${f.id}')">詳細 →</button></td>
-      </tr>`;
+      </tr>` };
     }
     const ctx2 = ctx;
     const isha = ctx2.manualIsha[latestYm];
@@ -755,7 +772,7 @@ function renderDashboard() {
          <span style="font-size:11px;color:#718096"> (${levels.length}名)</span>`
       : `<span style="color:#a0aec0;font-size:12px">—</span>`;
 
-    return `<tr>
+    return { f, row: `<tr>
       <td class="fac-name">${esc(f.name)}</td>
       <td style="font-size:12px;color:#718096">${ymLabel(latestYm)}</td>
       <td style="text-align:center">${avgCell}</td>
@@ -765,8 +782,28 @@ function renderDashboard() {
       <td>${sb(nxt2ok, !nxtThreeM)}</td>
       <td>${termStatus}</td>
       <td><button class="detail-link" onclick="showFacility('${f.id}')">詳細 →</button></td>
-    </tr>`;
-  }).join('');
+    </tr>` };
+  });
+
+  // エリアごとにグループ化
+  const areaGroups = AREA_DEFS.map(a => ({ ...a, items: [] }));
+  const noAreaGroup = { area: 'その他', color: '#4a5568', bg: '#f7fafc', items: [] };
+  rowData.forEach(d => {
+    const areaDef = getAreaDef(d.f.name);
+    const group = areaDef ? areaGroups.find(g => g.area === areaDef.area) : null;
+    (group || noAreaGroup).items.push(d.row);
+  });
+
+  const tbody = [...areaGroups, noAreaGroup]
+    .filter(g => g.items.length > 0)
+    .map(g => `
+      <tr>
+        <td colspan="9" style="padding:8px 14px;background:${g.bg};border-left:4px solid ${g.color};font-size:13px;font-weight:bold;color:${g.color}">
+          ${g.area} <span style="font-weight:normal;font-size:11px;color:#718096">（${g.items.length}事業所）</span>
+        </td>
+      </tr>
+      ${g.items.join('')}
+    `).join('');
 
   wrap.innerHTML = `<div class="dash-table-wrap">
     <table class="dash-table">
@@ -783,7 +820,7 @@ function renderDashboard() {
           <th></th>
         </tr>
       </thead>
-      <tbody>${rows}</tbody>
+      <tbody>${tbody}</tbody>
     </table>
   </div>`;
 
