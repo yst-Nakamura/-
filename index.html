@@ -1480,6 +1480,19 @@ function parseCSV(text) {
   const ctx = getFacCtx(currentFacilityId);
   ctx.monthData[ym] = { ym, label, users };
 
+  // ターミナルケア加算を自動検出して記録
+  const hasTerminal = Object.values(users).some(u =>
+    (u.items || []).some(i => i.name && i.name.includes('ターミナルケア加算'))
+  );
+  if (hasTerminal && !ctx.terminalEntries.find(t => t.ym === ym)) {
+    ctx.terminalEntries.push({ ym, label: ymLabel(ym) });
+    ctx.terminalEntries.sort((a, b) => a.ym.localeCompare(b.ym));
+    if (hasGasUrl()) {
+      gasPost({ action: 'saveTerminal', facilityId: currentFacilityId, entries: ctx.terminalEntries })
+        .catch(e => console.error('saveTerminal error:', e));
+    }
+  }
+
   saveMonthlyDataToGas(ym, label, Object.values(users));
   renderFacilityAll();
   setActiveTab(ym);
