@@ -1444,10 +1444,12 @@ function parseCSV(text) {
   for (let i = 1; i < lines.length; i++) {
     const cols = lines[i].split(',');
     if (cols.length < 12) continue;
-    // D列（index 3）の月が請求月（C1）と一致しない行は過去月データのためスキップ
-    // 数字のみ抽出して6桁(YYYYMM)形式の場合のみ比較（それ以外の形式はスキップしない）
-    const rowYmRaw = (cols[3] || '').replace(/[^0-9]/g, '');
-    if (rowYmRaw.length === 6 && rowYmRaw !== ym) continue;
+    // C列(index 2)=年・D列(index 3)=月 を結合してヘッダーの請求月(YYYYMM)と比較
+    // 一致しない行は別月データのためスキップ
+    const rowYear = (cols[2] || '').trim();
+    const rowMonth = (cols[3] || '').trim().padStart(2, '0');
+    const rowYm = rowYear + rowMonth;
+    if (rowYm.length === 6 && rowYm !== ym) continue;
     const svcType = cols[4], userId = cols[5], rowType = cols[7];
     const itemName = cols[9];
     const tanka = parseInt(cols[10]) || 0, kaisu = parseInt(cols[11]) || 0;
@@ -1457,8 +1459,8 @@ function parseCSV(text) {
     if (skipShortTerm[userId] === undefined) skipShortTerm[userId] = false;
     const u = users[userId];
 
-    // 短期看護小規模セクション開始を検知
-    if (rowType === '3' && itemName.match(/短期看護小規模[１-５1-5]/)) {
+    // 短期看護小規模セクション開始を検知（「短期」を含む基本コード行で判定）
+    if (rowType === '3' && itemName.includes('短期')) {
       skipShortTerm[userId] = true;
     }
 
@@ -1473,18 +1475,27 @@ function parseCSV(text) {
     if (skipShortTerm[userId]) continue;
 
     if (svcType === '36' && rowType === '3') {
-      if (itemName.match(/看護小規模[１-９1-9]+/)) {
+      // 短期看護小規模の基本コードは除外（通常利用者のみ集計）
+      if (itemName.match(/看護小規模[１-９1-9]+/) && !itemName.includes('短期')) {
         u.baseCode = itemName;
       } else if (itemName === '【保険給付対象計】') {
         u.insuranceTotal = goukei;
       } else if (itemName && !itemName.startsWith('【')) {
-        u.items.push({ name: itemName, tanka, kaisu });
+        // 同一利用者に同じ加算名が複数期間分出力される場合は重複除外
+        if (!u.items.some(i => i.name === itemName)) {
+          u.items.push({ name: itemName, tanka, kaisu });
+        }
       }
     }
   }
 
+  // 短期看護小規模のみの利用者（baseCodeなし）を除外して通常利用者だけ集計
+  const filteredUsers = Object.fromEntries(
+    Object.entries(users).filter(([, u]) => u.baseCode !== null)
+  );
+
   const ctx = getFacCtx(currentFacilityId);
-  ctx.monthData[ym] = { ym, label, users };
+  ctx.monthData[ym] = { ym, label, users: filteredUsers };
 
   // ターミナルケア加算を自動検出して記録
   const hasTerminal = Object.values(users).some(u =>
@@ -1556,11 +1567,12 @@ function pct(n, d) { return d ? Math.round(n / d * 100) : 0; }
 
 function getLevel(baseCode) {
   if (!baseCode) return null;
-  if (baseCode.includes('１１')) return 1;
-  if (baseCode.includes('１２')) return 2;
-  if (baseCode.includes('１３')) return 3;
-  if (baseCode.includes('１４')) return 4;
-  if (baseCode.includes('１５')) return 5;
+  // 全角・半角どちらの数字にも対応（看護小規模１２・日割 / 看護小規模12・日割 等）
+  if (baseCode.includes('１１') || baseCode.includes('11')) return 1;
+  if (baseCode.includes('１２') || baseCode.includes('12')) return 2;
+  if (baseCode.includes('１３') || baseCode.includes('13')) return 3;
+  if (baseCode.includes('１４') || baseCode.includes('14')) return 4;
+  if (baseCode.includes('１５') || baseCode.includes('15')) return 5;
   return null;
 }
 
