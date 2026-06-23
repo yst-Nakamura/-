@@ -158,6 +158,8 @@ header {
 .dash-table tr:last-child td { border-bottom: none; }
 .dash-table tr:hover td { background: #f7fafc; }
 .dash-table .fac-name { font-weight: bold; font-size: 14px; }
+.dash-table .fac-name-link { color: #2b6cb0; cursor: pointer; text-decoration: none; font-weight: bold; font-size: 14px; }
+.dash-table .fac-name-link:hover { text-decoration: underline; color: #1a4a8a; }
 .dash-table .no-data { color: #a0aec0; font-size: 12px; text-align: center; }
 .status-badge {
   display: inline-flex; align-items: center; gap: 4px;
@@ -783,7 +785,7 @@ function renderDashboard() {
     const latestYm = Object.keys(ctx.monthData).sort().pop();
     if (!latestYm) {
       return { f, row: `<tr>
-        <td class="fac-name">${esc(f.name)}</td>
+        <td class="fac-name"><a class="fac-name-link" onclick="showFacility('${f.id}')">${esc(f.name)}</a></td>
         <td colspan="5"><span style="color:#a0aec0;font-size:12px">データなし</span></td>
         <td><button class="detail-link" onclick="showFacility('${f.id}')">詳細 →</button></td>
       </tr>` };
@@ -829,7 +831,7 @@ function renderDashboard() {
       : `<span style="color:#a0aec0;font-size:12px">—</span>`;
 
     return { f, row: `<tr>
-      <td class="fac-name">${esc(f.name)}</td>
+      <td class="fac-name"><a class="fac-name-link" onclick="showFacility('${f.id}')">${esc(f.name)}</a></td>
       <td style="font-size:12px;color:#718096">${ymLabel(latestYm)}</td>
       <td style="text-align:center">${avgCell}</td>
       <td>${sb(cur1ok, !curThreeM)}</td>
