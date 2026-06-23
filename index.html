@@ -935,48 +935,66 @@ function renderAddonMatrix() {
     ...Array.from(addonSet).sort()
   ];
 
-  // テーブルヘッダー（事業所名 + 最終連携月）
-  const thCells = facStats.map(s =>
-    `<th style="background:#1a365d;color:white;padding:10px 14px;font-size:12px;white-space:nowrap;text-align:center;border-right:1px solid rgba(255,255,255,.15)">
-      ${esc(s.fac.name)}<br>
-      <span style="font-size:10px;font-weight:normal;color:#90cdf4">${ymLabel(s.latestYm)}</span>
+  // エリアごとにグループ化
+  const areaGroups = AREA_DEFS.map(a => ({ ...a, stats: [] }));
+  const noAreaGroup = { area: 'その他', color: '#4a5568', bg: '#f7fafc', stats: [] };
+  facStats.forEach(s => {
+    const areaDef = getFacAreaDef(s.fac.id, s.fac.name);
+    const grp = areaDef ? areaGroups.find(g => g.area === areaDef.area) : null;
+    (grp || noAreaGroup).stats.push(s);
+  });
+  const activeGroups = [...areaGroups, noAreaGroup].filter(g => g.stats.length > 0);
+
+  // ヘッダー行1: エリア名（colspan）
+  const areaHeaderCells = activeGroups.map(g =>
+    `<th colspan="${g.stats.length}" style="background:${g.color};color:white;padding:8px 10px;font-size:12px;font-weight:bold;text-align:center;border-right:2px solid rgba(255,255,255,.3);white-space:nowrap">
+      ${g.area} <span style="font-size:10px;font-weight:normal;opacity:.85">（${g.stats.length}所）</span>
     </th>`
   ).join('');
 
+  // ヘッダー行2: 事業所名
+  const facHeaderCells = activeGroups.flatMap(g => g.stats.map((s, i) =>
+    `<th style="background:#1a365d;color:white;padding:8px 10px;font-size:11px;white-space:nowrap;text-align:center;border-right:1px solid rgba(255,255,255,.12)${i === g.stats.length - 1 ? ';border-right:2px solid rgba(255,255,255,.3)' : ''}">
+      ${esc(s.fac.name)}<br>
+      <span style="font-size:10px;font-weight:normal;color:#90cdf4">${ymLabel(s.latestYm)}</span>
+    </th>`
+  )).join('');
+
+  // 全事業所を順序付き配列に
+  const orderedStats = activeGroups.flatMap(g => g.stats);
+
   // テーブル行（加算ごと）
   const tRows = addonList.map(addonName => {
-    const cells = facStats.map(s => {
-      // 看護体制強化加算Ⅰ/Ⅱ は可否バッジ
-      if (addonName === '看護体制強化加算Ⅰ（次月）') {
-        return s.r1ok == null
-          ? `<td style="text-align:center;padding:10px 8px;border-bottom:1px solid #f0f4f8"><span style="color:#a0aec0;font-size:12px">要確認</span></td>`
-          : s.r1ok
-            ? `<td style="text-align:center;padding:10px 8px;border-bottom:1px solid #f0f4f8"><span style="background:#c6f6d5;color:#22543d;padding:3px 10px;border-radius:10px;font-size:12px;font-weight:bold">✓ 算定可</span></td>`
-            : `<td style="text-align:center;padding:10px 8px;border-bottom:1px solid #f0f4f8"><span style="background:#fed7d7;color:#9b2c2c;padding:3px 10px;border-radius:10px;font-size:12px;font-weight:bold">✗ 不可</span></td>`;
-      }
-      if (addonName === '看護体制強化加算Ⅱ（次月）') {
-        return s.r2ok == null
-          ? `<td style="text-align:center;padding:10px 8px;border-bottom:1px solid #f0f4f8"><span style="color:#a0aec0;font-size:12px">要確認</span></td>`
-          : s.r2ok
-            ? `<td style="text-align:center;padding:10px 8px;border-bottom:1px solid #f0f4f8"><span style="background:#c6f6d5;color:#22543d;padding:3px 10px;border-radius:10px;font-size:12px;font-weight:bold">✓ 算定可</span></td>`
-            : `<td style="text-align:center;padding:10px 8px;border-bottom:1px solid #f0f4f8"><span style="background:#fed7d7;color:#9b2c2c;padding:3px 10px;border-radius:10px;font-size:12px;font-weight:bold">✗ 不可</span></td>`;
-      }
-      // その他の加算は算定者数
-      const cnt = s.addonCounts[addonName] || 0;
-      return cnt > 0
-        ? `<td style="text-align:center;padding:10px 8px;border-bottom:1px solid #f0f4f8">
-            <span style="font-size:14px;font-weight:bold;color:#2b6cb0">${cnt}</span>
-            <span style="font-size:11px;color:#718096"> 名</span>
-           </td>`
-        : `<td style="text-align:center;padding:10px 8px;border-bottom:1px solid #f0f4f8;color:#e2e8f0">—</td>`;
-    }).join('');
-
-    // 行の背景（看護体制強化加算は強調）
     const isKango = addonName.includes('看護体制強化加算');
     const rowBg = isKango ? 'background:#f0f9ff;' : '';
     const nameCellStyle = isKango
-      ? 'padding:10px 14px;font-size:13px;font-weight:bold;color:#2b6cb0;border-bottom:1px solid #f0f4f8;white-space:nowrap;border-right:2px solid #e2e8f0'
-      : 'padding:10px 14px;font-size:13px;border-bottom:1px solid #f0f4f8;white-space:nowrap;border-right:2px solid #e2e8f0';
+      ? 'padding:8px 12px;font-size:12px;font-weight:bold;color:#2b6cb0;border-bottom:1px solid #f0f4f8;white-space:nowrap;border-right:2px solid #e2e8f0'
+      : 'padding:8px 12px;font-size:12px;border-bottom:1px solid #f0f4f8;white-space:nowrap;border-right:2px solid #e2e8f0';
+
+    let colIdx = 0;
+    const cells = activeGroups.flatMap(g => g.stats.map((s, i) => {
+      const isLast = i === g.stats.length - 1;
+      const borderR = isLast ? 'border-right:2px solid #d0d5de;' : 'border-right:1px solid #f0f4f8;';
+      const tdBase = `style="text-align:center;padding:8px 6px;border-bottom:1px solid #f0f4f8;${borderR}"`;
+      if (addonName === '看護体制強化加算Ⅰ（次月）') {
+        return s.r1ok == null
+          ? `<td ${tdBase}><span style="color:#a0aec0;font-size:11px">要確認</span></td>`
+          : s.r1ok
+            ? `<td ${tdBase}><span style="background:#c6f6d5;color:#22543d;padding:2px 8px;border-radius:8px;font-size:11px;font-weight:bold">✓</span></td>`
+            : `<td ${tdBase}><span style="background:#fed7d7;color:#9b2c2c;padding:2px 8px;border-radius:8px;font-size:11px;font-weight:bold">✗</span></td>`;
+      }
+      if (addonName === '看護体制強化加算Ⅱ（次月）') {
+        return s.r2ok == null
+          ? `<td ${tdBase}><span style="color:#a0aec0;font-size:11px">要確認</span></td>`
+          : s.r2ok
+            ? `<td ${tdBase}><span style="background:#c6f6d5;color:#22543d;padding:2px 8px;border-radius:8px;font-size:11px;font-weight:bold">✓</span></td>`
+            : `<td ${tdBase}><span style="background:#fed7d7;color:#9b2c2c;padding:2px 8px;border-radius:8px;font-size:11px;font-weight:bold">✗</span></td>`;
+      }
+      const cnt = s.addonCounts[addonName] || 0;
+      return cnt > 0
+        ? `<td ${tdBase}><span style="font-size:13px;font-weight:bold;color:#2b6cb0">${cnt}</span><span style="font-size:10px;color:#718096">名</span></td>`
+        : `<td ${tdBase} style="text-align:center;padding:8px 6px;border-bottom:1px solid #f0f4f8;${borderR}color:#e2e8f0">—</td>`;
+    })).join('');
 
     return `<tr style="${rowBg}">
       <td style="${nameCellStyle}">${addonName}</td>
@@ -993,9 +1011,10 @@ function renderAddonMatrix() {
       <table style="width:100%;border-collapse:collapse;font-size:13px">
         <thead>
           <tr>
-            <th style="background:#2d3748;color:#e2e8f0;padding:10px 14px;text-align:left;font-size:12px;white-space:nowrap;border-right:2px solid rgba(255,255,255,.2)">加算名</th>
-            ${thCells}
+            <th rowspan="2" style="background:#2d3748;color:#e2e8f0;padding:10px 14px;text-align:left;font-size:12px;white-space:nowrap;border-right:2px solid rgba(255,255,255,.2);vertical-align:bottom">加算名</th>
+            ${areaHeaderCells}
           </tr>
+          <tr>${facHeaderCells}</tr>
         </thead>
         <tbody>${tRows}</tbody>
       </table>
