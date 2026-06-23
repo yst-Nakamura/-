@@ -357,9 +357,20 @@ input[type=file] { display: none; }
     <h2>＋ 事業所追加</h2>
     <div class="modal-sub">新しい事業所を追加します。事業所名は後から変更できます。</div>
     <label>事業所名</label>
-    <input type="text" id="inp-fac-name" placeholder="例: ○○ナーシングホーム 小規模多機能"
+    <input type="text" id="inp-fac-name" placeholder="例: かえりえ○○"
            onkeydown="if(event.key==='Enter')createFacility()">
     <div id="add-fac-error" style="color:#e53e3e;font-size:12px;margin-top:-10px;margin-bottom:10px;min-height:18px"></div>
+    <label>エリア</label>
+    <select id="inp-fac-area" style="width:100%;padding:8px 10px;border:1px solid #cbd5e0;border-radius:8px;font-size:14px;background:#fff;margin-bottom:16px">
+      <option value="">エリアを選択（任意）</option>
+      <option value="第１エリア">第１エリア（長野・北青木・長岡）</option>
+      <option value="第２エリア">第２エリア（大橋・用賀・成城・給田・上北沢）</option>
+      <option value="第３エリア">第３エリア（上石神井・平尾・荏田西・南生田・小平）</option>
+      <option value="第４エリア">第４エリア（河原塚・松戸八柱・南佐津間・結城）</option>
+      <option value="第５エリア">第５エリア（竹ノ塚・東大宮・奈良町・南大塚）</option>
+      <option value="第６エリア">第６エリア（西明石・東灘・楠・伊川谷・加古川）</option>
+      <option value="第７エリア">第７エリア（万成西町・中津・鶴崎・高見馬場）</option>
+    </select>
     <div class="modal-btns">
       <button class="btn-secondary" onclick="closeAddFacModal()">キャンセル</button>
       <button class="btn-primary" onclick="createFacility()">追加</button>
@@ -377,6 +388,29 @@ input[type=file] { display: none; }
     <div class="modal-btns">
       <button class="btn-secondary" onclick="document.getElementById('modal-rename-fac').classList.add('hidden')">キャンセル</button>
       <button class="btn-primary" onclick="doRenameFacility()">変更</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== エリア変更モーダル ===== -->
+<div id="modal-change-area" class="modal-overlay hidden" onclick="if(event.target===this)closeChangeAreaModal()">
+  <div class="modal-box">
+    <h2>🗂 エリア変更</h2>
+    <div class="modal-sub" id="change-area-fac-name" style="margin-bottom:12px;color:#4a5568;font-size:13px"></div>
+    <label>所属エリア</label>
+    <select id="inp-change-area" style="width:100%;padding:8px 10px;border:1px solid #cbd5e0;border-radius:8px;font-size:14px;background:#fff;margin-bottom:16px">
+      <option value="">未分類（キーワード自動判定）</option>
+      <option value="第１エリア">第１エリア（長野・北青木・長岡）</option>
+      <option value="第２エリア">第２エリア（大橋・用賀・成城・給田・上北沢）</option>
+      <option value="第３エリア">第３エリア（上石神井・平尾・荏田西・南生田・小平）</option>
+      <option value="第４エリア">第４エリア（河原塚・松戸八柱・南佐津間・結城）</option>
+      <option value="第５エリア">第５エリア（竹ノ塚・東大宮・奈良町・南大塚）</option>
+      <option value="第６エリア">第６エリア（西明石・東灘・楠・伊川谷・加古川）</option>
+      <option value="第７エリア">第７エリア（万成西町・中津・鶴崎・高見馬場）</option>
+    </select>
+    <div class="modal-btns">
+      <button class="btn-secondary" onclick="closeChangeAreaModal()">キャンセル</button>
+      <button class="btn-primary" onclick="doChangeArea()">変更</button>
     </div>
   </div>
 </div>
@@ -436,6 +470,7 @@ input[type=file] { display: none; }
       <div class="fac-detail-actions">
         <button class="fac-action-btn email-btn" onclick="sendAnalysisEmail()" title="エリア長・事業所職員全員に加算状況レポートを送信">📧 加算状況メール送信</button>
         <button class="fac-action-btn" onclick="showRenameFacModal()">✏️ 名前変更</button>
+        <button class="fac-action-btn" onclick="showChangeAreaModal()">🗂 エリア変更</button>
         <button class="fac-action-btn danger" onclick="confirmDeleteFacility()">🗑 削除</button>
       </div>
     </div>
@@ -489,7 +524,7 @@ const GAS_URL_DEFAULT = 'https://script.google.com/macros/s/AKfycbw5vg_DYk2oMifF
 const AREA_DEFS = [
   { area: '第１エリア', color: '#2b6cb0', bg: '#ebf8ff', keys: ['長野', '北青木', '長岡'] },
   { area: '第２エリア', color: '#276749', bg: '#f0fff4', keys: ['大橋', '用賀', '成城', '給田', '上北沢'] },
-  { area: '第３エリア', color: '#7b341e', bg: '#fff5f0', keys: ['上石神井', '平尾', '荏田西', '南生田'] },
+  { area: '第３エリア', color: '#7b341e', bg: '#fff5f0', keys: ['上石神井', '平尾', '荏田西', '南生田', '小平'] },
   { area: '第４エリア', color: '#553c9a', bg: '#faf5ff', keys: ['河原塚', '松戸八柱', '南佐津間', '結城'] },
   { area: '第５エリア', color: '#c05621', bg: '#fffaf0', keys: ['竹ノ塚', '東大宮', '奈良町', '南大塚'] },
   { area: '第６エリア', color: '#234e52', bg: '#e6fffa', keys: ['西明石', '東灘', '楠', '伊川谷', '加古川'] },
@@ -501,6 +536,27 @@ function getAreaDef(facName) {
     if (a.keys.some(k => facName.includes(k))) return a;
   }
   return null;
+}
+function getAreaOverrides() {
+  try { return JSON.parse(localStorage.getItem('kango_area_overrides') || '{}'); } catch(e) { return {}; }
+}
+function getFacAreaDef(facId, facName) {
+  const ov = getAreaOverrides();
+  if (ov[facId]) return AREA_DEFS.find(a => a.area === ov[facId]) || null;
+  return getAreaDef(facName);
+}
+function setFacAreaOverride(facId, areaName) {
+  const ov = getAreaOverrides();
+  if (areaName) ov[facId] = areaName; else delete ov[facId];
+  localStorage.setItem('kango_area_overrides', JSON.stringify(ov));
+}
+function buildAreaSelect(selectedArea, id) {
+  const opts = AREA_DEFS.map(a =>
+    `<option value="${a.area}" ${selectedArea === a.area ? 'selected' : ''}>${a.area}</option>`
+  ).join('');
+  return `<select id="${id}" style="width:100%;padding:8px 10px;border:1px solid #cbd5e0;border-radius:8px;font-size:14px;background:#fff;margin-bottom:16px">
+    <option value="">エリアを選択</option>${opts}
+  </select>`;
 }
 
 // ============================================================
@@ -789,7 +845,7 @@ function renderDashboard() {
   const areaGroups = AREA_DEFS.map(a => ({ ...a, items: [] }));
   const noAreaGroup = { area: 'その他', color: '#4a5568', bg: '#f7fafc', items: [] };
   rowData.forEach(d => {
-    const areaDef = getAreaDef(d.f.name);
+    const areaDef = getFacAreaDef(d.f.id, d.f.name);
     const group = areaDef ? areaGroups.find(g => g.area === areaDef.area) : null;
     (group || noAreaGroup).items.push(d.row);
   });
@@ -1247,11 +1303,13 @@ async function createFacility() {
     document.getElementById('add-fac-error').textContent = `「${name}」はすでに登録済みです`;
     return;
   }
+  const areaVal = document.getElementById('inp-fac-area').value;
   closeAddFacModal();
   showLoading('事業所を追加中...');
   try {
     const res = await gasPost({ action: 'addFacility', name });
     if (res.success) {
+      if (areaVal) setFacAreaOverride(res.id, areaVal);
       const newFac = { id: res.id, name: res.name };
       allFacilities.push(newFac);
       facilityData[res.id] = { monthData: {}, terminalEntries: [], manualIsha: {}, katsudan: { registered: null, staff: [] } };
@@ -1296,6 +1354,24 @@ async function doRenameFacility() {
 // ============================================================
 // 事業所削除
 // ============================================================
+function showChangeAreaModal() {
+  const fac = allFacilities.find(f => f.id === currentFacilityId);
+  if (!fac) return;
+  document.getElementById('change-area-fac-name').textContent = '事業所: ' + fac.name;
+  const current = getAreaOverrides()[currentFacilityId] || '';
+  document.getElementById('inp-change-area').value = current;
+  document.getElementById('modal-change-area').classList.remove('hidden');
+}
+function closeChangeAreaModal() {
+  document.getElementById('modal-change-area').classList.add('hidden');
+}
+function doChangeArea() {
+  const areaVal = document.getElementById('inp-change-area').value;
+  setFacAreaOverride(currentFacilityId, areaVal);
+  closeChangeAreaModal();
+  renderDashboard();
+}
+
 async function confirmDeleteFacility() {
   const fac = allFacilities.find(f => f.id === currentFacilityId);
   if (!fac) return;
