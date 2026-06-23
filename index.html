@@ -1869,7 +1869,7 @@ function renderKatsudanStaffList(ctx) {
 function saveKatsudan(ym, registeredRaw) {
   const ctx = getFacCtx(currentFacilityId);
   if (!ctx.katsudan) ctx.katsudan = { registered: null, staff: [] };
-  const val = registeredRaw === 'true' ? true : registeredRaw === 'false' ? false : null;
+  const val = (registeredRaw === true || registeredRaw === 'true') ? true : (registeredRaw === false || registeredRaw === 'false') ? false : null;
   ctx.katsudan.registered = val;
   document.getElementById('scenarios-wrap-' + ym).innerHTML = renderThreeScenarios(ym, ctx.manualIsha[ym]);
   renderDashboard();
