@@ -394,6 +394,17 @@ input[type=file] { display: none; }
   </div>
 </div>
 
+<!-- ===== 平均介護度 推移モーダル ===== -->
+<div id="modal-avg-level" class="modal-overlay hidden" onclick="if(event.target===this)document.getElementById('modal-avg-level').classList.add('hidden')">
+  <div class="modal-box" style="width:640px;max-width:95vw;max-height:90vh;overflow-y:auto">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+      <h2 style="font-size:15px">📈 平均介護度 推移</h2>
+      <button onclick="document.getElementById('modal-avg-level').classList.add('hidden')" style="background:none;border:none;font-size:20px;color:#718096;cursor:pointer">✕</button>
+    </div>
+    <div id="avg-level-chart-wrap"></div>
+  </div>
+</div>
+
 <!-- ===== エリア変更モーダル ===== -->
 <div id="modal-change-area" class="modal-overlay hidden" onclick="if(event.target===this)closeChangeAreaModal()">
   <div class="modal-box">
@@ -830,8 +841,11 @@ function renderDashboard() {
       : avgLevel >= 3 ? '#c05621'
       : '#2b6cb0';
     const avgCell = avgLevel
-      ? `<span style="font-weight:bold;color:${avgColor};font-size:14px">${avgLevel}</span>
-         <span style="font-size:11px;color:#718096"> (${levels.length}名)</span>`
+      ? `<a onclick="showAvgLevelHistory('${f.id}')" style="cursor:pointer;text-decoration:none;display:inline-block" title="推移を見る">
+           <span style="font-weight:bold;color:${avgColor};font-size:14px">${avgLevel}</span>
+           <span style="font-size:11px;color:#718096"> (${levels.length}名)</span>
+           <span style="font-size:10px;color:#a0aec0;margin-left:2px">📈</span>
+         </a>`
       : `<span style="color:#a0aec0;font-size:12px">—</span>`;
 
     return { f, row: `<tr>
@@ -2482,6 +2496,100 @@ function renderAddonChecklist(users) {
       <tbody>${rows.join('')}${unmatchedRows}</tbody>
     </table>
   </div>`;
+}
+
+// ============================================================
+// 平均介護度 推移モーダル
+// ============================================================
+function showAvgLevelHistory(facId) {
+  const fac = allFacilities.find(f => f.id === facId);
+  const ctx = getFacCtx(facId);
+  if (!ctx) return;
+
+  const history = Object.keys(ctx.monthData).sort().map(ym => {
+    const users = Object.values(ctx.monthData[ym].users || {});
+    const levels = users.map(u => getLevel(u.baseCode)).filter(l => l !== null);
+    const avg = levels.length ? levels.reduce((s, l) => s + l, 0) / levels.length : null;
+    return { ym, label: ymLabel(ym), avg, count: levels.length };
+  }).filter(d => d.avg !== null);
+
+  if (!history.length) {
+    document.getElementById('avg-level-chart-wrap').innerHTML =
+      '<p style="color:#a0aec0;text-align:center;padding:24px">データがありません</p>';
+    document.getElementById('modal-avg-level').classList.remove('hidden');
+    return;
+  }
+
+  const W = 560, H = 200, PL = 44, PR = 16, PT = 16, PB = 36;
+  const gW = W - PL - PR, gH = H - PT - PB;
+  const yMin = 1, yMax = 5;
+  const n = history.length;
+  const xPos = i => PL + (n > 1 ? i * gW / (n - 1) : gW / 2);
+  const yPos = v => PT + gH - ((v - yMin) / (yMax - yMin)) * gH;
+
+  let gridLines = '', yLabels = '';
+  for (let v = 1; v <= 5; v++) {
+    const y = yPos(v);
+    gridLines += `<line x1="${PL}" y1="${y}" x2="${W - PR}" y2="${y}" stroke="#e2e8f0" stroke-width="1"/>`;
+    yLabels += `<text x="${PL - 6}" y="${y + 4}" text-anchor="end" font-size="10" fill="#718096">${v}</text>`;
+  }
+
+  const pts = history.map((d, i) => `${xPos(i).toFixed(1)},${yPos(d.avg).toFixed(1)}`).join(' ');
+  const areaPath = `${xPos(0).toFixed(1)},${(PT+gH).toFixed(1)} ${pts} ${xPos(n-1).toFixed(1)},${(PT+gH).toFixed(1)}`;
+
+  let dots = '', xLabels = '';
+  history.forEach((d, i) => {
+    const x = xPos(i), y = yPos(d.avg);
+    const color = d.avg >= 4 ? '#c53030' : d.avg >= 3 ? '#c05621' : '#3182ce';
+    dots += `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="5" fill="${color}" stroke="white" stroke-width="2"/>`;
+    dots += `<text x="${x.toFixed(1)}" y="${(y-9).toFixed(1)}" text-anchor="middle" font-size="10" fill="${color}" font-weight="bold">${d.avg.toFixed(2)}</text>`;
+    const shortLabel = d.label.replace(/年/, '/').replace(/月/, '');
+    xLabels += `<text x="${x.toFixed(1)}" y="${(PT+gH+16).toFixed(1)}" text-anchor="middle" font-size="9" fill="#718096" transform="rotate(-30,${x.toFixed(1)},${(PT+gH+16).toFixed(1)})">${shortLabel}</text>`;
+  });
+
+  const svg = `<svg viewBox="0 0 ${W} ${H}" width="100%" style="display:block;overflow:visible">
+    ${gridLines}
+    <line x1="${PL}" y1="${PT}" x2="${PL}" y2="${PT+gH}" stroke="#cbd5e0" stroke-width="1.5"/>
+    <line x1="${PL}" y1="${PT+gH}" x2="${W-PR}" y2="${PT+gH}" stroke="#cbd5e0" stroke-width="1.5"/>
+    ${yLabels}
+    <polygon points="${areaPath}" fill="rgba(49,130,206,0.08)"/>
+    <polyline points="${pts}" fill="none" stroke="#3182ce" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
+    ${dots}
+    ${xLabels}
+    <text x="${PL-36}" y="${PT+gH/2}" text-anchor="middle" font-size="10" fill="#718096" transform="rotate(-90,${PL-36},${PT+gH/2})">介護度</text>
+  </svg>`;
+
+  const tableRows = history.slice().reverse().map(d => {
+    const color = d.avg >= 4 ? '#c53030' : d.avg >= 3 ? '#c05621' : '#2b6cb0';
+    const bar = Math.round((d.avg - 1) / 4 * 100);
+    return `<tr style="border-bottom:1px solid #f0f4f8">
+      <td style="padding:7px 10px;font-size:13px;color:#4a5568">${d.label}</td>
+      <td style="padding:7px 10px;text-align:center;font-size:14px;font-weight:bold;color:${color}">${d.avg.toFixed(2)}</td>
+      <td style="padding:7px 10px;font-size:12px;color:#718096;text-align:center">${d.count}名</td>
+      <td style="padding:7px 14px">
+        <div style="background:#e2e8f0;border-radius:3px;height:8px;overflow:hidden;min-width:80px">
+          <div style="background:${color};height:8px;border-radius:3px;width:${bar}%"></div>
+        </div>
+      </td>
+    </tr>`;
+  }).join('');
+
+  document.getElementById('avg-level-chart-wrap').innerHTML = `
+    <div style="font-size:13px;color:#4a5568;margin-bottom:12px;font-weight:bold">${fac ? esc(fac.name) : ''}</div>
+    <div style="margin-bottom:20px;padding:8px;background:#f7fafc;border-radius:8px">${svg}</div>
+    <table style="width:100%;border-collapse:collapse;font-size:13px">
+      <thead>
+        <tr style="background:#f7fafc">
+          <th style="padding:7px 10px;text-align:left;font-size:12px;color:#718096;font-weight:normal;border-bottom:2px solid #e2e8f0">月</th>
+          <th style="padding:7px 10px;text-align:center;font-size:12px;color:#718096;font-weight:normal;border-bottom:2px solid #e2e8f0">平均介護度</th>
+          <th style="padding:7px 10px;text-align:center;font-size:12px;color:#718096;font-weight:normal;border-bottom:2px solid #e2e8f0">対象人数</th>
+          <th style="padding:7px 14px;border-bottom:2px solid #e2e8f0"></th>
+        </tr>
+      </thead>
+      <tbody>${tableRows}</tbody>
+    </table>`;
+
+  document.getElementById('modal-avg-level').classList.remove('hidden');
 }
 
 // ============================================================
