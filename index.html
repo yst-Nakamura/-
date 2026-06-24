@@ -394,6 +394,17 @@ input[type=file] { display: none; }
   </div>
 </div>
 
+<!-- ===== 修正ログモーダル ===== -->
+<div id="modal-changelog" class="modal-overlay hidden" onclick="if(event.target===this)document.getElementById('modal-changelog').classList.add('hidden')">
+  <div class="modal-box" style="width:660px;max-width:95vw;max-height:88vh;overflow-y:auto">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px">
+      <h2 style="font-size:15px">🛠 修正ログ・変更履歴</h2>
+      <button onclick="document.getElementById('modal-changelog').classList.add('hidden')" style="background:none;border:none;font-size:20px;color:#718096;cursor:pointer">✕</button>
+    </div>
+    <div id="changelog-content"></div>
+  </div>
+</div>
+
 <!-- ===== 平均介護度 推移モーダル ===== -->
 <div id="modal-avg-level" class="modal-overlay hidden" onclick="if(event.target===this)document.getElementById('modal-avg-level').classList.add('hidden')">
   <div class="modal-box" style="width:640px;max-width:95vw;max-height:90vh;overflow-y:auto">
@@ -461,6 +472,10 @@ input[type=file] { display: none; }
       </div>
       <button class="nav-btn" style="background:rgba(255,255,255,.18);font-size:12px" onclick="bulkCreateFromMaster()" title="組織図マスタから看多機29事業所を一括登録">📋 マスタ一括作成</button>
       <button class="nav-btn add" onclick="showAddFacModal()">＋ 事業所追加</button>
+      <button onclick="showChangelogModal()"
+         style="display:inline-flex;align-items:center;gap:5px;padding:6px 14px;background:rgba(255,255,255,.18);color:white;border:1px solid rgba(255,255,255,.3);border-radius:8px;font-size:12px;font-weight:bold;cursor:pointer;transition:.2s"
+         onmouseover="this.style.background='rgba(255,255,255,.28)'" onmouseout="this.style.background='rgba(255,255,255,.18)'"
+         title="修正ログ・変更履歴">🛠 修正ログ</button>
       <a href="kangosmall_manual.docx" download="看護小規模多機能型居宅介護_加算管理ダッシュボード_操作マニュアル.docx"
          style="display:inline-flex;align-items:center;gap:5px;padding:6px 14px;background:rgba(255,255,255,.18);color:white;border:1px solid rgba(255,255,255,.3);border-radius:8px;font-size:12px;font-weight:bold;cursor:pointer;text-decoration:none;transition:.2s"
          onmouseover="this.style.background='rgba(255,255,255,.28)'" onmouseout="this.style.background='rgba(255,255,255,.18)'"
@@ -2496,6 +2511,90 @@ function renderAddonChecklist(users) {
       <tbody>${rows.join('')}${unmatchedRows}</tbody>
     </table>
   </div>`;
+}
+
+// ============================================================
+// 修正ログモーダル
+// ============================================================
+const CHANGELOG_DATA = [
+  {
+    version: 'v1.1.0', date: '2026-06-24', label: '新機能',
+    labelColor: '#2b6cb0', labelBg: '#ebf8ff',
+    items: [
+      { tag: '追加', tagColor: '#276749', tagBg: '#c6f6d5', text: '平均介護度をクリックすると推移グラフ・月別テーブルがモーダルで表示される機能を追加' },
+      { tag: '修正', tagColor: '#7b341e', tagBg: '#fed7aa', text: '「喀痰吸引届出」ラジオボタンが画面遷移後に未入力にリセットされるバグを修正（boolean/string型変換の誤り）' },
+    ]
+  },
+  {
+    version: 'v1.0.5', date: '2026-06-23', label: 'バグ修正',
+    labelColor: '#7b341e', labelBg: '#fed7aa',
+    items: [
+      { tag: '修正', tagColor: '#7b341e', tagBg: '#fed7aa', text: '短期看護小規模の利用者が登録総数に含まれるバグを修正（2回目）。itemName.includes("短期") による検知に変更し二重ガードを追加' },
+    ]
+  },
+  {
+    version: 'v1.0.4', date: '2026-06-23', label: 'バグ修正',
+    labelColor: '#7b341e', labelBg: '#fed7aa',
+    items: [
+      { tag: '修正', tagColor: '#7b341e', tagBg: '#fed7aa', text: '同じ加算が複数の請求期間に分かれてCSV出力される場合、加算明細に重複表示されるバグを修正' },
+    ]
+  },
+  {
+    version: 'v1.0.3', date: '2026-06-23', label: 'バグ修正',
+    labelColor: '#7b341e', labelBg: '#fed7aa',
+    items: [
+      { tag: '修正', tagColor: '#7b341e', tagBg: '#fed7aa', text: '日割請求利用者（例: 看護小規模12・日割）の介護度が「?」表示になるバグを修正。半角数字にも対応' },
+    ]
+  },
+  {
+    version: 'v1.0.2', date: '2026-06-23', label: 'バグ修正',
+    labelColor: '#7b341e', labelBg: '#fed7aa',
+    items: [
+      { tag: '修正', tagColor: '#7b341e', tagBg: '#fed7aa', text: '月フィルターが機能せず全月のデータが合算されるバグを修正。CSVの年（列2）と月（列3）を結合して6桁で比較するよう変更' },
+    ]
+  },
+  {
+    version: 'v1.0.1', date: '2026-06-23', label: 'バグ修正',
+    labelColor: '#7b341e', labelBg: '#fed7aa',
+    items: [
+      { tag: '修正', tagColor: '#7b341e', tagBg: '#fed7aa', text: '短期看護小規模の利用者が登録総数に含まれるバグを修正（1回目）。baseCode === null の利用者をフィルタアウト' },
+    ]
+  },
+  {
+    version: 'v1.0.0', date: '2026-06-初旬', label: '初回リリース',
+    labelColor: '#553c9a', labelBg: '#e9d8fd',
+    items: [
+      { tag: '追加', tagColor: '#276749', tagBg: '#c6f6d5', text: '複数事業所の加算管理ダッシュボード' },
+      { tag: '追加', tagColor: '#276749', tagBg: '#c6f6d5', text: 'RMシステムCSV（Shift-JIS）アップロードによるデータ連携' },
+      { tag: '追加', tagColor: '#276749', tagBg: '#c6f6d5', text: '看護体制強化加算Ⅰ・Ⅱの算定可否自動判定（当月・来月・再来月）' },
+      { tag: '追加', tagColor: '#276749', tagBg: '#c6f6d5', text: 'ターミナルケア加算の入力・有効期限12ヶ月管理' },
+      { tag: '追加', tagColor: '#276749', tagBg: '#c6f6d5', text: '医師指示割合の手動入力・喀痰吸引届出状況の管理' },
+      { tag: '追加', tagColor: '#276749', tagBg: '#c6f6d5', text: 'Google Sheetsによるクラウドデータ永続化・エリア別グループ表示' },
+    ]
+  },
+];
+
+function showChangelogModal() {
+  const html = CHANGELOG_DATA.map((v, idx) => {
+    const items = v.items.map(it => `
+      <div style="display:flex;align-items:flex-start;gap:8px;padding:5px 0;border-bottom:1px solid #f7fafc">
+        <span style="flex-shrink:0;font-size:10px;font-weight:bold;color:${it.tagColor};background:${it.tagBg};padding:2px 7px;border-radius:10px;margin-top:1px">${it.tag}</span>
+        <span style="font-size:12px;color:#4a5568;line-height:1.6">${it.text}</span>
+      </div>`).join('');
+    const isLatest = idx === 0;
+    return `
+      <div style="margin-bottom:16px;border:1px solid ${isLatest ? '#bee3f8' : '#e2e8f0'};border-radius:10px;overflow:hidden">
+        <div style="display:flex;align-items:center;gap:10px;padding:10px 14px;background:${isLatest ? '#ebf8ff' : '#f7fafc'}">
+          <span style="font-size:14px;font-weight:bold;color:#1a365d">${v.version}</span>
+          <span style="font-size:11px;font-weight:bold;color:${v.labelColor};background:${v.labelBg};padding:2px 8px;border-radius:10px">${v.label}</span>
+          <span style="font-size:11px;color:#a0aec0;margin-left:auto">${v.date}</span>
+          ${isLatest ? '<span style="font-size:10px;font-weight:bold;color:#2b6cb0;background:#bee3f8;padding:2px 8px;border-radius:8px">最新</span>' : ''}
+        </div>
+        <div style="padding:8px 14px 4px">${items}</div>
+      </div>`;
+  }).join('');
+  document.getElementById('changelog-content').innerHTML = html;
+  document.getElementById('modal-changelog').classList.remove('hidden');
 }
 
 // ============================================================
