@@ -310,6 +310,21 @@ input[type=file] { display: none; }
 
 .empty { text-align: center; color: #a0aec0; padding: 40px; font-size: 14px; }
 .empty-fac { text-align: center; padding: 40px 20px; color: #a0aec0; }
+
+/* サービス種別タブ */
+.service-type-tabs {
+  display: flex; gap: 4px; margin-bottom: 20px;
+  border-bottom: 2px solid #e2e8f0; padding-bottom: 0;
+}
+.svc-tab-btn {
+  padding: 10px 28px; font-size: 14px; font-weight: bold;
+  border: none; border-radius: 8px 8px 0 0; cursor: pointer;
+  background: #edf2f7; color: #718096; transition: .15s;
+  border-bottom: 3px solid transparent; margin-bottom: -2px;
+}
+.svc-tab-btn:hover { background: #e2e8f0; color: #4a5568; }
+.svc-tab-btn.active { background: white; color: #1a365d; border-bottom: 3px solid #2b6cb0; }
+.svc-tab-btn.disabled-tab { opacity: .5; cursor: not-allowed; }
 </style>
 </head>
 <body>
@@ -362,6 +377,15 @@ input[type=file] { display: none; }
     <input type="text" id="inp-fac-name" placeholder="例: かえりえ○○"
            onkeydown="if(event.key==='Enter')createFacility()">
     <div id="add-fac-error" style="color:#e53e3e;font-size:12px;margin-top:-10px;margin-bottom:10px;min-height:18px"></div>
+    <label>サービス種別</label>
+    <div style="display:flex;gap:12px;margin-bottom:16px;flex-wrap:wrap">
+      <label style="display:flex;align-items:center;gap:5px;font-size:13px;cursor:pointer">
+        <input type="radio" name="add-fac-svctype" value="kango" checked> 看護小規模多機能（看多機）
+      </label>
+      <label style="display:flex;align-items:center;gap:5px;font-size:13px;cursor:pointer">
+        <input type="radio" name="add-fac-svctype" value="shotaki"> 小規模多機能（小多機）
+      </label>
+    </div>
     <label>エリア</label>
     <select id="inp-fac-area" style="width:100%;padding:8px 10px;border:1px solid #cbd5e0;border-radius:8px;font-size:14px;background:#fff;margin-bottom:16px">
       <option value="">エリアを選択（任意）</option>
@@ -486,6 +510,12 @@ input[type=file] { display: none; }
 
   <!-- ===== ダッシュボードページ ===== -->
   <div id="page-dashboard" style="flex:1;overflow-y:auto;padding:24px">
+    <!-- サービス種別タブ -->
+    <div class="service-type-tabs">
+      <button id="svc-tab-kango" class="svc-tab-btn active" onclick="switchServiceType('kango')">🏥 看多機</button>
+      <button id="svc-tab-shotaki" class="svc-tab-btn" onclick="switchServiceType('shotaki')">🏠 小多機</button>
+      <button id="svc-tab-houmon" class="svc-tab-btn disabled-tab" title="準備中">🚗 訪問看護（準備中）</button>
+    </div>
     <div class="page-title">全事業所 加算状況一覧</div>
     <div class="page-subtitle" id="dash-subtitle">事業所を追加してCSVをアップロードすると自動で集計されます</div>
     <div id="dash-kpi" class="dash-kpi"></div>
@@ -582,6 +612,28 @@ function setFacAreaOverride(facId, areaName) {
   if (areaName) ov[facId] = areaName; else delete ov[facId];
   localStorage.setItem('kango_area_overrides', JSON.stringify(ov));
 }
+function getServiceTypeOverrides() {
+  try { return JSON.parse(localStorage.getItem('kango_svctype_overrides') || '{}'); } catch(e) { return {}; }
+}
+function getFacServiceType(facId) {
+  const ov = getServiceTypeOverrides();
+  return ov[facId] || 'kango';
+}
+function setFacServiceType(facId, svcType) {
+  const ov = getServiceTypeOverrides();
+  if (svcType && svcType !== 'kango') ov[facId] = svcType;
+  else delete ov[facId];
+  localStorage.setItem('kango_svctype_overrides', JSON.stringify(ov));
+}
+function switchServiceType(type) {
+  if (type === 'houmon') return; // 準備中
+  currentServiceType = type;
+  ['kango', 'shotaki'].forEach(t => {
+    const btn = document.getElementById('svc-tab-' + t);
+    if (btn) btn.classList.toggle('active', t === type);
+  });
+  renderDashboard();
+}
 function buildAreaSelect(selectedArea, id) {
   const opts = AREA_DEFS.map(a =>
     `<option value="${a.area}" ${selectedArea === a.area ? 'selected' : ''}>${a.area}</option>`
@@ -627,6 +679,7 @@ async function authSubmit() {
 // データストア
 // ============================================================
 let allFacilities = [];
+let currentServiceType = 'kango'; // 'kango' | 'shotaki' | 'houmon'
 // { facilityId: { monthData: {ym: {ym,label,users}}, terminalEntries: [{ym,label}], manualIsha: {ym: pct} } }
 let facilityData = {};
 let currentFacilityId = null;
@@ -773,14 +826,85 @@ function showFacility(facId) {
 // ============================================================
 // ダッシュボード描画
 // ============================================================
+function renderShotakiDashboard() {
+  const svcLabels = { kango: '看護小規模多機能（看多機）', shotaki: '小規模多機能（小多機）' };
+  document.querySelector('#page-dashboard .page-title').textContent =
+    `全事業所 加算状況一覧 — ${svcLabels[currentServiceType] || ''}`;
+
+  const facList = allFacilities.filter(f => getFacServiceType(f.id) === 'shotaki');
+  const total = facList.length;
+
+  document.getElementById('dash-kpi').innerHTML = `
+    <div class="kpi-card"><div class="kl">登録事業所数（小多機）</div><div class="kv kv-blue">${total}</div><div class="ks">事業所</div></div>
+  `;
+
+  const wrap = document.getElementById('dash-table-wrap');
+  if (facList.length === 0) {
+    wrap.innerHTML = `<div class="empty-dashboard">
+      <div class="em-icon">🏠</div>
+      <p>小多機の事業所がまだ登録されていません</p>
+      <p style="font-size:12px">右上の「＋ 事業所追加」から追加してください</p>
+    </div>`;
+    document.getElementById('dash-addon-matrix').innerHTML = '';
+    return;
+  }
+
+  const rows = facList.map(f => {
+    const ctx = getFacCtx(f.id);
+    const latestYm = Object.keys(ctx.monthData).sort().pop();
+    if (!latestYm) {
+      return `<tr>
+        <td class="fac-name"><a class="fac-name-link" onclick="showFacility('${f.id}')">${esc(f.name)}</a></td>
+        <td colspan="3"><span style="color:#a0aec0;font-size:12px">データなし</span></td>
+        <td><button class="detail-link" onclick="showFacility('${f.id}')">詳細 →</button></td>
+      </tr>`;
+    }
+    const users = Object.values(ctx.monthData[latestYm].users);
+    const levels = users.map(u => getLevel(u.baseCode)).filter(l => l !== null);
+    const avgLevel = levels.length ? (levels.reduce((s, l) => s + l, 0) / levels.length).toFixed(2) : null;
+    const avgColor = !avgLevel ? '#a0aec0' : avgLevel >= 4 ? '#c53030' : avgLevel >= 3 ? '#c05621' : '#2b6cb0';
+    return `<tr>
+      <td class="fac-name"><a class="fac-name-link" onclick="showFacility('${f.id}')">${esc(f.name)}</a></td>
+      <td style="font-size:12px;color:#718096">${ymLabel(latestYm)}</td>
+      <td style="text-align:center">${avgLevel ? `<span style="font-weight:bold;color:${avgColor};font-size:14px">${avgLevel}</span><span style="font-size:11px;color:#718096"> (${levels.length}名)</span>` : '<span style="color:#a0aec0;font-size:12px">—</span>'}</td>
+      <td style="text-align:center;font-size:13px">${users.length} 名</td>
+      <td><button class="detail-link" onclick="showFacility('${f.id}')">詳細 →</button></td>
+    </tr>`;
+  }).join('');
+
+  wrap.innerHTML = `<div class="dash-table-wrap">
+    <table class="dash-table">
+      <thead>
+        <tr>
+          <th>事業所名</th>
+          <th>最終連携月</th>
+          <th>平均介護度</th>
+          <th>登録利用者数</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>${rows}</tbody>
+    </table>
+  </div>`;
+  document.getElementById('dash-addon-matrix').innerHTML = '';
+}
+
 function renderDashboard() {
+  if (currentServiceType === 'shotaki') { renderShotakiDashboard(); return; }
+
+  const svcLabels = { kango: '看護小規模多機能（看多機）', shotaki: '小規模多機能（小多機）' };
+  document.querySelector('#page-dashboard .page-title').textContent =
+    `全事業所 加算状況一覧 — ${svcLabels[currentServiceType] || ''}`;
+
+  const kangoFacs = allFacilities.filter(f => getFacServiceType(f.id) === 'kango');
+
   const now = new Date();
   const currentYm = `${now.getFullYear()}${String(now.getMonth()+1).padStart(2,'0')}`;
 
   // KPI
-  const total = allFacilities.length;
+  const total = kangoFacs.length;
   let okCount1 = 0, okCount2 = 0;
-  allFacilities.forEach(f => {
+  kangoFacs.forEach(f => {
     const ctx = getFacCtx(f.id);
     const latestYm = Object.keys(ctx.monthData).sort().pop();
     if (!latestYm) return;
@@ -801,16 +925,17 @@ function renderDashboard() {
   `;
 
   const wrap = document.getElementById('dash-table-wrap');
-  if (allFacilities.length === 0) {
+  if (kangoFacs.length === 0) {
     wrap.innerHTML = `<div class="empty-dashboard">
       <div class="em-icon">🏥</div>
-      <p>事業所がまだ登録されていません</p>
+      <p>看多機の事業所がまだ登録されていません</p>
       <p style="font-size:12px">右上の「＋ 事業所追加」から追加してください</p>
     </div>`;
+    document.getElementById('dash-addon-matrix').innerHTML = '';
     return;
   }
 
-  const rowData = allFacilities.map(f => {
+  const rowData = kangoFacs.map(f => {
     const ctx = getFacCtx(f.id);
     const latestYm = Object.keys(ctx.monthData).sort().pop();
     if (!latestYm) {
@@ -930,7 +1055,7 @@ function renderDashboard() {
 function renderAddonMatrix() {
   const dataFacs = allFacilities.filter(f => {
     const ctx = getFacCtx(f.id);
-    return Object.keys(ctx.monthData).length > 0;
+    return getFacServiceType(f.id) === 'kango' && Object.keys(ctx.monthData).length > 0;
   });
   if (dataFacs.length === 0) return '';
 
@@ -1364,7 +1489,9 @@ async function createFacility() {
     const res = await gasPost({ action: 'addFacility', name });
     if (res.success) {
       if (areaVal) setFacAreaOverride(res.id, areaVal);
-      const newFac = { id: res.id, name: res.name };
+      const svcTypeVal = document.querySelector('input[name="add-fac-svctype"]:checked')?.value || 'kango';
+      if (svcTypeVal !== 'kango') setFacServiceType(res.id, svcTypeVal);
+      const newFac = { id: res.id, name: res.name, serviceType: svcTypeVal };
       allFacilities.push(newFac);
       facilityData[res.id] = { monthData: {}, terminalEntries: [], manualIsha: {}, katsudan: { registered: null, staff: [] } };
       renderDashboard();
@@ -1455,13 +1582,19 @@ function loadFiles(files) {
     const reader = new FileReader();
     reader.onload = e => {
       const text = new TextDecoder('shift-jis').decode(e.target.result);
-      parseCSV(text);
+      parseCSV(text, getFacServiceType(currentFacilityId));
     };
     reader.readAsArrayBuffer(file);
   });
 }
 
-function parseCSV(text) {
+function parseCSV(text, facilityServiceType) {
+  facilityServiceType = facilityServiceType || 'kango';
+  const svcCode = facilityServiceType === 'shotaki' ? '32' : '36';
+  const baseCodePattern = facilityServiceType === 'shotaki'
+    ? /小規模多機能[１-９1-9]+/
+    : /看護小規模[１-９1-9]+/;
+
   const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
   const header = lines[0].split(',');
   const ymRaw = (header[2] || '').trim();
@@ -1469,7 +1602,7 @@ function parseCSV(text) {
   const ym = ymRaw;
   const label = ymLabel(ym);
   const users = {};
-  const skipShortTerm = {}; // userId -> 短期セクション中フラグ
+  const skipShortTerm = {}; // userId -> 短期セクション中フラグ（看多機のみ有効）
   for (let i = 1; i < lines.length; i++) {
     const cols = lines[i].split(',');
     if (cols.length < 12) continue;
@@ -1488,8 +1621,8 @@ function parseCSV(text) {
     if (skipShortTerm[userId] === undefined) skipShortTerm[userId] = false;
     const u = users[userId];
 
-    // 短期看護小規模セクション開始を検知（「短期」を含む基本コード行で判定）
-    if (rowType === '3' && itemName.includes('短期')) {
+    // 短期看護小規模セクション開始を検知（看多機のみ）
+    if (facilityServiceType === 'kango' && rowType === '3' && itemName.includes('短期')) {
       skipShortTerm[userId] = true;
     }
 
@@ -1500,12 +1633,11 @@ function parseCSV(text) {
       continue;
     }
 
-    // 短期セクション中はスキップ
-    if (skipShortTerm[userId]) continue;
+    // 短期セクション中はスキップ（看多機のみ）
+    if (facilityServiceType === 'kango' && skipShortTerm[userId]) continue;
 
-    if (svcType === '36' && rowType === '3') {
-      // 短期看護小規模の基本コードは除外（通常利用者のみ集計）
-      if (itemName.match(/看護小規模[１-９1-9]+/) && !itemName.includes('短期')) {
+    if (svcType === svcCode && rowType === '3') {
+      if (itemName.match(baseCodePattern) && !itemName.includes('短期')) {
         u.baseCode = itemName;
       } else if (itemName === '【保険給付対象計】') {
         u.insuranceTotal = goukei;
@@ -1747,6 +1879,7 @@ function _renderTabContent(ym) {
   const savedIsha = ctx.manualIsha[ym] !== undefined ? ctx.manualIsha[ym] : '';
   const nextCalcYm = addMonths(ym, 1);
   const terminalForNext = checkTerminal(nextCalcYm);
+  const isKango = getFacServiceType(currentFacilityId) === 'kango';
 
   document.getElementById('tab-contents').innerHTML = `
     <div>
@@ -1760,6 +1893,7 @@ function _renderTabContent(ym) {
           <div class="sub">${terminalForNext.length > 0 ? terminalForNext.map(t=>t.label).join('・') : '未算定'}</div>
         </div>
       </div>
+      ${isKango ? `
       <div class="section">
         <h2>看護体制強化加算 Ⅰ / Ⅱ — 当月・来月・再来月 算定可否</h2>
         <div style="background:#edf2f7;border-radius:8px;padding:10px 14px;margin-bottom:14px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
@@ -1802,7 +1936,7 @@ function _renderTabContent(ym) {
       <div class="section">
         <h2>ターミナルケア加算 12ヶ月タイムライン（加算Ⅰ要件エ）</h2>
         ${renderTerminalTimeline(nextCalcYm)}
-      </div>
+      </div>` : ''}
       <div class="section">
         <h2>加算一覧（重要事項説明書掲載）— ${data.label}</h2>
         <div style="font-size:12px;color:#718096;margin-bottom:10px">加算名をクリックすると算定要件が表示されます。</div>
@@ -2426,8 +2560,68 @@ const ADDON_DEFS = [
   },
 ];
 
+const ADDON_DEFS_SHOTAKI = [
+  {
+    no: 1, name: '初期加算', unit: '1日につき30単位',
+    keywords: ['初期加算'],
+    req: '登録日から起算して30日以内の期間を算定します。'
+  },
+  {
+    no: 2, name: '認知症加算', unit: '1月につき（Ⅰ:920単位 / Ⅱ:890単位 / Ⅲ:760単位 / Ⅳ:460単位）',
+    keywords: ['認知症加算'],
+    req: '認知症の利用者に対する専門的なケア体制がある場合に算定します。'
+  },
+  {
+    no: 3, name: '若年性認知症利用者受入加算', unit: '1月につき800単位',
+    keywords: ['若年性認知症'],
+    req: '65歳未満の認知症の方を受け入れ、担当者を定めた場合に算定します。'
+  },
+  {
+    no: 4, name: '看護体制加算', unit: '1月につき（Ⅰ:900単位 / Ⅱ:450単位）',
+    keywords: ['看護体制加算'],
+    req: '（Ⅰ）常勤の看護師を1名以上配置し24時間連絡できる体制にある場合。\n（Ⅱ）看護職員を配置または訪問看護ステーションと連携している場合。'
+  },
+  {
+    no: 5, name: 'ターミナルケア加算', unit: '死亡月につき2,500単位',
+    keywords: ['ターミナルケア加算'],
+    req: '在宅または当事業所で死亡した利用者に対して、死亡日及び死亡日前14日以内に2日以上ターミナルケアを行った場合に算定します。'
+  },
+  {
+    no: 6, name: '総合マネジメント体制強化加算', unit: '1月につき（Ⅰ:1,200単位 / Ⅱ:800単位）',
+    keywords: ['総合マネジメント'],
+    req: '利用者の意思及び人格を尊重し、地域において自立した生活が継続できるよう、多職種協働で個別の介護サービス計画の見直しを行った場合に算定します。'
+  },
+  {
+    no: 7, name: 'サービス提供体制強化加算', unit: '1月につき（Ⅰ:750単位 / Ⅱ:640単位 / Ⅲ:350単位）',
+    keywords: ['サービス提供体制強化'],
+    req: '職員の研修や会議の開催、人員配置等について一定の要件を満たす事業所によりサービス提供を行った場合算定します。'
+  },
+  {
+    no: 8, name: '科学的介護推進体制加算', unit: '1月につき10単位',
+    keywords: ['科学的介護推進'],
+    req: 'LIFEへの情報提供とフィードバックの活用により、PDCAサイクルを構築して計画的に介護の質を管理した場合に算定します。'
+  },
+  {
+    no: 9, name: '栄養アセスメント加算', unit: '1月につき50単位',
+    keywords: ['栄養アセスメント'],
+    req: '管理栄養士が利用者ごとの栄養状態を月1回以上記録し、医師・歯科医師・管理栄養士等が共同して栄養アセスメントを実施した場合に算定します。'
+  },
+  {
+    no: 10, name: '口腔・栄養スクリーニング加算', unit: '1回につき（Ⅰ:20単位 / Ⅱ:5単位）',
+    keywords: ['口腔・栄養スクリーニング', '口腔栄養スクリーニング'],
+    req: '利用開始時及びその後6ヶ月ごとに口腔・栄養状態を確認し、医師等へ情報提供した場合に算定します。'
+  },
+  {
+    no: 11, name: '生活機能向上連携加算', unit: '1月につき（Ⅰ:100単位 / Ⅱ:200単位）',
+    keywords: ['生活機能向上連携'],
+    req: '外部のリハビリ専門職等と連携してアセスメントを行い、個別機能訓練計画を作成・実施した場合に算定します。'
+  },
+];
+
 function showAddonReqModal(no) {
-  const def = ADDON_DEFS.find(d => d.no === no);
+  const isShotaki = currentFacilityId && getFacServiceType(currentFacilityId) === 'shotaki';
+  const defs = isShotaki ? ADDON_DEFS_SHOTAKI : ADDON_DEFS;
+  const def = defs.find(d => d.no === no);
   if (!def) return;
   document.getElementById('addon-req-title').textContent = `⑨ ${def.no}. ${def.name}`.replace('⑨ ', '');
   document.getElementById('addon-req-title').textContent = `${def.no}. ${def.name}`;
@@ -2450,7 +2644,8 @@ function renderAddonChecklist(users) {
   const total = users.length;
   const matchedKeys = new Set();
 
-  const rows = ADDON_DEFS.map(def => {
+  const activeDefs = (currentFacilityId && getFacServiceType(currentFacilityId) === 'shotaki') ? ADDON_DEFS_SHOTAKI : ADDON_DEFS;
+  const rows = activeDefs.map(def => {
     const cnt = Object.entries(rawCounts)
       .filter(([k]) => def.keywords.some(kw => k.includes(kw)))
       .reduce((s, [k, v]) => { matchedKeys.add(k); return s + v; }, 0);
