@@ -1884,24 +1884,49 @@ function _renderTabContent(ym) {
   const data = ctx.monthData[ym];
   const users = Object.values(data.users);
   const total = users.length;
-  const kinkyuUsers    = users.filter(u => u.items.some(i => i.name.includes('緊急時対応加算')));
-  const tokubetsuUsers = users.filter(u => u.items.some(i => i.name.includes('特別管理加算')));
+  const isKango = getFacServiceType(currentFacilityId) === 'kango';
+
+  // 看多機用の集計
+  const kinkyuUsers    = isKango ? users.filter(u => u.items.some(i => i.name && i.name.includes('緊急時対応加算'))) : [];
+  const tokubetsuUsers = isKango ? users.filter(u => u.items.some(i => i.name && i.name.includes('特別管理加算'))) : [];
   const savedIsha = ctx.manualIsha[ym] !== undefined ? ctx.manualIsha[ym] : '';
   const nextCalcYm = addMonths(ym, 1);
   const terminalForNext = checkTerminal(nextCalcYm);
-  const isKango = getFacServiceType(currentFacilityId) === 'kango';
+
+  // 小多機用の集計（要介護/要支援の区別）
+  const kaigoUsers = users.filter(u => !u.userSvcType || u.userSvcType === '32' || u.userSvcType === '36');
+  const shienUsers = users.filter(u => u.userSvcType === '33');
+  const kaigoLevels = kaigoUsers.map(u => getLevel(u.baseCode)).filter(l => l !== null);
+  const avgKaigo = kaigoLevels.length > 0
+    ? (kaigoLevels.reduce((a, b) => a + b, 0) / kaigoLevels.length).toFixed(1)
+    : null;
+  const avgColor = avgKaigo >= 4 ? '#c53030' : avgKaigo >= 3 ? '#c05621' : '#2b6cb0';
+
+  const kangoCards = `
+    <div class="card c-blue"><div class="lbl">登録利用者数（本月）</div><div class="val">${total}</div><div class="sub">名</div></div>
+    <div class="card c-orange"><div class="lbl">緊急時対応加算（本月）</div><div class="val">${kinkyuUsers.length}</div><div class="sub">${pct(kinkyuUsers.length, total)}%</div></div>
+    <div class="card c-green"><div class="lbl">特別管理加算（本月）</div><div class="val">${tokubetsuUsers.length}</div><div class="sub">${pct(tokubetsuUsers.length, total)}%</div></div>
+    <div class="card ${terminalForNext.length > 0 ? 'c-green' : 'c-red'}">
+      <div class="lbl">ターミナルケア（12ヶ月内）</div>
+      <div class="val">${terminalForNext.length > 0 ? '✓' : '✗'}</div>
+      <div class="sub">${terminalForNext.length > 0 ? terminalForNext.map(t=>t.label).join('・') : '未算定'}</div>
+    </div>`;
+  const shotakiCards = `
+    <div class="card c-blue">
+      <div class="lbl">登録利用者数（本月）</div>
+      <div class="val">${total}</div>
+      <div class="sub" style="font-size:11px">要介護 ${kaigoUsers.length}名 ／ 要支援 ${shienUsers.length}名</div>
+    </div>
+    <div class="card" style="background:linear-gradient(135deg,#fff8f0,#fffaf5);border:1.5px solid #f6ad55">
+      <div class="lbl">平均介護度（要介護）</div>
+      <div class="val" style="color:${avgColor};font-size:28px">${avgKaigo || '—'}</div>
+      <div class="sub">${kaigoLevels.length}名対象</div>
+    </div>`;
 
   document.getElementById('tab-contents').innerHTML = `
     <div>
       <div class="cards">
-        <div class="card c-blue"><div class="lbl">登録利用者数（本月）</div><div class="val">${total}</div><div class="sub">名</div></div>
-        <div class="card c-orange"><div class="lbl">緊急時対応加算（本月）</div><div class="val">${kinkyuUsers.length}</div><div class="sub">${pct(kinkyuUsers.length, total)}%</div></div>
-        <div class="card c-green"><div class="lbl">特別管理加算（本月）</div><div class="val">${tokubetsuUsers.length}</div><div class="sub">${pct(tokubetsuUsers.length, total)}%</div></div>
-        <div class="card ${terminalForNext.length > 0 ? 'c-green' : 'c-red'}">
-          <div class="lbl">ターミナルケア（12ヶ月内）</div>
-          <div class="val">${terminalForNext.length > 0 ? '✓' : '✗'}</div>
-          <div class="sub">${terminalForNext.length > 0 ? terminalForNext.map(t=>t.label).join('・') : '未算定'}</div>
-        </div>
+        ${isKango ? kangoCards : shotakiCards}
       </div>
       ${isKango ? `
       <div class="section">
