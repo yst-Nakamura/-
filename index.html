@@ -2182,28 +2182,28 @@ function renderActionAdvice(ym, panels, ishaVal) {
   const nextLabel   = ymLabel(addMonths(ym, 1));
   const futureLabel = ymLabel(addMonths(ym, 2));
   const np = panels[1];
-  if (np.threeM) {
+  if (np.threeM && np.threeM.total > 0) {
     const { kinkyu, tokubetsu, total } = np.threeM;
     const kg = calcGap(kinkyu.count, total, 50);
     const tg = calcGap(tokubetsu.count, total, 20);
-    if (!kg.met) items.push({ grp:'next', type:'ng', text:`緊急時対応加算があと <strong>${kg.gap}件不足</strong>（現在 ${kinkyu.pct}%、必要 50%以上）。今月中に${kg.gap}件取得で${nextLabel}算定が可能になります。` });
-    else if (kg.surplus === 0) items.push({ grp:'next', type:'warn', text:`緊急時対応加算はギリギリ充足中（${kinkyu.pct}%、必要:${kg.needed}件 / 現在:${kinkyu.count}件）。1件でも減ると${nextLabel}算定の要件を外れます。` });
-    else items.push({ grp:'next', type:'ok', text:`緊急時対応加算 充足（${kinkyu.pct}%）。余裕 +${kg.surplus}件。` });
-    if (!tg.met) items.push({ grp:'next', type:'ng', text:`特別管理加算があと <strong>${tg.gap}件不足</strong>（現在 ${tokubetsu.pct}%、必要 20%以上）。今月中に${tg.gap}件取得で${nextLabel}算定が可能になります。` });
-    else if (tg.surplus === 0) items.push({ grp:'next', type:'warn', text:`特別管理加算はギリギリ充足中（${tokubetsu.pct}%、必要:${tg.needed}件 / 現在:${tokubetsu.count}件）。1件でも減ると${nextLabel}算定の要件を外れます。` });
-    else items.push({ grp:'next', type:'ok', text:`特別管理加算 充足（${tokubetsu.pct}%）。余裕 +${tg.surplus}件。` });
+    if (kg && !kg.met) items.push({ grp:'next', type:'ng', text:`緊急時対応加算があと <strong>${kg.gap}件不足</strong>（現在 ${kinkyu.pct}%、必要 50%以上）。今月中に${kg.gap}件取得で${nextLabel}算定が可能になります。` });
+    else if (kg && kg.surplus === 0) items.push({ grp:'next', type:'warn', text:`緊急時対応加算はギリギリ充足中（${kinkyu.pct}%、必要:${kg.needed}件 / 現在:${kinkyu.count}件）。1件でも減ると${nextLabel}算定の要件を外れます。` });
+    else if (kg) items.push({ grp:'next', type:'ok', text:`緊急時対応加算 充足（${kinkyu.pct}%）。余裕 +${kg.surplus}件。` });
+    if (tg && !tg.met) items.push({ grp:'next', type:'ng', text:`特別管理加算があと <strong>${tg.gap}件不足</strong>（現在 ${tokubetsu.pct}%、必要 20%以上）。今月中に${tg.gap}件取得で${nextLabel}算定が可能になります。` });
+    else if (tg && tg.surplus === 0) items.push({ grp:'next', type:'warn', text:`特別管理加算はギリギリ充足中（${tokubetsu.pct}%、必要:${tg.needed}件 / 現在:${tokubetsu.count}件）。1件でも減ると${nextLabel}算定の要件を外れます。` });
+    else if (tg) items.push({ grp:'next', type:'ok', text:`特別管理加算 充足（${tokubetsu.pct}%）。余裕 +${tg.surplus}件。` });
   } else {
     items.push({ grp:'next', type:'info', text:`来月算定の判定に必要な前3ヶ月データが不足しています。過去2ヶ月分のCSVを追加読み込みすると精度が上がります。` });
   }
   const fp = panels[2];
-  if (fp.threeM) {
+  if (fp.threeM && fp.threeM.total > 0) {
     const { kinkyu, tokubetsu, total } = fp.threeM;
     const kg = calcGap(kinkyu.count, total, 50);
     const tg = calcGap(tokubetsu.count, total, 20);
-    if (!kg.met) items.push({ grp:'future', type:'warn', text:`${futureLabel}算定に向けて、来月に緊急時対応加算を最低 <strong>${kg.gap}件</strong> 追加算定が必要です（既知データのみの試算）。` });
-    else items.push({ grp:'future', type:'info', text:`緊急時対応加算 — 現状水準が続けば${futureLabel}算定も充足見込み（余裕 +${kg.surplus}件）。` });
-    if (!tg.met) items.push({ grp:'future', type:'warn', text:`${futureLabel}算定に向けて、来月に特別管理加算を最低 <strong>${tg.gap}件</strong> 追加算定が必要です（既知データのみの試算）。` });
-    else items.push({ grp:'future', type:'info', text:`特別管理加算 — 現状水準が続けば${futureLabel}算定も充足見込み（余裕 +${tg.surplus}件）。` });
+    if (kg && !kg.met) items.push({ grp:'future', type:'warn', text:`${futureLabel}算定に向けて、来月に緊急時対応加算を最低 <strong>${kg.gap}件</strong> 追加算定が必要です（既知データのみの試算）。` });
+    else if (kg) items.push({ grp:'future', type:'info', text:`緊急時対応加算 — 現状水準が続けば${futureLabel}算定も充足見込み（余裕 +${kg.surplus}件）。` });
+    if (tg && !tg.met) items.push({ grp:'future', type:'warn', text:`${futureLabel}算定に向けて、来月に特別管理加算を最低 <strong>${tg.gap}件</strong> 追加算定が必要です（既知データのみの試算）。` });
+    else if (tg) items.push({ grp:'future', type:'info', text:`特別管理加算 — 現状水準が続けば${futureLabel}算定も充足見込み（余裕 +${tg.surplus}件）。` });
   }
   if (!items.length) return '';
   const icon = t => t==='ok'?'✅':t==='warn'?'⚠️':t==='ng'?'❌':'💡';
