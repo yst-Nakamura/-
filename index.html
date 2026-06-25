@@ -1590,9 +1590,14 @@ function loadFiles(files) {
 
 function parseCSV(text, facilityServiceType) {
   facilityServiceType = facilityServiceType || 'kango';
-  const svcCode = facilityServiceType === 'shotaki' ? '32' : '36';
-  const baseCodePattern = facilityServiceType === 'shotaki'
-    ? /小規模多機能[１-９1-9]+/
+  const isShotaki = facilityServiceType === 'shotaki';
+
+  // 小多機: svcType 32=要介護, 33=要支援(予防)  34=短期要介護, 35=短期要支援 → 34/35は除外
+  // 看多機: svcType 36=通常, 短期は itemName で判定
+  const validSvcCodes  = isShotaki ? new Set(['32','33']) : new Set(['36']);
+  const shortTermCodes = isShotaki ? new Set(['34','35']) : new Set();
+  const baseCodePattern = isShotaki
+    ? /小規模多機能[１-９1-9]+/   // 要介護・要支援どちらもマッチ
     : /看護小規模[１-９1-9]+/;
 
   const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
@@ -1602,12 +1607,10 @@ function parseCSV(text, facilityServiceType) {
   const ym = ymRaw;
   const label = ymLabel(ym);
   const users = {};
-  const skipShortTerm = {}; // userId -> 短期セクション中フラグ（看多機のみ有効）
+  const skipShortTerm = {}; // userId -> 短期セクション中フラグ（看多機のみ使用）
   for (let i = 1; i < lines.length; i++) {
     const cols = lines[i].split(',');
     if (cols.length < 12) continue;
-    // C列(index 2)=年・D列(index 3)=月 を結合してヘッダーの請求月(YYYYMM)と比較
-    // 一致しない行は別月データのためスキップ
     const rowYear = (cols[2] || '').trim();
     const rowMonth = (cols[3] || '').trim().padStart(2, '0');
     const rowYm = rowYear + rowMonth;
@@ -1617,12 +1620,20 @@ function parseCSV(text, facilityServiceType) {
     const tanka = parseInt(cols[10]) || 0, kaisu = parseInt(cols[11]) || 0;
     const goukei = parseInt(cols[12]) || 0;
     if (!userId) continue;
-    if (!users[userId]) users[userId] = { userId, items: [], baseCode: null, totalRec: 0, insuranceTotal: 0 };
+
+    // 小多機: 短期利用（svcType 34/35）は総数から除外するためスキップ
+    if (shortTermCodes.has(svcType)) continue;
+
+    if (!users[userId]) users[userId] = {
+      userId, items: [], baseCode: null, totalRec: 0, insuranceTotal: 0,
+      // 小多機: '32'=要介護 '33'=要支援(予防)。看多機は常に'36'
+      userSvcType: svcType
+    };
     if (skipShortTerm[userId] === undefined) skipShortTerm[userId] = false;
     const u = users[userId];
 
-    // 短期看護小規模セクション開始を検知（看多機のみ）
-    if (facilityServiceType === 'kango' && rowType === '3' && itemName.includes('短期')) {
+    // 看多機: 短期看護小規模セクション開始を検知
+    if (!isShotaki && rowType === '3' && itemName.includes('短期')) {
       skipShortTerm[userId] = true;
     }
 
@@ -1633,16 +1644,15 @@ function parseCSV(text, facilityServiceType) {
       continue;
     }
 
-    // 短期セクション中はスキップ（看多機のみ）
-    if (facilityServiceType === 'kango' && skipShortTerm[userId]) continue;
+    // 看多機: 短期セクション中はスキップ
+    if (!isShotaki && skipShortTerm[userId]) continue;
 
-    if (svcType === svcCode && rowType === '3') {
+    if (validSvcCodes.has(svcType) && rowType === '3') {
       if (itemName.match(baseCodePattern) && !itemName.includes('短期')) {
         u.baseCode = itemName;
       } else if (itemName === '【保険給付対象計】') {
         u.insuranceTotal = goukei;
       } else if (itemName && !itemName.startsWith('【')) {
-        // 同一利用者に同じ加算名が複数期間分出力される場合は重複除外
         if (!u.items.some(i => i.name === itemName)) {
           u.items.push({ name: itemName, tanka, kaisu });
         }
