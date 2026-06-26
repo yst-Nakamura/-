@@ -2759,6 +2759,18 @@ function renderAddonChecklist(users) {
 // ============================================================
 const CHANGELOG_DATA = [
   {
+    version: 'v1.2.0', date: '2026-06-26', label: '新機能',
+    labelColor: '#2b6cb0', labelBg: '#ebf8ff',
+    items: [
+      { tag: '追加', tagColor: '#276749', tagBg: '#c6f6d5', text: '小多機タブを追加。看多機・小多機をタブで切り替えて管理できるようになった' },
+      { tag: '追加', tagColor: '#276749', tagBg: '#c6f6d5', text: '小多機の事業所詳細画面を専用レイアウトに変更。上部カードに「利用者総数（要介護/要支援内訳）」と「平均介護度」を表示' },
+      { tag: '追加', tagColor: '#276749', tagBg: '#c6f6d5', text: '小多機ダッシュボードの平均介護度をクリックすると推移グラフが表示されるようになった' },
+      { tag: '修正', tagColor: '#7b341e', tagBg: '#fed7aa', text: '小多機CSVのパース修正。svcType=33（要支援）も処理対象に追加、svcType=34/35（短期）を除外' },
+      { tag: '修正', tagColor: '#7b341e', tagBg: '#fed7aa', text: 'CSVアップロード時に現在のタブ（看多機/小多機）で事業所タイプを自動設定するよう変更。既存事業所でも正しくパースされる' },
+      { tag: '修正', tagColor: '#7b341e', tagBg: '#fed7aa', text: '利用者数が0名のときアクション提言欄でクラッシュするバグを修正（calcGapがnullを返す場合のnullガード追加）' },
+    ]
+  },
+  {
     version: 'v1.1.0', date: '2026-06-24', label: '新機能',
     labelColor: '#2b6cb0', labelBg: '#ebf8ff',
     items: [
