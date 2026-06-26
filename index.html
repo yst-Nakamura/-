@@ -1578,11 +1578,16 @@ csvInput.addEventListener('change', e => { loadFiles(e.target.files); csvInput.v
 
 function loadFiles(files) {
   if (!currentFacilityId) { alert('事業所を選択してください'); return; }
+  // 現在のタブに合わせて事業所タイプを自動確定（既存事業所を正しいタブで使えるようにする）
+  if (currentServiceType && currentServiceType !== 'houmon') {
+    setFacServiceType(currentFacilityId, currentServiceType);
+  }
+  const svcType = getFacServiceType(currentFacilityId);
   Array.from(files).forEach(file => {
     const reader = new FileReader();
     reader.onload = e => {
       const text = new TextDecoder('shift-jis').decode(e.target.result);
-      parseCSV(text, getFacServiceType(currentFacilityId));
+      parseCSV(text, svcType);
     };
     reader.readAsArrayBuffer(file);
   });
