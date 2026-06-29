@@ -546,6 +546,10 @@ input[type=file] { display: none; }
             📂 請求データのRMデータファイルをドロップ or クリック
           </div>
           <input type="file" id="csv-input" accept=".csv" multiple>
+          <label id="uke-upload-btn" style="display:none;cursor:pointer;background:#2b6cb0;color:#fff;border:none;border-radius:6px;padding:7px 14px;font-size:13px;font-weight:600;margin-left:8px;">
+            UKEアップロード
+            <input type="file" accept=".UKE,.uke,.txt" multiple style="display:none" onchange="loadUKEFiles(this.files)">
+          </label>
           <div id="month-list"><div class="no-months">データなし</div></div>
         </div>
         <div class="sidebar-section">
@@ -688,7 +692,7 @@ let activeTab = null;
 function getFacCtx(facId) {
   facId = facId || currentFacilityId;
   if (!facId) return null;
-  if (!facilityData[facId]) facilityData[facId] = { monthData: {}, terminalEntries: [], manualIsha: {}, katsudan: { registered: null, staff: [] } };
+  if (!facilityData[facId]) facilityData[facId] = { monthData: {}, terminalEntries: [], manualIsha: {}, katsudan: { registered: null, staff: [] }, iryoMonthData: {} };
   return facilityData[facId];
 }
 
@@ -730,7 +734,7 @@ async function loadAllData() {
     });
     (raw.monthlyData || []).forEach(row => {
       const facId = String(row.facilityId);
-      if (!facilityData[facId]) facilityData[facId] = { monthData: {}, terminalEntries: [], manualIsha: {}, katsudan: { registered: null, staff: [] } };
+      if (!facilityData[facId]) facilityData[facId] = { monthData: {}, terminalEntries: [], manualIsha: {}, katsudan: { registered: null, staff: [] }, iryoMonthData: {} };
       // ym を確実に6桁文字列に正規化（数値・ISO日付など対応）
       const ym = String(row.ym || '').replace(/[^0-9]/g, '').slice(0, 6);
       if (ym.length !== 6) return;
@@ -743,18 +747,18 @@ async function loadAllData() {
     });
     (raw.terminalEntries || []).forEach(row => {
       const facId = String(row.facilityId);
-      if (!facilityData[facId]) facilityData[facId] = { monthData: {}, terminalEntries: [], manualIsha: {}, katsudan: { registered: null, staff: [] } };
+      if (!facilityData[facId]) facilityData[facId] = { monthData: {}, terminalEntries: [], manualIsha: {}, katsudan: { registered: null, staff: [] }, iryoMonthData: {} };
       facilityData[facId].terminalEntries.push({ ym: String(row.ym), label: String(row.label) });
     });
     (raw.ishaValues || []).forEach(row => {
       const facId = String(row.facilityId);
-      if (!facilityData[facId]) facilityData[facId] = { monthData: {}, terminalEntries: [], manualIsha: {}, katsudan: { registered: null, staff: [] } };
+      if (!facilityData[facId]) facilityData[facId] = { monthData: {}, terminalEntries: [], manualIsha: {}, katsudan: { registered: null, staff: [] }, iryoMonthData: {} };
       const _parsed = parseFloat(row.value);
       facilityData[facId].manualIsha[String(row.ym)] = isNaN(_parsed) ? '' : _parsed;
     });
     (raw.katsudanData || []).forEach(row => {
       const facId = String(row.facilityId);
-      if (!facilityData[facId]) facilityData[facId] = { monthData: {}, terminalEntries: [], manualIsha: {}, katsudan: { registered: null, staff: [] } };
+      if (!facilityData[facId]) facilityData[facId] = { monthData: {}, terminalEntries: [], manualIsha: {}, katsudan: { registered: null, staff: [] }, iryoMonthData: {} };
       const reg = row.registered;
       facilityData[facId].katsudan = {
         registered: reg === true || reg === 'true' ? true : reg === false || reg === 'false' ? false : null,
@@ -1678,6 +1682,18 @@ function loadFiles(files) {
   });
 }
 
+function loadUKEFiles(files) {
+  if (!currentFacilityId) { alert('事業所を選択してください'); return; }
+  Array.from(files).forEach(file => {
+    const reader = new FileReader();
+    reader.onload = e => {
+      const text = new TextDecoder('shift-jis').decode(e.target.result);
+      parseUKE(text);
+    };
+    reader.readAsArrayBuffer(file);
+  });
+}
+
 function parseCSV(text, facilityServiceType) {
   facilityServiceType = facilityServiceType || 'kango';
   const isShotaki = facilityServiceType === 'shotaki';
@@ -1780,6 +1796,100 @@ function parseCSV(text, facilityServiceType) {
   saveMonthlyDataToGas(ym, label, Object.values(users));
   renderFacilityAll();
   setActiveTab(ym);
+}
+
+function parseUKE(text) {
+  const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+  let currentUser = null;
+  const monthUsers = {}; // { ym: { userId: userObj } }
+
+  for (const line of lines) {
+    const cols = line.split(',');
+    const rec = cols[0];
+
+    if (rec === 'RE') {
+      const seq = cols[1];
+      const ym = (cols[3] || '').substring(0, 6);
+      if (!ym.match(/^\d{6}$/)) continue;
+      const visitDays = parseInt(cols[11]) || 0;
+      currentUser = {
+        userId: seq,
+        name: cols[4] || '',
+        kana: cols[5] || '',
+        gender: cols[6],
+        birthdate: cols[7] || '',
+        visitDays,
+        ym,
+        items: [],
+        has24h: false,
+        hasTokubetsu: false,
+        hasDx: false,
+        hasNanbyo: false,
+        hasTerminal: false,
+        total: 0,
+        selfPay: 0,
+      };
+      if (!monthUsers[ym]) monthUsers[ym] = {};
+      monthUsers[ym][seq] = currentUser;
+
+    } else if (rec === 'HO' && currentUser) {
+      if (!currentUser.visitDays) currentUser.visitDays = parseInt(cols[3]) || 0;
+      currentUser.total = parseInt(cols[5]) || 0;
+      const sp = parseInt(cols[8]) || 0;
+      if (sp > 0) currentUser.selfPay = sp;
+
+    } else if (rec === 'KO' && currentUser) {
+      if (!currentUser.visitDays) currentUser.visitDays = parseInt(cols[4]) || 0;
+      if (!currentUser.total) currentUser.total = parseInt(cols[5]) || 0;
+      const sp = parseInt(cols[6]) || 0;
+      if (sp > 0 && !currentUser.selfPay) currentUser.selfPay = sp;
+
+    } else if (rec === 'TZ' && currentUser) {
+      currentUser.hasTokubetsu = true;
+      if (!currentUser.items.some(i => i.name === '特別管理加算'))
+        currentUser.items.push({ name: '特別管理加算', tanka: 0, kaisu: 1 });
+
+    } else if (rec === 'KA' && currentUser) {
+      const code = cols[3] || '';
+      const points = parseInt(cols[5]) || 0;
+      const addonName = _ukeCodeToAddon(code);
+      if (addonName && !currentUser.items.some(i => i.name === addonName)) {
+        currentUser.items.push({ name: addonName, tanka: points, kaisu: 1 });
+        if (addonName === '24時間対応体制加算') currentUser.has24h = true;
+        if (addonName === '訪問看護医療DX情報活用加算') currentUser.hasDx = true;
+        if (addonName === '難病等複数回訪問加算') currentUser.hasNanbyo = true;
+        if (addonName === 'ターミナルケア療養費') currentUser.hasTerminal = true;
+      }
+    }
+  }
+
+  const ctx = getFacCtx(currentFacilityId);
+  if (!ctx.iryoMonthData) ctx.iryoMonthData = {};
+  Object.entries(monthUsers).forEach(([ym, users]) => {
+    if (!ctx.iryoMonthData[ym]) ctx.iryoMonthData[ym] = { ym, label: ymLabel(ym), users: {} };
+    Object.assign(ctx.iryoMonthData[ym].users, users);
+  });
+
+  renderFacilityAll();
+}
+
+function _ukeCodeToAddon(code) {
+  const map = {
+    '550002170': '24時間対応体制加算',
+    '550002270': '訪問看護医療DX情報活用加算',
+    '590000110': 'ベースアップ評価料',
+    '590000210': 'ベースアップ評価料',
+  };
+  if (map[code]) return map[code];
+  if (code.startsWith('510001970') || code.startsWith('510002070')) return '難病等複数回訪問加算';
+  if (code.startsWith('81000011') || code.startsWith('81000021')) return 'ターミナルケア療養費';
+  if (code.startsWith('550001770') || code.startsWith('550001870')) return '退院時共同指導加算';
+  if (code.startsWith('550001970') || code.startsWith('550002070')) return '退院支援指導加算';
+  if (code.startsWith('550002370') || code.startsWith('550002470')) return '専門管理加算';
+  if (code.startsWith('550002570')) return '看護・介護職員連携強化加算';
+  if (code.startsWith('550001370') || code.startsWith('550001470')) return '夜間・早朝訪問看護加算';
+  if (code.startsWith('550001570') || code.startsWith('550001670')) return '深夜訪問看護加算';
+  return null;
 }
 
 async function saveMonthlyDataToGas(ym, label, usersArr) {
@@ -1900,6 +2010,9 @@ function checkTerminal(calcYm, facId) {
 function renderFacilityAll() {
   const ctx = getFacCtx(currentFacilityId);
   if (!ctx) return;
+  const isHoumon = getFacServiceType(currentFacilityId) === 'houmon';
+  const ukeBtn = document.getElementById('uke-upload-btn');
+  if (ukeBtn) ukeBtn.style.display = isHoumon ? '' : 'none';
   renderFacilitySidebar();
   const keys = Object.keys(ctx.monthData).sort();
   if (keys.length === 0) {
@@ -2041,11 +2154,39 @@ function _renderTabContent(ym) {
       <div class="sub">${pct(houmonTokubetsuCount, total)}%</div>
     </div>`;
 
+  const iryoData = ctx.iryoMonthData || {};
+  const iryoMonths = Object.values(iryoData).sort((a,b) => b.ym.localeCompare(a.ym));
+  const iryoSection = iryoMonths.length === 0 ? '' : `
+<div style="margin-top:24px;">
+  <div style="font-weight:700;font-size:15px;color:#2b6cb0;margin-bottom:12px;">医療保険 利用者別加算状況</div>
+  ${iryoMonths.map(m => {
+    const users = Object.values(m.users);
+    const cnt = users.length;
+    const h24 = users.filter(u => u.has24h).length;
+    const toku = users.filter(u => u.hasTokubetsu).length;
+    const nan = users.filter(u => u.hasNanbyo).length;
+    const term = users.filter(u => u.hasTerminal).length;
+    const dx = users.filter(u => u.hasDx).length;
+    return \`<div style="background:#fff;border:1px solid #bee3f8;border-radius:10px;padding:14px 18px;margin-bottom:10px;">
+      <div style="font-weight:600;font-size:14px;margin-bottom:8px;">\${m.label}</div>
+      <div style="display:flex;flex-wrap:wrap;gap:8px;">
+        <span style="background:#ebf8ff;color:#2b6cb0;border-radius:6px;padding:3px 10px;font-size:13px;">利用者数: \${cnt}人</span>
+        <span style="background:#f0fff4;color:#276749;border-radius:6px;padding:3px 10px;font-size:13px;">24時間対応: \${h24}人 (\${pct(h24,cnt)}%)</span>
+        <span style="background:#fffbeb;color:#744210;border-radius:6px;padding:3px 10px;font-size:13px;">特別管理加算: \${toku}人 (\${pct(toku,cnt)}%)</span>
+        <span style="background:#fff5f5;color:#742a2a;border-radius:6px;padding:3px 10px;font-size:13px;">難病等複数回: \${nan}人 (\${pct(nan,cnt)}%)</span>
+        <span style="background:#faf5ff;color:#553c9a;border-radius:6px;padding:3px 10px;font-size:13px;">ターミナル: \${term}人 (\${pct(term,cnt)}%)</span>
+        <span style="background:#e6fffa;color:#234e52;border-radius:6px;padding:3px 10px;font-size:13px;">医療DX: \${dx}人 (\${pct(dx,cnt)}%)</span>
+      </div>
+    </div>\`;
+  }).join('')}
+</div>`;
+
   document.getElementById('tab-contents').innerHTML = `
     <div>
       <div class="cards">
         ${isKango ? kangoCards : isHoumon ? houmonCards : shotakiCards}
       </div>
+      ${isHoumon ? iryoSection : ''}
       ${isKango ? `
       <div class="section">
         <h2>看護体制強化加算 Ⅰ / Ⅱ — 当月・来月・再来月 算定可否</h2>
@@ -2852,6 +2993,95 @@ const ADDON_DEFS_HOUMON = [
   },
 ];
 
+const ADDON_DEFS_HOUMON_IRYO = [
+  {
+    no: 1, name: '24時間対応体制加算',
+    unit: '1月につき6,800円',
+    kaCode: ['550002170'],
+    req: '利用者またはその家族から電話等により看護に関する意見を求められた場合に常時対応できる体制にある訪問看護ステーション。'
+  },
+  {
+    no: 2, name: '特別管理加算',
+    unit: '（Ⅰ）5,000円/月 （Ⅱ）2,500円/月',
+    kaCode: [],  // TZレコードで検出
+    isTZ: true,
+    req: '（Ⅰ）在宅悪性腫瘍等・真皮を超える褥瘡の処置を必要とする利用者。\n（Ⅱ）点滴注射・特掲指定疾患を必要とする利用者。'
+  },
+  {
+    no: 3, name: '難病等複数回訪問加算',
+    unit: '2回 4,500円 / 3回以上 8,000円（1日につき）',
+    kaCode: ['510001970', '510002070'],
+    req: '別表第7に掲げる疾病等を有する利用者、または特別指示書による訪問の利用者に複数回訪問した場合。'
+  },
+  {
+    no: 4, name: '退院時共同指導加算',
+    unit: '1回につき600円',
+    kaCode: ['550001770', '550001870'],
+    req: '入院中の患者の退院に際し、医療機関の職員と共同して在宅療養上必要な指導を行い、文書により指導内容を提供した場合。'
+  },
+  {
+    no: 5, name: '退院支援指導加算',
+    unit: '1回につき600円',
+    kaCode: ['550001970', '550002070'],
+    req: '退院日の訪問看護が必要な者に対し、退院日に訪問看護を実施した場合。'
+  },
+  {
+    no: 6, name: '長時間訪問看護加算',
+    unit: '1日につき300円',
+    kaCode: ['510000270', '510000370'],
+    req: '特別管理加算の対象者等に、1時間30分以上の訪問看護を実施した場合。'
+  },
+  {
+    no: 7, name: '複数名訪問看護加算',
+    unit: '1日につき（看護師等2人:254円/402円、准看護師:201円/317円等）',
+    kaCode: ['510000910', '510001010', '510001110', '510001210'],
+    req: '複数の看護師等または看護師等と准看護師等が同時に訪問看護を行った場合。（基本療養費ⅡのKAコードで判定）',
+    skipAutoDetect: true
+  },
+  {
+    no: 8, name: '夜間・早朝訪問看護加算',
+    unit: '1日につき210円',
+    kaCode: ['550001370', '550001470'],
+    req: '夜間（午後6時～午後10時）または早朝（午前6時～午前8時）に訪問看護を実施した場合。'
+  },
+  {
+    no: 9, name: '深夜訪問看護加算',
+    unit: '1日につき420円',
+    kaCode: ['550001570', '550001670'],
+    req: '深夜（午後10時～午前6時）に訪問看護を実施した場合。'
+  },
+  {
+    no: 10, name: '専門管理加算',
+    unit: '1月につき250円',
+    kaCode: ['550002370', '550002470'],
+    req: '緩和ケア・褥瘡ケア・人工肛門・人工膀胱ケアなどの専門研修を修了した看護師が、その専門技術に基づき療養上の指導管理を行った場合。'
+  },
+  {
+    no: 11, name: '看護・介護職員連携強化加算',
+    unit: '1月につき250円',
+    kaCode: ['550002570'],
+    req: '訪問看護ステーションの看護師等が、訪問介護事業所の訪問介護員等に喀痰吸引等に係る指導を行った場合。'
+  },
+  {
+    no: 12, name: 'ターミナルケア療養費',
+    unit: '死亡月につき25,000円',
+    kaCode: ['810000110', '810000210'],
+    req: '利用者の在宅または施設での死亡に際し、死亡日及び死亡日前14日以内に2日以上ターミナルケアを行った場合。'
+  },
+  {
+    no: 13, name: '訪問看護医療DX情報活用加算',
+    unit: '1月につき50円',
+    kaCode: ['550002270'],
+    req: 'マイナ保険証等を通じ、診療情報等を取得・活用して質の高い訪問看護を実施した場合。'
+  },
+  {
+    no: 14, name: 'ベースアップ評価料',
+    unit: '（Ⅰ）780円/月',
+    kaCode: ['590000110', '590000210'],
+    req: '訪問看護ステーションにおける看護師等のベースアップに係る費用を評価したもの。'
+  },
+];
+
 function showAddonReqModal(no) {
   const svcType2 = currentFacilityId ? getFacServiceType(currentFacilityId) : 'kango';
   const defs = svcType2 === 'shotaki' ? ADDON_DEFS_SHOTAKI : svcType2 === 'houmon' ? ADDON_DEFS_HOUMON : ADDON_DEFS;
@@ -2947,6 +3177,15 @@ function renderAddonChecklist(users) {
 // 修正ログモーダル
 // ============================================================
 const CHANGELOG_DATA = [
+  {
+    version: 'v1.4.0', date: '2026-06-29', label: '新機能',
+    labelColor: '#2b6cb0', labelBg: '#ebf8ff',
+    items: [
+      { tag: '追加', tagColor: '#276749', tagBg: '#c6f6d5', text: '訪問看護（医療保険）対応を追加。UKEファイル（社保・国保・後期高齢）をアップロードして利用者ごとの加算算定状況を自動集計' },
+      { tag: '追加', tagColor: '#276749', tagBg: '#c6f6d5', text: '医療保険加算14種（24時間対応体制加算・特別管理加算・難病等複数回訪問加算・退院時共同指導・退院支援指導・長時間訪問看護・複数名訪問看護・夜間早朝・深夜・専門管理・看護介護連携・ターミナルケア・医療DX情報活用・ベースアップ評価料）に対応' },
+      { tag: '追加', tagColor: '#276749', tagBg: '#c6f6d5', text: '訪問看護事業所の詳細画面に医療保険パネルを追加（利用者数・24時間対応・特別管理加算・難病等複数回の状況を表示）' },
+    ]
+  },
   {
     version: 'v1.3.1', date: '2026-06-29', label: '修正',
     labelColor: '#744210', labelBg: '#fefcbf',
