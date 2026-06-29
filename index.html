@@ -1687,7 +1687,9 @@ function parseCSV(text, facilityServiceType) {
   // 看多機: svcType 36=通常, 短期は itemName で判定
   const validSvcCodes  = isHoumon ? null : isShotaki ? new Set(['32','33']) : new Set(['36']);
   const shortTermCodes = isShotaki ? new Set(['34','35']) : new Set();
-  const baseCodePattern = isShotaki
+  const baseCodePattern = isHoumon
+    ? /訪問看護[ⅠIＩ]/           // 訪問看護Ⅰ or 予防訪問看護Ⅰ にマッチ
+    : isShotaki
     ? /小規模多機能[１-９1-9]+/   // 要介護・要支援どちらもマッチ
     : /看護小規模[１-９1-9]+/;
 
@@ -1741,6 +1743,9 @@ function parseCSV(text, facilityServiceType) {
     if ((validSvcCodes === null || validSvcCodes.has(svcType)) && rowType === '3') {
       if (itemName.match(baseCodePattern) && !itemName.includes('短期')) {
         u.baseCode = itemName;
+        if (isHoumon) {
+          u.userSvcType = itemName.includes('予防') ? 'shien' : 'kaigo';
+        }
       } else if (itemName === '【保険給付対象計】') {
         u.insuranceTotal = goukei;
       } else if (itemName && !itemName.startsWith('【')) {
