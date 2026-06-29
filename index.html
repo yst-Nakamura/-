@@ -546,10 +546,8 @@ input[type=file] { display: none; }
             📂 請求データのRMデータファイルをドロップ or クリック
           </div>
           <input type="file" id="csv-input" accept=".csv" multiple>
-          <label id="uke-upload-btn" style="display:none;cursor:pointer;background:#2b6cb0;color:#fff;border:none;border-radius:6px;padding:7px 14px;font-size:13px;font-weight:600;margin-left:8px;">
-            UKEアップロード
-            <input type="file" accept=".UKE,.uke,.txt" multiple style="display:none" onchange="loadUKEFiles(this.files)">
-          </label>
+          <input type="file" id="uke-input" accept=".UKE,.uke,.txt" multiple>
+          <button id="uke-upload-btn" style="display:none;cursor:pointer;background:#2b6cb0;color:#fff;border:none;border-radius:6px;padding:7px 14px;font-size:13px;font-weight:600;margin-top:8px;width:100%;" onclick="document.getElementById('uke-input').click()">🏥 医療保険UKEアップロード</button>
           <div id="month-list"><div class="no-months">データなし</div></div>
         </div>
         <div class="sidebar-section">
@@ -1664,6 +1662,8 @@ dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classL
 dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag'));
 dropZone.addEventListener('drop', e => { e.preventDefault(); dropZone.classList.remove('drag'); loadFiles(e.dataTransfer.files); });
 csvInput.addEventListener('change', e => { loadFiles(e.target.files); csvInput.value = ''; });
+const ukeInput = document.getElementById('uke-input');
+ukeInput.addEventListener('change', e => { loadUKEFiles(e.target.files); ukeInput.value = ''; });
 
 function loadFiles(files) {
   if (!currentFacilityId) { alert('事業所を選択してください'); return; }
