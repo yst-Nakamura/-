@@ -2167,17 +2167,17 @@ function _renderTabContent(ym) {
     const nan = users.filter(u => u.hasNanbyo).length;
     const term = users.filter(u => u.hasTerminal).length;
     const dx = users.filter(u => u.hasDx).length;
-    return \`<div style="background:#fff;border:1px solid #bee3f8;border-radius:10px;padding:14px 18px;margin-bottom:10px;">
-      <div style="font-weight:600;font-size:14px;margin-bottom:8px;">\${m.label}</div>
-      <div style="display:flex;flex-wrap:wrap;gap:8px;">
-        <span style="background:#ebf8ff;color:#2b6cb0;border-radius:6px;padding:3px 10px;font-size:13px;">利用者数: \${cnt}人</span>
-        <span style="background:#f0fff4;color:#276749;border-radius:6px;padding:3px 10px;font-size:13px;">24時間対応: \${h24}人 (\${pct(h24,cnt)}%)</span>
-        <span style="background:#fffbeb;color:#744210;border-radius:6px;padding:3px 10px;font-size:13px;">特別管理加算: \${toku}人 (\${pct(toku,cnt)}%)</span>
-        <span style="background:#fff5f5;color:#742a2a;border-radius:6px;padding:3px 10px;font-size:13px;">難病等複数回: \${nan}人 (\${pct(nan,cnt)}%)</span>
-        <span style="background:#faf5ff;color:#553c9a;border-radius:6px;padding:3px 10px;font-size:13px;">ターミナル: \${term}人 (\${pct(term,cnt)}%)</span>
-        <span style="background:#e6fffa;color:#234e52;border-radius:6px;padding:3px 10px;font-size:13px;">医療DX: \${dx}人 (\${pct(dx,cnt)}%)</span>
-      </div>
-    </div>\`;
+    return '<div style="background:#fff;border:1px solid #bee3f8;border-radius:10px;padding:14px 18px;margin-bottom:10px;">'
+      + '<div style="font-weight:600;font-size:14px;margin-bottom:8px;">' + m.label + '</div>'
+      + '<div style="display:flex;flex-wrap:wrap;gap:8px;">'
+      + '<span style="background:#ebf8ff;color:#2b6cb0;border-radius:6px;padding:3px 10px;font-size:13px;">利用者数: ' + cnt + '人</span>'
+      + '<span style="background:#f0fff4;color:#276749;border-radius:6px;padding:3px 10px;font-size:13px;">24時間対応: ' + h24 + '人 (' + pct(h24,cnt) + '%)</span>'
+      + '<span style="background:#fffbeb;color:#744210;border-radius:6px;padding:3px 10px;font-size:13px;">特別管理加算: ' + toku + '人 (' + pct(toku,cnt) + '%)</span>'
+      + '<span style="background:#fff5f5;color:#742a2a;border-radius:6px;padding:3px 10px;font-size:13px;">難病等複数回: ' + nan + '人 (' + pct(nan,cnt) + '%)</span>'
+      + '<span style="background:#faf5ff;color:#553c9a;border-radius:6px;padding:3px 10px;font-size:13px;">ターミナル: ' + term + '人 (' + pct(term,cnt) + '%)</span>'
+      + '<span style="background:#e6fffa;color:#234e52;border-radius:6px;padding:3px 10px;font-size:13px;">医療DX: ' + dx + '人 (' + pct(dx,cnt) + '%)</span>'
+      + '</div>'
+      + '</div>';
   }).join('')}
 </div>`;
 
