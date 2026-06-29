@@ -543,11 +543,13 @@ input[type=file] { display: none; }
         <div class="sidebar-section">
           <h3>月次データ</h3>
           <div class="drop-zone" id="drop-zone" onclick="document.getElementById('csv-input').click()">
-            📂 請求データのRMデータファイルをドロップ or クリック
+            📂 介護保険CSVをドロップ or クリック
           </div>
           <input type="file" id="csv-input" accept=".csv" multiple>
-          <input type="file" id="uke-input" accept=".UKE,.uke,.txt" multiple>
-          <button id="uke-upload-btn" style="display:none;cursor:pointer;background:#2b6cb0;color:#fff;border:none;border-radius:6px;padding:7px 14px;font-size:13px;font-weight:600;margin-top:8px;width:100%;" onclick="document.getElementById('uke-input').click()">🏥 医療保険UKEアップロード</button>
+          <input type="file" id="uke-input" accept=".UKE,.uke,.txt,.UKE" multiple>
+          <div id="uke-drop-zone" class="drop-zone" style="display:none;margin-top:6px;border-color:rgba(99,179,237,.6);color:#90cdf4;" onclick="document.getElementById('uke-input').click()">
+            🏥 医療保険UKEをドロップ or クリック
+          </div>
           <div id="month-list"><div class="no-months">データなし</div></div>
         </div>
         <div class="sidebar-section">
@@ -1664,6 +1666,10 @@ dropZone.addEventListener('drop', e => { e.preventDefault(); dropZone.classList.
 csvInput.addEventListener('change', e => { loadFiles(e.target.files); csvInput.value = ''; });
 const ukeInput = document.getElementById('uke-input');
 ukeInput.addEventListener('change', e => { loadUKEFiles(e.target.files); ukeInput.value = ''; });
+const ukeDrop = document.getElementById('uke-drop-zone');
+ukeDrop.addEventListener('dragover', e => { e.preventDefault(); ukeDrop.classList.add('drag'); });
+ukeDrop.addEventListener('dragleave', () => ukeDrop.classList.remove('drag'));
+ukeDrop.addEventListener('drop', e => { e.preventDefault(); ukeDrop.classList.remove('drag'); loadUKEFiles(e.dataTransfer.files); });
 
 function loadFiles(files) {
   if (!currentFacilityId) { alert('事業所を選択してください'); return; }
@@ -2011,8 +2017,8 @@ function renderFacilityAll() {
   const ctx = getFacCtx(currentFacilityId);
   if (!ctx) return;
   const isHoumon = getFacServiceType(currentFacilityId) === 'houmon';
-  const ukeBtn = document.getElementById('uke-upload-btn');
-  if (ukeBtn) ukeBtn.style.display = isHoumon ? '' : 'none';
+  const ukeDropZone = document.getElementById('uke-drop-zone');
+  if (ukeDropZone) ukeDropZone.style.display = isHoumon ? '' : 'none';
   renderFacilitySidebar();
   const keys = Object.keys(ctx.monthData).sort();
   if (keys.length === 0) {
