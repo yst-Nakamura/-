@@ -384,6 +384,9 @@ input[type=file] { display: none; }
       <label style="display:flex;align-items:center;gap:5px;font-size:13px;cursor:pointer">
         <input type="radio" name="add-fac-svctype" value="shotaki"> 小規模多機能（小多機）
       </label>
+      <label style="display:flex;align-items:center;gap:5px;font-size:13px;cursor:pointer">
+        <input type="radio" name="add-fac-svctype" value="houmon"> 訪問看護
+      </label>
     </div>
     <label>エリア</label>
     <select id="inp-fac-area" style="width:100%;padding:8px 10px;border:1px solid #cbd5e0;border-radius:8px;font-size:14px;background:#fff;margin-bottom:16px">
@@ -512,7 +515,7 @@ input[type=file] { display: none; }
     <div class="service-type-tabs">
       <button id="svc-tab-kango" class="svc-tab-btn active" onclick="switchServiceType('kango')">🏥 看多機</button>
       <button id="svc-tab-shotaki" class="svc-tab-btn" onclick="switchServiceType('shotaki')">🏠 小多機</button>
-      <button id="svc-tab-houmon" class="svc-tab-btn disabled-tab" title="準備中">🚗 訪問看護（準備中）</button>
+      <button id="svc-tab-houmon" class="svc-tab-btn" onclick="switchServiceType('houmon')">🚗 訪問看護</button>
     </div>
     <div class="page-title">全事業所 加算状況一覧</div>
     <div class="page-subtitle" id="dash-subtitle">事業所を追加してCSVをアップロードすると自動で集計されます</div>
@@ -624,9 +627,8 @@ function setFacServiceType(facId, svcType) {
   localStorage.setItem('kango_svctype_overrides', JSON.stringify(ov));
 }
 function switchServiceType(type) {
-  if (type === 'houmon') return; // 準備中
   currentServiceType = type;
-  ['kango', 'shotaki'].forEach(t => {
+  ['kango', 'shotaki', 'houmon'].forEach(t => {
     const btn = document.getElementById('svc-tab-' + t);
     if (btn) btn.classList.toggle('active', t === type);
   });
@@ -893,8 +895,87 @@ function renderShotakiDashboard() {
   document.getElementById('dash-addon-matrix').innerHTML = '';
 }
 
+function renderHoumonDashboard() {
+  const svcLabels = { kango: '看護小規模多機能（看多機）', shotaki: '小規模多機能（小多機）', houmon: '訪問看護' };
+  document.querySelector('#page-dashboard .page-title').textContent =
+    `全事業所 加算状況一覧 — ${svcLabels[currentServiceType] || ''}`;
+
+  const facList = allFacilities.filter(f => getFacServiceType(f.id) === 'houmon');
+  const total = facList.length;
+
+  document.getElementById('dash-kpi').innerHTML = `
+    <div class="kpi-card"><div class="kl">登録事業所数（訪問看護）</div><div class="kv kv-blue">${total}</div><div class="ks">事業所</div></div>
+  `;
+
+  const wrap = document.getElementById('dash-table-wrap');
+  if (facList.length === 0) {
+    wrap.innerHTML = `<div class="empty-dashboard">
+      <div class="em-icon">🚗</div>
+      <p>訪問看護の事業所がまだ登録されていません</p>
+      <p style="font-size:12px">右上の「＋ 事業所追加」から追加してください</p>
+    </div>`;
+    document.getElementById('dash-addon-matrix').innerHTML = '';
+    return;
+  }
+
+  const rows = facList.map(f => {
+    const ctx = getFacCtx(f.id);
+    const latestYm = Object.keys(ctx.monthData).sort().pop();
+    if (!latestYm) {
+      return `<tr>
+        <td class="fac-name"><a class="fac-name-link" onclick="showFacility('${f.id}')">${esc(f.name)}</a></td>
+        <td colspan="4"><span style="color:#a0aec0;font-size:12px">データなし</span></td>
+        <td><button class="detail-link" onclick="showFacility('${f.id}')">詳細 →</button></td>
+      </tr>`;
+    }
+    const users = Object.values(ctx.monthData[latestYm].users);
+    const kinkyuCount = users.filter(u => u.items.some(i => i.name && i.name.includes('緊急時訪問看護加算'))).length;
+    const tokubetsuCount = users.filter(u => u.items.some(i => i.name && i.name.includes('特別管理加算'))).length;
+    const kaigoCount = users.filter(u => !u.userSvcType || u.userSvcType === 'kaigo').length;
+    const shienCount = users.filter(u => u.userSvcType === 'shien').length;
+    return `<tr>
+      <td class="fac-name"><a class="fac-name-link" onclick="showFacility('${f.id}')">${esc(f.name)}</a></td>
+      <td style="font-size:12px;color:#718096">${ymLabel(latestYm)}</td>
+      <td style="text-align:center">
+        <span style="font-weight:bold;color:#2b6cb0;font-size:14px">${users.length}</span>
+        <span style="font-size:11px;color:#718096"> 名</span>
+        <div style="font-size:10px;color:#a0aec0">要介護${kaigoCount}・要支援${shienCount}</div>
+      </td>
+      <td style="text-align:center">
+        ${kinkyuCount > 0
+          ? `<span style="background:#c6f6d5;color:#22543d;padding:2px 8px;border-radius:8px;font-size:12px;font-weight:bold">${kinkyuCount}名</span>`
+          : `<span style="color:#a0aec0;font-size:12px">—</span>`}
+      </td>
+      <td style="text-align:center">
+        ${tokubetsuCount > 0
+          ? `<span style="background:#bee3f8;color:#2c5282;padding:2px 8px;border-radius:8px;font-size:12px;font-weight:bold">${tokubetsuCount}名</span>`
+          : `<span style="color:#a0aec0;font-size:12px">—</span>`}
+      </td>
+      <td><button class="detail-link" onclick="showFacility('${f.id}')">詳細 →</button></td>
+    </tr>`;
+  }).join('');
+
+  wrap.innerHTML = `<div class="dash-table-wrap">
+    <table class="dash-table">
+      <thead>
+        <tr>
+          <th>事業所名</th>
+          <th>最終連携月</th>
+          <th>利用者数</th>
+          <th>緊急時訪問看護加算</th>
+          <th>特別管理加算</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>${rows}</tbody>
+    </table>
+  </div>`;
+  document.getElementById('dash-addon-matrix').innerHTML = '';
+}
+
 function renderDashboard() {
   if (currentServiceType === 'shotaki') { renderShotakiDashboard(); return; }
+  if (currentServiceType === 'houmon') { renderHoumonDashboard(); return; }
 
   const svcLabels = { kango: '看護小規模多機能（看多機）', shotaki: '小規模多機能（小多機）' };
   document.querySelector('#page-dashboard .page-title').textContent =
@@ -1583,7 +1664,7 @@ csvInput.addEventListener('change', e => { loadFiles(e.target.files); csvInput.v
 function loadFiles(files) {
   if (!currentFacilityId) { alert('事業所を選択してください'); return; }
   // 現在のタブに合わせて事業所タイプを自動確定（既存事業所を正しいタブで使えるようにする）
-  if (currentServiceType && currentServiceType !== 'houmon') {
+  if (currentServiceType) {
     setFacServiceType(currentFacilityId, currentServiceType);
   }
   const svcType = getFacServiceType(currentFacilityId);
@@ -1600,10 +1681,11 @@ function loadFiles(files) {
 function parseCSV(text, facilityServiceType) {
   facilityServiceType = facilityServiceType || 'kango';
   const isShotaki = facilityServiceType === 'shotaki';
+  const isHoumon = facilityServiceType === 'houmon';
 
   // 小多機: svcType 32=要介護, 33=要支援(予防)  34=短期要介護, 35=短期要支援 → 34/35は除外
   // 看多機: svcType 36=通常, 短期は itemName で判定
-  const validSvcCodes  = isShotaki ? new Set(['32','33']) : new Set(['36']);
+  const validSvcCodes  = isHoumon ? null : isShotaki ? new Set(['32','33']) : new Set(['36']);
   const shortTermCodes = isShotaki ? new Set(['34','35']) : new Set();
   const baseCodePattern = isShotaki
     ? /小規模多機能[１-９1-9]+/   // 要介護・要支援どちらもマッチ
@@ -1656,7 +1738,7 @@ function parseCSV(text, facilityServiceType) {
     // 看多機: 短期セクション中はスキップ
     if (!isShotaki && skipShortTerm[userId]) continue;
 
-    if (validSvcCodes.has(svcType) && rowType === '3') {
+    if ((validSvcCodes === null || validSvcCodes.has(svcType)) && rowType === '3') {
       if (itemName.match(baseCodePattern) && !itemName.includes('短期')) {
         u.baseCode = itemName;
       } else if (itemName === '【保険給付対象計】') {
@@ -1894,6 +1976,7 @@ function _renderTabContent(ym) {
   const users = Object.values(data.users);
   const total = users.length;
   const isKango = getFacServiceType(currentFacilityId) === 'kango';
+  const isHoumon = getFacServiceType(currentFacilityId) === 'houmon';
 
   // 看多機用の集計
   const kinkyuUsers    = isKango ? users.filter(u => u.items.some(i => i.name && i.name.includes('緊急時対応加算'))) : [];
@@ -1932,10 +2015,31 @@ function _renderTabContent(ym) {
       <div class="sub">${kaigoLevels.length}名対象</div>
     </div>`;
 
+  const houmonUsers = isHoumon ? users.filter(u => !u.userSvcType || u.userSvcType === 'kaigo') : [];
+  const houmonShienUsers = isHoumon ? users.filter(u => u.userSvcType === 'shien') : [];
+  const houmonKinkyuCount = isHoumon ? users.filter(u => u.items.some(i => i.name && i.name.includes('緊急時訪問看護加算'))).length : 0;
+  const houmonTokubetsuCount = isHoumon ? users.filter(u => u.items.some(i => i.name && i.name.includes('特別管理加算'))).length : 0;
+  const houmonCards = `
+    <div class="card c-blue">
+      <div class="lbl">登録利用者数（本月）</div>
+      <div class="val">${total}</div>
+      <div class="sub" style="font-size:11px">要介護 ${houmonUsers.length}名 ／ 要支援 ${houmonShienUsers.length}名</div>
+    </div>
+    <div class="card c-orange">
+      <div class="lbl">緊急時訪問看護加算（本月）</div>
+      <div class="val">${houmonKinkyuCount}</div>
+      <div class="sub">${pct(houmonKinkyuCount, total)}%</div>
+    </div>
+    <div class="card c-green">
+      <div class="lbl">特別管理加算（本月）</div>
+      <div class="val">${houmonTokubetsuCount}</div>
+      <div class="sub">${pct(houmonTokubetsuCount, total)}%</div>
+    </div>`;
+
   document.getElementById('tab-contents').innerHTML = `
     <div>
       <div class="cards">
-        ${isKango ? kangoCards : shotakiCards}
+        ${isKango ? kangoCards : isHoumon ? houmonCards : shotakiCards}
       </div>
       ${isKango ? `
       <div class="section">
@@ -2662,9 +2766,90 @@ const ADDON_DEFS_SHOTAKI = [
   },
 ];
 
+const ADDON_DEFS_HOUMON = [
+  {
+    no: 1, name: 'サービス提供体制強化加算',
+    unit: '1回につき（Ⅰ:6単位 / Ⅱ:3単位）',
+    keywords: ['サービス提供体制強化'],
+    req: '（Ⅰ）看護師等の割合が60%以上かつ勤続3年以上の割合が30%以上の場合。\n（Ⅱ）看護師等の割合が40%以上の場合。'
+  },
+  {
+    no: 2, name: '退院時共同指導加算',
+    unit: '1回につき600単位',
+    keywords: ['退院時共同指導'],
+    req: '病院・診療所・老人保健施設から退院する利用者に対し、退院前に医療機関の職員と共同指導した場合に算定。'
+  },
+  {
+    no: 3, name: '初回加算',
+    unit: '（Ⅰ）350単位 / （Ⅱ）300単位',
+    keywords: ['初回加算'],
+    req: '（Ⅰ）新規利用者で過去2ヶ月に訪問看護の利用がない場合。\n（Ⅱ）上記以外の新規利用開始時。'
+  },
+  {
+    no: 4, name: '特別管理加算',
+    unit: '1月につき（Ⅰ:500単位 / Ⅱ:250単位）',
+    keywords: ['特別管理加算'],
+    req: '（Ⅰ）在宅悪性腫瘍患者指導管理・真皮を超える褥瘡等の処置が必要な利用者。\n（Ⅱ）点滴注射・自己腹膜灌流指導管理等を必要とする利用者。'
+  },
+  {
+    no: 5, name: '長時間訪問看護加算',
+    unit: '1回につき300単位',
+    keywords: ['長時間訪問看護'],
+    req: '特別管理加算（Ⅰ・Ⅱ）の対象者に1時間30分以上の訪問看護を行った場合に算定。'
+  },
+  {
+    no: 6, name: '複数名訪問加算',
+    unit: '1回につき（Ⅰ30分未満:254単位 / Ⅰ30分以上:402単位 / Ⅱ30分未満:201単位 / Ⅱ30分以上:317単位）',
+    keywords: ['複数名訪問'],
+    req: '（Ⅰ）看護師等が複数名で訪問した場合。\n（Ⅱ）看護師等と准看護師・看護補助者等が複数名で訪問した場合。'
+  },
+  {
+    no: 7, name: '緊急時訪問看護加算',
+    unit: '1月につき（Ⅰ:600単位 / Ⅱ:574単位）',
+    keywords: ['緊急時訪問看護加算'],
+    req: '（Ⅰ）24時間連絡体制を確保し、緊急時に訪問できる体制がある場合。\n（Ⅱ）緊急時の連絡体制を確保している場合。'
+  },
+  {
+    no: 8, name: '看護・介護職員連携強化加算',
+    unit: '1月につき250単位',
+    keywords: ['看護・介護職員連携', '看護介護職員連携'],
+    req: '訪問看護ステーションの看護師等が、訪問介護事業所の訪問介護員等に喀痰吸引等に係る指導を行った場合に算定。'
+  },
+  {
+    no: 9, name: 'ターミナルケア加算',
+    unit: '死亡月につき2,500単位',
+    keywords: ['ターミナルケア加算'],
+    req: '在宅または当事業所で死亡した利用者に対して、死亡日及び死亡日前14日以内に2日以上ターミナルケアを行った場合に算定。'
+  },
+  {
+    no: 10, name: '看護体制強化加算',
+    unit: '1月につき（Ⅰ:550単位 / Ⅱ:200単位）',
+    keywords: ['看護体制強化加算'],
+    req: '（Ⅰ）緊急時訪問看護加算を算定した利用者割合≥70%、特別管理加算算定割合≥30%等の要件を満たす場合。\n（Ⅱ）緊急時訪問看護加算を算定した利用者割合≥30%、特別管理加算算定割合≥20%等の要件を満たす場合。'
+  },
+  {
+    no: 11, name: '専門管理加算',
+    unit: '1月につき250単位',
+    keywords: ['専門管理加算'],
+    req: '緩和ケア・褥瘡ケア・人工肛門ケア等の専門研修を修了した看護師が訪問看護の指導管理を行った場合に算定。'
+  },
+  {
+    no: 12, name: '遠隔死亡診断補助加算',
+    unit: '1回につき250単位',
+    keywords: ['遠隔死亡診断'],
+    req: '医師が情報通信機器を用いて死亡診断を行う際に、看護師が必要な処置を行った場合に算定。'
+  },
+  {
+    no: 13, name: '口腔連携強化加算',
+    unit: '1回につき50単位',
+    keywords: ['口腔連携強化'],
+    req: '歯科医師や歯科衛生士等と連携し、口腔機能の評価・口腔衛生の管理を行った場合に算定。'
+  },
+];
+
 function showAddonReqModal(no) {
-  const isShotaki = currentFacilityId && getFacServiceType(currentFacilityId) === 'shotaki';
-  const defs = isShotaki ? ADDON_DEFS_SHOTAKI : ADDON_DEFS;
+  const svcType2 = currentFacilityId ? getFacServiceType(currentFacilityId) : 'kango';
+  const defs = svcType2 === 'shotaki' ? ADDON_DEFS_SHOTAKI : svcType2 === 'houmon' ? ADDON_DEFS_HOUMON : ADDON_DEFS;
   const def = defs.find(d => d.no === no);
   if (!def) return;
   document.getElementById('addon-req-title').textContent = `⑨ ${def.no}. ${def.name}`.replace('⑨ ', '');
@@ -2688,7 +2873,8 @@ function renderAddonChecklist(users) {
   const total = users.length;
   const matchedKeys = new Set();
 
-  const activeDefs = (currentFacilityId && getFacServiceType(currentFacilityId) === 'shotaki') ? ADDON_DEFS_SHOTAKI : ADDON_DEFS;
+  const svcType = currentFacilityId ? getFacServiceType(currentFacilityId) : 'kango';
+  const activeDefs = svcType === 'shotaki' ? ADDON_DEFS_SHOTAKI : svcType === 'houmon' ? ADDON_DEFS_HOUMON : ADDON_DEFS;
   const rows = activeDefs.map(def => {
     const cnt = Object.entries(rawCounts)
       .filter(([k]) => def.keywords.some(kw => k.includes(kw)))
@@ -2756,6 +2942,15 @@ function renderAddonChecklist(users) {
 // 修正ログモーダル
 // ============================================================
 const CHANGELOG_DATA = [
+  {
+    version: 'v1.3.0', date: '2026-06-29', label: '新機能',
+    labelColor: '#2b6cb0', labelBg: '#ebf8ff',
+    items: [
+      { tag: '追加', tagColor: '#276749', tagBg: '#c6f6d5', text: '訪問看護タブを追加（介護保険対応）。訪問看護事業所のCSVアップロードと全加算の算定状況を管理できるようになった' },
+      { tag: '追加', tagColor: '#276749', tagBg: '#c6f6d5', text: '訪問看護の加算13種（サービス提供体制強化・退院時共同指導・初回加算・特別管理・長時間訪問・複数名訪問・緊急時訪問看護・看護介護連携・ターミナルケア・看護体制強化・専門管理・遠隔死亡診断補助・口腔連携強化）の○/×表示に対応' },
+      { tag: '追加', tagColor: '#276749', tagBg: '#c6f6d5', text: '訪問看護の事業所詳細に利用者数（要介護/要支援内訳）・緊急時訪問看護加算・特別管理加算のカードを表示' },
+    ]
+  },
   {
     version: 'v1.2.1', date: '2026-06-26', label: '修正',
     labelColor: '#7b341e', labelBg: '#fed7aa',
