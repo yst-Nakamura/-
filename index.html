@@ -2016,7 +2016,7 @@ function checkTerminal(calcYm, facId) {
 function renderFacilityAll() {
   const ctx = getFacCtx(currentFacilityId);
   if (!ctx) return;
-  const isHoumon = getFacServiceType(currentFacilityId) === 'houmon';
+  const isHoumon = getFacServiceType(currentFacilityId) === 'houmon' || currentServiceType === 'houmon';
   const ukeDropZone = document.getElementById('uke-drop-zone');
   if (ukeDropZone) ukeDropZone.style.display = isHoumon ? '' : 'none';
   renderFacilitySidebar();
