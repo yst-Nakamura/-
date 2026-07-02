@@ -551,6 +551,9 @@ input[type=file] { display: none; }
             🏥 医療保険UKEをドロップ or クリック
           </div>
           <div id="month-list"><div class="no-months">データなし</div></div>
+          <div id="iryo-month-list" style="display:none">
+            <div style="font-size:10px;color:#90cdf4;letter-spacing:1px;text-transform:uppercase;margin:10px 0 6px">医療保険データ</div>
+          </div>
         </div>
         <div class="sidebar-section">
           <h3>ターミナルケア加算 記録</h3>
@@ -1694,6 +1697,7 @@ function loadFiles(files) {
 
 function loadUKEFiles(files) {
   if (!currentFacilityId) { alert('事業所を選択してください'); return; }
+  if (currentServiceType === 'houmon') setFacServiceType(currentFacilityId, 'houmon');
   Array.from(files).forEach(file => {
     const reader = new FileReader();
     reader.onload = e => {
@@ -2015,6 +2019,40 @@ function checkTerminal(calcYm, facId) {
 }
 
 // ============================================================
+function renderIryoStandalone(iryoMonthData) {
+  const months = Object.values(iryoMonthData).sort((a, b) => b.ym.localeCompare(a.ym));
+  return months.map(m => {
+    const users = Object.values(m.users);
+    const cnt = users.length;
+    const h24 = users.filter(u => u.has24h).length;
+    const toku = users.filter(u => u.hasTokubetsu).length;
+    const nan = users.filter(u => u.hasNanbyo).length;
+    const term = users.filter(u => u.hasTerminal).length;
+    const dx = users.filter(u => u.hasDx).length;
+    const rows = users.map(u => {
+      const addonTags = (u.items || []).map(i =>
+        '<span style="background:#ebf8ff;color:#2b6cb0;border-radius:4px;padding:1px 6px;font-size:11px;margin-right:3px">' + i.name + '</span>'
+      ).join('');
+      return '<tr><td style="padding:7px 10px;border-bottom:1px solid #f0f4f8">' + u.name + '</td>'
+        + '<td style="padding:7px 10px;border-bottom:1px solid #f0f4f8;text-align:center">' + (u.visitDays || '—') + '日</td>'
+        + '<td style="padding:7px 10px;border-bottom:1px solid #f0f4f8">' + (addonTags || '<span style="color:#a0aec0;font-size:11px">加算なし</span>') + '</td></tr>';
+    }).join('');
+    return '<div style="background:#fff;border-radius:10px;padding:18px;box-shadow:0 1px 3px rgba(0,0,0,.08);margin-bottom:16px">'
+      + '<div style="font-size:15px;font-weight:bold;color:#2b6cb0;margin-bottom:12px;padding-bottom:8px;border-bottom:2px solid #bee3f8">🏥 医療保険 ' + m.label + '</div>'
+      + '<div class="cards" style="margin-bottom:14px">'
+      + '<div class="card c-blue"><div class="lbl">利用者数</div><div class="val">' + cnt + '</div><div class="sub">名</div></div>'
+      + '<div class="card"><div class="lbl" style="font-size:10px">24時間対応</div><div class="val" style="color:#c53030;font-size:22px">' + h24 + '</div><div class="sub">' + pct(h24, cnt) + '%</div></div>'
+      + '<div class="card"><div class="lbl" style="font-size:10px">特別管理加算</div><div class="val" style="color:#c05621;font-size:22px">' + toku + '</div><div class="sub">' + pct(toku, cnt) + '%</div></div>'
+      + '<div class="card"><div class="lbl" style="font-size:10px">難病等複数回</div><div class="val" style="color:#276749;font-size:22px">' + nan + '</div><div class="sub">' + pct(nan, cnt) + '%</div></div>'
+      + '</div>'
+      + '<table style="width:100%;border-collapse:collapse;font-size:13px">'
+      + '<thead><tr style="background:#ebf8ff"><th style="padding:7px 10px;text-align:left;font-size:12px;color:#2b6cb0">患者名</th><th style="padding:7px 10px;text-align:center;font-size:12px;color:#2b6cb0">実日数</th><th style="padding:7px 10px;text-align:left;font-size:12px;color:#2b6cb0">算定加算</th></tr></thead>'
+      + '<tbody>' + rows + '</tbody>'
+      + '</table>'
+      + '</div>';
+  }).join('');
+}
+
 // 事業所詳細ページ
 // ============================================================
 function renderFacilityAll() {
@@ -2025,9 +2063,18 @@ function renderFacilityAll() {
   if (ukeDropZone) ukeDropZone.style.display = isHoumon ? '' : 'none';
   renderFacilitySidebar();
   const keys = Object.keys(ctx.monthData).sort();
+  const iryoKeys2 = Object.keys(ctx.iryoMonthData || {});
   if (keys.length === 0) {
-    document.getElementById('fac-empty-msg').style.display = 'block';
-    document.getElementById('dash-area').style.display = 'none';
+    if (isHoumon && iryoKeys2.length > 0) {
+      // 医療保険データのみある場合
+      document.getElementById('fac-empty-msg').style.display = 'none';
+      document.getElementById('dash-area').style.display = 'block';
+      document.getElementById('nav-tabs').innerHTML = '';
+      document.getElementById('tab-contents').innerHTML = renderIryoStandalone(ctx.iryoMonthData);
+    } else {
+      document.getElementById('fac-empty-msg').style.display = 'block';
+      document.getElementById('dash-area').style.display = 'none';
+    }
     return;
   }
   document.getElementById('fac-empty-msg').style.display = 'none';
@@ -2062,6 +2109,21 @@ function renderFacilitySidebar() {
           </div>
           <span class="del" onclick="event.stopPropagation();deleteMonth('${ym}')">✕</span>
         </div>`).join('');
+  // 医療保険月リスト
+  const isHoumonFac = getFacServiceType(currentFacilityId) === 'houmon' || currentServiceType === 'houmon';
+  const iryoKeys = Object.keys(ctx.iryoMonthData || {}).sort().reverse();
+  const iryoListEl = document.getElementById('iryo-month-list');
+  if (iryoListEl) {
+    iryoListEl.style.display = (isHoumonFac && iryoKeys.length > 0) ? '' : 'none';
+    iryoListEl.innerHTML = iryoKeys.map(ym => `
+      <div class="month-item">
+        <div style="display:flex;align-items:center;gap:0">
+          <div class="month-dot" style="background:#3182ce"></div>
+          <span style="font-size:12px">${ymLabel(ym)}</span>
+        </div>
+        <span class="del" onclick="deleteIryoMonth('${ym}')" title="削除">✕</span>
+      </div>`).join('');
+  }
   // ターミナルケアリスト
   document.getElementById('terminal-list').innerHTML = ctx.terminalEntries.length === 0
     ? '<div class="no-months">記録なし</div>'
@@ -2070,6 +2132,13 @@ function renderFacilitySidebar() {
           <span>${t.label}</span>
           <span class="del-t" onclick="removeTerminal('${t.ym}')">✕</span>
         </div>`).join('');
+}
+
+function deleteIryoMonth(ym) {
+  if (!confirm(`医療保険 ${ymLabel(ym)} のデータを削除しますか？`)) return;
+  const ctx = getFacCtx(currentFacilityId);
+  if (ctx.iryoMonthData) delete ctx.iryoMonthData[ym];
+  renderFacilityAll();
 }
 
 async function deleteMonth(ym) {
@@ -3187,6 +3256,15 @@ function renderAddonChecklist(users) {
 // 修正ログモーダル
 // ============================================================
 const CHANGELOG_DATA = [
+  {
+    version: 'v1.5.0', date: '2026-07-02', label: '改善',
+    labelColor: '#276749', labelBg: '#c6f6d5',
+    items: [
+      { tag: '修正', tagColor: '#744210', tagBg: '#fefcbf', text: '医療保険→介護保険の順でアップロードすると介護保険データが表示されない不具合を修正（UKEアップロード時に事業所種別を確定するよう変更）' },
+      { tag: '追加', tagColor: '#276749', tagBg: '#c6f6d5', text: 'サイドバーに医療保険（UKE）月リストと削除ボタンを追加。月ごとに医療保険データを削除できるようになった' },
+      { tag: '改善', tagColor: '#2b6cb0', tagBg: '#ebf8ff', text: '介護保険（CSV）未登録の状態でも医療保険（UKE）データのみで利用者別加算状況・患者一覧テーブルを表示するよう改善' },
+    ]
+  },
   {
     version: 'v1.4.0', date: '2026-06-29', label: '新機能',
     labelColor: '#2b6cb0', labelBg: '#ebf8ff',
