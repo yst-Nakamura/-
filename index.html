@@ -1787,8 +1787,20 @@ function parseCSV(text, facilityServiceType) {
   }
 
   // 短期看護小規模のみの利用者（baseCodeなし）を除外して通常利用者だけ集計
+  // houmon: baseCodeが未マッチでもアイテムあれば有効利用者として扱い、userSvcTypeをデフォルト設定
   const filteredUsers = Object.fromEntries(
-    Object.entries(users).filter(([, u]) => u.baseCode !== null)
+    Object.entries(users).filter(([, u]) => {
+      if (isHoumon) {
+        if (u.baseCode !== null) return true;
+        // baseCodeなしでも実績行があれば採用し、userSvcTypeを正規化
+        if (u.items.length > 0 || u.totalRec > 0) {
+          if (!['kaigo', 'shien'].includes(u.userSvcType)) u.userSvcType = 'kaigo';
+          return true;
+        }
+        return false;
+      }
+      return u.baseCode !== null;
+    })
   );
 
   const ctx = getFacCtx(currentFacilityId);
@@ -1815,14 +1827,18 @@ function parseCSV(text, facilityServiceType) {
 function parseUKE(text) {
   const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
   let currentUser = null;
+  let hmInsType = '1'; // HMレコード col[1]: 1=社保 2=国保・後期高齢
   const monthUsers = {}; // { ym: { userId: userObj } }
 
   for (const line of lines) {
     const cols = line.split(',');
     const rec = cols[0];
 
-    if (rec === 'RE') {
-      const seq = cols[1];
+    if (rec === 'HM') {
+      hmInsType = cols[1] || '1'; // 保険種別を記録（社保=1, 国保後期=2）
+
+    } else if (rec === 'RE') {
+      const seq = hmInsType + '_' + cols[1]; // 保険種別プレフィックスで衝突回避
       const ym = (cols[3] || '').substring(0, 6);
       if (!ym.match(/^\d{6}$/)) continue;
       const visitDays = parseInt(cols[11]) || 0;
@@ -2212,8 +2228,8 @@ function _renderTabContent(ym) {
       <div class="sub">${kaigoLevels.length}名対象</div>
     </div>`;
 
-  const houmonUsers = isHoumon ? users.filter(u => !u.userSvcType || u.userSvcType === 'kaigo') : [];
   const houmonShienUsers = isHoumon ? users.filter(u => u.userSvcType === 'shien') : [];
+  const houmonUsers = isHoumon ? users.filter(u => u.userSvcType !== 'shien') : [];
   const houmonKinkyuCount = isHoumon ? users.filter(u => u.items.some(i => i.name && i.name.includes('緊急時訪問看護加算'))).length : 0;
   const houmonTokubetsuCount = isHoumon ? users.filter(u => u.items.some(i => i.name && i.name.includes('特別管理加算'))).length : 0;
   const houmonCards = `
@@ -3256,6 +3272,15 @@ function renderAddonChecklist(users) {
 // 修正ログモーダル
 // ============================================================
 const CHANGELOG_DATA = [
+  {
+    version: 'v1.5.1', date: '2026-07-02', label: '修正',
+    labelColor: '#744210', labelBg: '#fefcbf',
+    items: [
+      { tag: '修正', tagColor: '#744210', tagBg: '#fefcbf', text: '社保・国保後期の2ファイルUKEアップロード時に患者が1名しか表示されない不具合を修正（HMレコードの保険種別でキーを区別するよう変更）' },
+      { tag: '修正', tagColor: '#744210', tagBg: '#fefcbf', text: '訪問看護（介護保険）CSV加算が表示されない不具合を修正（baseCode未マッチでも実績行があれば利用者として採用）' },
+      { tag: '修正', tagColor: '#744210', tagBg: '#fefcbf', text: '訪問看護 要介護/要支援の分類ロジックを修正（未分類利用者が要介護としてカウントされるよう改善）' },
+    ]
+  },
   {
     version: 'v1.5.0', date: '2026-07-02', label: '改善',
     labelColor: '#276749', labelBg: '#c6f6d5',
