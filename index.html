@@ -1558,6 +1558,10 @@ function showAddFacModal() {
   if (!hasGasUrl()) { showGasModal(); return; }
   document.getElementById('inp-fac-name').value = '';
   document.getElementById('add-fac-error').textContent = '';
+  // 現在のタブに合わせてサービス種別を自動選択
+  const svcType = currentServiceType || 'kango';
+  const radio = document.querySelector(`input[name="add-fac-svctype"][value="${svcType}"]`);
+  if (radio) radio.checked = true;
   document.getElementById('modal-add-fac').classList.remove('hidden');
   setTimeout(() => document.getElementById('inp-fac-name').focus(), 100);
 }
