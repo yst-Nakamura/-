@@ -735,9 +735,19 @@ async function loadAllData() {
   showLoading('データを読み込み中...');
   try {
     const raw = await gasGet();
-    allFacilities = (raw.facilities || []).map(f => ({ id: String(f.id), name: String(f.name), createdAt: f.createdAt, serviceType: String(f.serviceType || 'kango') }));
-    // GASのserviceTypeでlocalStorageを上書き（別端末対応）
-    allFacilities.forEach(f => setFacServiceType(f.id, f.serviceType, true));
+    allFacilities = (raw.facilities || []).map(f => ({
+      id: String(f.id), name: String(f.name), createdAt: f.createdAt,
+      serviceType: ['kango','shotaki','houmon'].includes(String(f.serviceType)) ? String(f.serviceType) : null
+    }));
+    // GASにserviceTypeが明示的に設定されている場合のみlocalStorageを更新
+    // 未設定（GAS未更新）の場合はlocalStorage既存値を保持する
+    allFacilities.forEach(f => {
+      if (f.serviceType) {
+        setFacServiceType(f.id, f.serviceType, true);
+      } else {
+        f.serviceType = getFacServiceType(f.id); // localStorageから読む
+      }
+    });
     facilityData = {};
     allFacilities.forEach(f => {
       facilityData[f.id] = { monthData: {}, terminalEntries: [], manualIsha: {}, katsudan: { registered: null, staff: [] } };
@@ -3280,6 +3290,13 @@ function renderAddonChecklist(users) {
 // 修正ログモーダル
 // ============================================================
 const CHANGELOG_DATA = [
+  {
+    version: 'v1.6.1', date: '2026-07-03', label: '修正',
+    labelColor: '#744210', labelBg: '#fefcbf',
+    items: [
+      { tag: '修正', tagColor: '#744210', tagBg: '#fefcbf', text: 'v1.6.0の不具合修正：GAS未更新時にlocalStorageの事業所種別が全て看多機に上書きされる問題を解消。GASに明示的な値がある場合のみ更新するよう変更' },
+    ]
+  },
   {
     version: 'v1.6.0', date: '2026-07-03', label: '改善',
     labelColor: '#276749', labelBg: '#c6f6d5',
