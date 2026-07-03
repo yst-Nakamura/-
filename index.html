@@ -739,13 +739,13 @@ async function loadAllData() {
       id: String(f.id), name: String(f.name), createdAt: f.createdAt,
       serviceType: ['kango','shotaki','houmon'].includes(String(f.serviceType)) ? String(f.serviceType) : null
     }));
-    // GASにserviceTypeが明示的に設定されている場合のみlocalStorageを更新
-    // 未設定（GAS未更新）の場合はlocalStorage既存値を保持する
+    // GASにshotaki/houmonが明示的に設定されている場合のみlocalStorageを更新
+    // kango（デフォルト埋め）の場合はlocalStorage既存値を優先する
     allFacilities.forEach(f => {
-      if (f.serviceType) {
+      if (f.serviceType === 'shotaki' || f.serviceType === 'houmon') {
         setFacServiceType(f.id, f.serviceType, true);
       } else {
-        f.serviceType = getFacServiceType(f.id); // localStorageから読む
+        f.serviceType = getFacServiceType(f.id); // localStorageの既存値を使う
       }
     });
     facilityData = {};
@@ -3290,6 +3290,13 @@ function renderAddonChecklist(users) {
 // 修正ログモーダル
 // ============================================================
 const CHANGELOG_DATA = [
+  {
+    version: 'v1.6.2', date: '2026-07-03', label: '修正',
+    labelColor: '#744210', labelBg: '#fefcbf',
+    items: [
+      { tag: '修正', tagColor: '#744210', tagBg: '#fefcbf', text: 'GASのデフォルト値（kango）でlocalStorageが上書きされる問題を修正。shotaki/houmonの場合のみGASの値を優先し、kangoはlocalStorage既存値を保持するよう変更' },
+    ]
+  },
   {
     version: 'v1.6.1', date: '2026-07-03', label: '修正',
     labelColor: '#744210', labelBg: '#fefcbf',
