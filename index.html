@@ -540,6 +540,10 @@ input[type=file] { display: none; }
     <div class="facility-body">
       <!-- サイドバー -->
       <div class="sidebar">
+        <div class="sidebar-section" style="padding:10px 12px">
+          <div style="font-size:11px;color:#a0aec0;font-weight:600;letter-spacing:1px;margin-bottom:6px">事業所種別</div>
+          <div id="svctype-selector" style="display:flex;gap:6px;flex-wrap:wrap"></div>
+        </div>
         <div class="sidebar-section">
           <h3>月次データ</h3>
           <div class="drop-zone" id="drop-zone" onclick="document.getElementById('csv-input').click()">
@@ -2131,6 +2135,23 @@ function renderTabs(keys) {
 
 function renderFacilitySidebar() {
   const ctx = getFacCtx(currentFacilityId);
+  // 事業所種別セレクター
+  const curType = getFacServiceType(currentFacilityId);
+  const svcTypes = [
+    { val: 'kango',   label: '看多機' },
+    { val: 'shotaki', label: '小多機' },
+    { val: 'houmon',  label: '訪問看護' },
+  ];
+  const el = document.getElementById('svctype-selector');
+  if (el) {
+    el.innerHTML = svcTypes.map(s => {
+      const active = curType === s.val;
+      return `<button onclick="changeFacServiceType('${s.val}')"
+        style="padding:4px 10px;font-size:12px;border-radius:6px;border:1.5px solid ${active?'#2b6cb0':'#cbd5e0'};
+               background:${active?'#ebf8ff':'#f7fafc'};color:${active?'#2b6cb0':'#718096'};
+               font-weight:${active?'bold':'normal'};cursor:pointer">${s.label}</button>`;
+    }).join('');
+  }
   const keys = Object.keys(ctx.monthData).sort().reverse();
   // 月リスト
   document.getElementById('month-list').innerHTML = keys.length === 0
@@ -2166,6 +2187,13 @@ function renderFacilitySidebar() {
           <span>${t.label}</span>
           <span class="del-t" onclick="removeTerminal('${t.ym}')">✕</span>
         </div>`).join('');
+}
+
+function changeFacServiceType(newType) {
+  setFacServiceType(currentFacilityId, newType); // localStorage + GAS両方更新
+  renderFacilitySidebar();
+  renderFacilityAll();
+  renderDashboard();
 }
 
 function deleteIryoMonth(ym) {
@@ -3290,6 +3318,13 @@ function renderAddonChecklist(users) {
 // 修正ログモーダル
 // ============================================================
 const CHANGELOG_DATA = [
+  {
+    version: 'v1.6.3', date: '2026-07-03', label: '追加',
+    labelColor: '#276749', labelBg: '#c6f6d5',
+    items: [
+      { tag: '追加', tagColor: '#276749', tagBg: '#c6f6d5', text: '事業所詳細サイドバーに「事業所種別」ボタンを追加。看多機・小多機・訪問看護をワンクリックで変更でき、GASにも即時保存される' },
+    ]
+  },
   {
     version: 'v1.6.2', date: '2026-07-03', label: '修正',
     labelColor: '#744210', labelBg: '#fefcbf',
