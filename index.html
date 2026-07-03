@@ -627,11 +627,16 @@ function getFacServiceType(facId) {
   const ov = getServiceTypeOverrides();
   return ov[facId] || 'kango';
 }
-function setFacServiceType(facId, svcType) {
+function setFacServiceType(facId, svcType, skipGas = false) {
   const ov = getServiceTypeOverrides();
   if (svcType && svcType !== 'kango') ov[facId] = svcType;
   else delete ov[facId];
   localStorage.setItem('kango_svctype_overrides', JSON.stringify(ov));
+  // GASにも永続化（別端末でも正しい種別を取得できるよう）
+  if (!skipGas && hasGasUrl()) {
+    gasPost({ action: 'saveServiceType', facilityId: facId, serviceType: svcType || 'kango' })
+      .catch(e => console.error('saveServiceType error:', e));
+  }
 }
 function switchServiceType(type) {
   currentServiceType = type;
@@ -730,7 +735,9 @@ async function loadAllData() {
   showLoading('データを読み込み中...');
   try {
     const raw = await gasGet();
-    allFacilities = (raw.facilities || []).map(f => ({ id: String(f.id), name: String(f.name), createdAt: f.createdAt }));
+    allFacilities = (raw.facilities || []).map(f => ({ id: String(f.id), name: String(f.name), createdAt: f.createdAt, serviceType: String(f.serviceType || 'kango') }));
+    // GASのserviceTypeでlocalStorageを上書き（別端末対応）
+    allFacilities.forEach(f => setFacServiceType(f.id, f.serviceType, true));
     facilityData = {};
     allFacilities.forEach(f => {
       facilityData[f.id] = { monthData: {}, terminalEntries: [], manualIsha: {}, katsudan: { registered: null, staff: [] } };
@@ -1582,7 +1589,8 @@ async function createFacility() {
   closeAddFacModal();
   showLoading('事業所を追加中...');
   try {
-    const res = await gasPost({ action: 'addFacility', name });
+    const svcTypeForGas = document.querySelector('input[name="add-fac-svctype"]:checked')?.value || 'kango';
+    const res = await gasPost({ action: 'addFacility', name, serviceType: svcTypeForGas });
     if (res.success) {
       if (areaVal) setFacAreaOverride(res.id, areaVal);
       const svcTypeVal = document.querySelector('input[name="add-fac-svctype"]:checked')?.value || 'kango';
@@ -3272,6 +3280,13 @@ function renderAddonChecklist(users) {
 // 修正ログモーダル
 // ============================================================
 const CHANGELOG_DATA = [
+  {
+    version: 'v1.6.0', date: '2026-07-03', label: '改善',
+    labelColor: '#276749', labelBg: '#c6f6d5',
+    items: [
+      { tag: '修正', tagColor: '#744210', tagBg: '#fefcbf', text: '他の端末から見ると全事業所が看多機タブに表示される問題を修正。事業所種別（看多機/小多機/訪問看護）をGoogleシートに永続化し、どの端末からでも正しく反映されるよう変更' },
+    ]
+  },
   {
     version: 'v1.5.1', date: '2026-07-02', label: '修正',
     labelColor: '#744210', labelBg: '#fefcbf',
