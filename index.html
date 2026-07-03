@@ -924,9 +924,7 @@ function renderShotakiDashboard() {
 }
 
 function renderHoumonDashboard() {
-  const svcLabels = { kango: '看護小規模多機能（看多機）', shotaki: '小規模多機能（小多機）', houmon: '訪問看護' };
-  document.querySelector('#page-dashboard .page-title').textContent =
-    `全事業所 加算状況一覧 — ${svcLabels[currentServiceType] || ''}`;
+  document.querySelector('#page-dashboard .page-title').textContent = '全事業所 加算状況一覧 — 訪問看護';
 
   const facList = allFacilities.filter(f => getFacServiceType(f.id) === 'houmon');
   const total = facList.length;
@@ -940,7 +938,7 @@ function renderHoumonDashboard() {
     wrap.innerHTML = `<div class="empty-dashboard">
       <div class="em-icon">🚗</div>
       <p>訪問看護の事業所がまだ登録されていません</p>
-      <p style="font-size:12px">右上の「＋ 事業所追加」から追加してください</p>
+      <p style="font-size:12px">事業所詳細のサイドバーで「訪問看護」ボタンを押して種別を設定してください</p>
     </div>`;
     document.getElementById('dash-addon-matrix').innerHTML = '';
     return;
@@ -948,37 +946,44 @@ function renderHoumonDashboard() {
 
   const rows = facList.map(f => {
     const ctx = getFacCtx(f.id);
-    const latestYm = Object.keys(ctx.monthData).sort().pop();
-    if (!latestYm) {
-      return `<tr>
-        <td class="fac-name"><a class="fac-name-link" onclick="showFacility('${f.id}')">${esc(f.name)}</a></td>
-        <td colspan="4"><span style="color:#a0aec0;font-size:12px">データなし</span></td>
-        <td><button class="detail-link" onclick="showFacility('${f.id}')">詳細 →</button></td>
-      </tr>`;
+    const kaigoLatestYm = Object.keys(ctx.monthData || {}).sort().pop();
+    const iryoLatestYm  = Object.keys(ctx.iryoMonthData || {}).sort().pop();
+
+    // 介護保険データ
+    let kaigoCell = `<span style="color:#a0aec0;font-size:12px">—</span>`;
+    let kinkyuCell = `<span style="color:#a0aec0;font-size:12px">—</span>`;
+    let tokubetsuCell = `<span style="color:#a0aec0;font-size:12px">—</span>`;
+    if (kaigoLatestYm) {
+      const users = Object.values(ctx.monthData[kaigoLatestYm].users);
+      const kaigoCount = users.filter(u => !u.userSvcType || u.userSvcType === 'kaigo').length;
+      const shienCount = users.filter(u => u.userSvcType === 'shien').length;
+      const kinkyuCount = users.filter(u => u.items.some(i => i.name && i.name.includes('緊急時訪問看護加算'))).length;
+      const tokubetsuCount = users.filter(u => u.items.some(i => i.name && i.name.includes('特別管理加算'))).length;
+      kaigoCell = `<span style="font-weight:bold;color:#38a169;font-size:14px">${users.length}</span><span style="font-size:11px;color:#718096"> 名</span>
+        <div style="font-size:10px;color:#a0aec0">要介護${kaigoCount}・要支援${shienCount}</div>
+        <div style="font-size:10px;color:#718096">${ymLabel(kaigoLatestYm)}</div>`;
+      kinkyuCell = kinkyuCount > 0
+        ? `<span style="background:#c6f6d5;color:#22543d;padding:2px 8px;border-radius:8px;font-size:12px;font-weight:bold">${kinkyuCount}名</span>`
+        : `<span style="color:#a0aec0;font-size:12px">—</span>`;
+      tokubetsuCell = tokubetsuCount > 0
+        ? `<span style="background:#bee3f8;color:#2c5282;padding:2px 8px;border-radius:8px;font-size:12px;font-weight:bold">${tokubetsuCount}名</span>`
+        : `<span style="color:#a0aec0;font-size:12px">—</span>`;
     }
-    const users = Object.values(ctx.monthData[latestYm].users);
-    const kinkyuCount = users.filter(u => u.items.some(i => i.name && i.name.includes('緊急時訪問看護加算'))).length;
-    const tokubetsuCount = users.filter(u => u.items.some(i => i.name && i.name.includes('特別管理加算'))).length;
-    const kaigoCount = users.filter(u => !u.userSvcType || u.userSvcType === 'kaigo').length;
-    const shienCount = users.filter(u => u.userSvcType === 'shien').length;
+
+    // 医療保険データ
+    let iryoCell = `<span style="color:#a0aec0;font-size:12px">—</span>`;
+    if (iryoLatestYm) {
+      const iryoUsers = Object.values(ctx.iryoMonthData[iryoLatestYm].users || {});
+      iryoCell = `<span style="font-weight:bold;color:#3182ce;font-size:14px">${iryoUsers.length}</span><span style="font-size:11px;color:#718096"> 名</span>
+        <div style="font-size:10px;color:#718096">${ymLabel(iryoLatestYm)}</div>`;
+    }
+
     return `<tr>
       <td class="fac-name"><a class="fac-name-link" onclick="showFacility('${f.id}')">${esc(f.name)}</a></td>
-      <td style="font-size:12px;color:#718096">${ymLabel(latestYm)}</td>
-      <td style="text-align:center">
-        <span style="font-weight:bold;color:#2b6cb0;font-size:14px">${users.length}</span>
-        <span style="font-size:11px;color:#718096"> 名</span>
-        <div style="font-size:10px;color:#a0aec0">要介護${kaigoCount}・要支援${shienCount}</div>
-      </td>
-      <td style="text-align:center">
-        ${kinkyuCount > 0
-          ? `<span style="background:#c6f6d5;color:#22543d;padding:2px 8px;border-radius:8px;font-size:12px;font-weight:bold">${kinkyuCount}名</span>`
-          : `<span style="color:#a0aec0;font-size:12px">—</span>`}
-      </td>
-      <td style="text-align:center">
-        ${tokubetsuCount > 0
-          ? `<span style="background:#bee3f8;color:#2c5282;padding:2px 8px;border-radius:8px;font-size:12px;font-weight:bold">${tokubetsuCount}名</span>`
-          : `<span style="color:#a0aec0;font-size:12px">—</span>`}
-      </td>
+      <td style="text-align:center">${kaigoCell}</td>
+      <td style="text-align:center">${iryoCell}</td>
+      <td style="text-align:center">${kinkyuCell}</td>
+      <td style="text-align:center">${tokubetsuCell}</td>
       <td><button class="detail-link" onclick="showFacility('${f.id}')">詳細 →</button></td>
     </tr>`;
   }).join('');
@@ -988,10 +993,10 @@ function renderHoumonDashboard() {
       <thead>
         <tr>
           <th>事業所名</th>
-          <th>最終連携月</th>
-          <th>利用者数</th>
-          <th>緊急時訪問看護加算</th>
-          <th>特別管理加算</th>
+          <th style="text-align:center">訪問看護（介護）</th>
+          <th style="text-align:center">訪問看護（医療）</th>
+          <th style="text-align:center">緊急時訪問看護加算</th>
+          <th style="text-align:center">特別管理加算</th>
           <th></th>
         </tr>
       </thead>
@@ -3318,6 +3323,13 @@ function renderAddonChecklist(users) {
 // 修正ログモーダル
 // ============================================================
 const CHANGELOG_DATA = [
+  {
+    version: 'v1.6.4', date: '2026-07-03', label: '改善',
+    labelColor: '#2c5282', labelBg: '#bee3f8',
+    items: [
+      { tag: '改善', tagColor: '#2c5282', tagBg: '#bee3f8', text: '訪問看護ダッシュボードに「訪問看護（介護）」「訪問看護（医療）」の両列を追加。介護保険・医療保険それぞれの利用者数・最終連携月を一覧表示' },
+    ]
+  },
   {
     version: 'v1.6.3', date: '2026-07-03', label: '追加',
     labelColor: '#276749', labelBg: '#c6f6d5',
