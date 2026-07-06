@@ -923,7 +923,11 @@ function renderShotakiDashboard() {
       <tbody>${rows}</tbody>
     </table>
   </div>`;
-  document.getElementById('dash-addon-matrix').innerHTML = '';
+  try {
+    document.getElementById('dash-addon-matrix').innerHTML = renderAddonMatrix();
+  } catch(e) {
+    document.getElementById('dash-addon-matrix').innerHTML = '';
+  }
 }
 
 function renderHoumonDashboard() {
@@ -1008,7 +1012,11 @@ function renderHoumonDashboard() {
       <tbody>${rows}</tbody>
     </table>
   </div>`;
-  document.getElementById('dash-addon-matrix').innerHTML = '';
+  try {
+    document.getElementById('dash-addon-matrix').innerHTML = renderAddonMatrix();
+  } catch(e) {
+    document.getElementById('dash-addon-matrix').innerHTML = '';
+  }
 }
 
 function renderDashboard() {
@@ -1179,9 +1187,12 @@ function renderDashboard() {
 // 全事業所 加算取得状況マトリックス
 // ============================================================
 function renderAddonMatrix() {
+  const svcType = currentServiceType || 'kango';
+  const isKango = svcType === 'kango';
+
   const dataFacs = allFacilities.filter(f => {
     const ctx = getFacCtx(f.id);
-    return getFacServiceType(f.id) === 'kango' && Object.keys(ctx.monthData).length > 0;
+    return getFacServiceType(f.id) === svcType && Object.keys(ctx.monthData).length > 0;
   });
   if (dataFacs.length === 0) return '';
 
@@ -1195,18 +1206,22 @@ function renderAddonMatrix() {
     const addonCounts = {};
     users.forEach(u => (u.items || []).forEach(i => {
       if (!i.name || i.name.startsWith('【')) return;
-      // 看護体制強化加算は別扱いのためCSVカウントから除外
-      if (i.name.includes('看護体制強化加算')) return;
-      const short = i.name.replace('看護小規模多機能型', '').replace('看護小規模', '');
+      if (isKango && i.name.includes('看護体制強化加算')) return; // 看多機のみ別扱い
+      let short = i.name;
+      if (isKango) short = short.replace('看護小規模多機能型', '').replace('看護小規模', '');
+      else if (svcType === 'shotaki') short = short.replace('小規模多機能型居宅介護', '').replace('小規模多機能型', '');
       addonCounts[short] = (addonCounts[short] || 0) + 1;
     }));
 
-    // 次月算定 看護体制強化加算 可否
-    const nextYm = addMonths(latestYm, 1);
-    const threeM  = calcThreeMonths(nextYm, f.id);
-    const term    = checkTerminal(nextYm, f.id);
-    const isha    = ctx.manualIsha[latestYm];
-    const { r1ok, r2ok } = evalReqs(threeM, term, isha, getFacCtx(f.id)?.katsudan?.registered);
+    // 次月算定 看護体制強化加算 可否（看多機のみ）
+    let r1ok = null, r2ok = null;
+    if (isKango) {
+      const nextYm = addMonths(latestYm, 1);
+      const threeM = calcThreeMonths(nextYm, f.id);
+      const term   = checkTerminal(nextYm, f.id);
+      const isha   = ctx.manualIsha[latestYm];
+      ({ r1ok, r2ok } = evalReqs(threeM, term, isha, getFacCtx(f.id)?.katsudan?.registered));
+    }
 
     return { fac: f, addonCounts, r1ok, r2ok, latestYm };
   });
@@ -1214,10 +1229,9 @@ function renderAddonMatrix() {
   // 全事業所で1件以上算定されている加算名を収集・ソート
   const addonSet = new Set();
   facStats.forEach(s => Object.keys(s.addonCounts).forEach(k => addonSet.add(k)));
-  // 看護体制強化加算を先頭に固定、残りはアルファベット・五十音順
+  // 看多機のみ看護体制強化加算を先頭に固定
   const addonList = [
-    '看護体制強化加算Ⅰ（次月）',
-    '看護体制強化加算Ⅱ（次月）',
+    ...(isKango ? ['看護体制強化加算Ⅰ（次月）', '看護体制強化加算Ⅱ（次月）'] : []),
     ...Array.from(addonSet).sort()
   ];
 
@@ -1288,10 +1302,15 @@ function renderAddonMatrix() {
     </tr>`;
   }).join('');
 
+  const matrixSubtitle = isKango
+    ? '看護体制強化加算は次月算定可否 ／ その他は最終連携月の算定者数'
+    : '最終連携月の算定者数';
+  const matrixTitle = { kango: '看多機', shotaki: '小多機', houmon: '訪問看護' }[svcType] || '';
+
   return `<div style="background:white;border-radius:12px;box-shadow:0 1px 3px rgba(0,0,0,.08);overflow:hidden">
     <div style="background:#1a365d;padding:14px 18px;display:flex;align-items:baseline;gap:12px">
-      <div style="color:white;font-size:15px;font-weight:bold">全事業所 加算取得状況一覧</div>
-      <div style="color:#90cdf4;font-size:11px">看護体制強化加算は次月算定可否 ／ その他は最終連携月の算定者数</div>
+      <div style="color:white;font-size:15px;font-weight:bold">${matrixTitle} 加算取得状況一覧</div>
+      <div style="color:#90cdf4;font-size:11px">${matrixSubtitle}</div>
     </div>
     <div style="overflow-x:auto">
       <table style="width:100%;border-collapse:collapse;font-size:13px">
@@ -3354,6 +3373,13 @@ function renderAddonChecklist(users) {
 // 修正ログモーダル
 // ============================================================
 const CHANGELOG_DATA = [
+  {
+    version: 'v1.6.6', date: '2026-07-06', label: '改善',
+    labelColor: '#2c5282', labelBg: '#bee3f8',
+    items: [
+      { tag: '改善', tagColor: '#2c5282', tagBg: '#bee3f8', text: '加算取得状況一覧（マトリックス表）を各タブ対応に修正。看多機タブでは看護体制強化加算＋その他加算、小多機タブでは小多機加算一覧、訪問看護タブでは訪問看護加算一覧をエリア別に表示' },
+    ]
+  },
   {
     version: 'v1.6.5', date: '2026-07-06', label: '改善',
     labelColor: '#2c5282', labelBg: '#bee3f8',
