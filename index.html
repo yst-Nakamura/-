@@ -883,6 +883,7 @@ function renderShotakiDashboard() {
     if (!latestYm) {
       return `<tr>
         <td class="fac-name"><a class="fac-name-link" onclick="showFacility('${f.id}')">${esc(f.name)}</a></td>
+        <td>${_svcTypeBadge(f.id)}</td>
         <td colspan="3"><span style="color:#a0aec0;font-size:12px">データなし</span></td>
         <td><button class="detail-link" onclick="showFacility('${f.id}')">詳細 →</button></td>
       </tr>`;
@@ -893,6 +894,7 @@ function renderShotakiDashboard() {
     const avgColor = !avgLevel ? '#a0aec0' : avgLevel >= 4 ? '#c53030' : avgLevel >= 3 ? '#c05621' : '#2b6cb0';
     return `<tr>
       <td class="fac-name"><a class="fac-name-link" onclick="showFacility('${f.id}')">${esc(f.name)}</a></td>
+      <td>${_svcTypeBadge(f.id)}</td>
       <td style="font-size:12px;color:#718096">${ymLabel(latestYm)}</td>
       <td style="text-align:center">${avgLevel
         ? `<a onclick="showAvgLevelHistory('${f.id}')" style="cursor:pointer;text-decoration:none;display:inline-block" title="推移を見る">
@@ -911,6 +913,7 @@ function renderShotakiDashboard() {
       <thead>
         <tr>
           <th>事業所名</th>
+          <th>種別</th>
           <th>最終連携月</th>
           <th>平均介護度</th>
           <th>登録利用者数</th>
@@ -980,6 +983,7 @@ function renderHoumonDashboard() {
 
     return `<tr>
       <td class="fac-name"><a class="fac-name-link" onclick="showFacility('${f.id}')">${esc(f.name)}</a></td>
+      <td>${_svcTypeBadge(f.id)}</td>
       <td style="text-align:center">${kaigoCell}</td>
       <td style="text-align:center">${iryoCell}</td>
       <td style="text-align:center">${kinkyuCell}</td>
@@ -993,6 +997,7 @@ function renderHoumonDashboard() {
       <thead>
         <tr>
           <th>事業所名</th>
+          <th>種別</th>
           <th style="text-align:center">訪問看護（介護）</th>
           <th style="text-align:center">訪問看護（医療）</th>
           <th style="text-align:center">緊急時訪問看護加算</th>
@@ -1059,6 +1064,7 @@ function renderDashboard() {
     if (!latestYm) {
       return { f, row: `<tr>
         <td class="fac-name"><a class="fac-name-link" onclick="showFacility('${f.id}')">${esc(f.name)}</a></td>
+        <td>${_svcTypeBadge(f.id)}</td>
         <td colspan="5"><span style="color:#a0aec0;font-size:12px">データなし</span></td>
         <td><button class="detail-link" onclick="showFacility('${f.id}')">詳細 →</button></td>
       </tr>` };
@@ -1108,6 +1114,7 @@ function renderDashboard() {
 
     return { f, row: `<tr>
       <td class="fac-name"><a class="fac-name-link" onclick="showFacility('${f.id}')">${esc(f.name)}</a></td>
+      <td>${_svcTypeBadge(f.id)}</td>
       <td style="font-size:12px;color:#718096">${ymLabel(latestYm)}</td>
       <td style="text-align:center">${avgCell}</td>
       <td>${sb(cur1ok, !curThreeM)}</td>
@@ -1132,7 +1139,7 @@ function renderDashboard() {
     .filter(g => g.items.length > 0)
     .map(g => `
       <tr>
-        <td colspan="9" style="padding:8px 14px;background:${g.bg};border-left:4px solid ${g.color};font-size:13px;font-weight:bold;color:${g.color}">
+        <td colspan="10" style="padding:8px 14px;background:${g.bg};border-left:4px solid ${g.color};font-size:13px;font-weight:bold;color:${g.color}">
           ${g.area} <span style="font-weight:normal;font-size:11px;color:#718096">（${g.items.length}事業所）</span>
         </td>
       </tr>
@@ -1144,6 +1151,7 @@ function renderDashboard() {
       <thead>
         <tr>
           <th>事業所名</th>
+          <th>種別</th>
           <th>最終連携月</th>
           <th>平均介護度</th>
           <th>当月 看護体制強化加算Ⅰ</th>
@@ -2199,6 +2207,29 @@ function changeFacServiceType(newType) {
   renderFacilitySidebar();
   renderFacilityAll();
   renderDashboard();
+}
+
+function setFacTypeFromDash(facId, newType) {
+  setFacServiceType(facId, newType);
+  renderDashboard();
+}
+
+function _svcTypeBadge(facId) {
+  const cur = getFacServiceType(facId);
+  const labels = { kango: '看多機', shotaki: '小多機', houmon: '訪問看護' };
+  const colors = { kango: ['#2b6cb0','#ebf8ff'], shotaki: ['#276749','#c6f6d5'], houmon: ['#744210','#fefcbf'] };
+  const others = Object.keys(labels).filter(t => t !== cur);
+  const [tc, bg] = colors[cur] || ['#718096','#f7fafc'];
+  const btns = others.map(t => {
+    const [tc2] = colors[t] || ['#718096','#f7fafc'];
+    return `<button onclick="setFacTypeFromDash('${facId}','${t}')"
+      style="padding:2px 7px;font-size:10px;border-radius:4px;border:1px solid ${tc2};background:#fff;color:${tc2};cursor:pointer;white-space:nowrap"
+      title="${labels[t]}に変更">${labels[t]}</button>`;
+  }).join('');
+  return `<div style="display:flex;flex-direction:column;align-items:flex-start;gap:3px">
+    <span style="font-size:11px;font-weight:bold;color:${tc};background:${bg};padding:1px 7px;border-radius:8px">${labels[cur]}</span>
+    <div style="display:flex;gap:3px">${btns}</div>
+  </div>`;
 }
 
 function deleteIryoMonth(ym) {
@@ -3323,6 +3354,13 @@ function renderAddonChecklist(users) {
 // 修正ログモーダル
 // ============================================================
 const CHANGELOG_DATA = [
+  {
+    version: 'v1.6.5', date: '2026-07-06', label: '改善',
+    labelColor: '#2c5282', labelBg: '#bee3f8',
+    items: [
+      { tag: '改善', tagColor: '#2c5282', tagBg: '#bee3f8', text: '全3タブ（看多機・小多機・訪問看護）の加算一覧テーブルに「種別」列を追加。一覧から直接事業所種別を変更できるボタンを設置。種別変更でGASに即時保存され、他のタブへ自動で移動' },
+    ]
+  },
   {
     version: 'v1.6.4', date: '2026-07-03', label: '改善',
     labelColor: '#2c5282', labelBg: '#bee3f8',
