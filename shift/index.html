@@ -594,7 +594,11 @@ td.chk-bad{background:var(--danger);color:var(--white);font-weight:700;}
     <h2>組織図から事業所を取り込む</h2>
     <div class="form-grid">
       <div class="form-field">
-        <label>事業所を選択</label>
+        <label>事業所名で検索</label>
+        <input type="text" id="orgSearchInput" placeholder="例: 上北沢" disabled>
+      </div>
+      <div class="form-field">
+        <label>候補から選ぶ(<span id="orgMatchCount">-</span>)</label>
         <select id="orgOfficeSelect">
           <option value="">「事業所リストを読み込む」を押してください</option>
         </select>
@@ -713,6 +717,7 @@ td.chk-bad{background:var(--danger);color:var(--white);font-weight:700;}
 /* ================= 修正ログ =================
    コードを変更したら必ずここに1行追加すること */
 const CHANGELOG_DATA = [
+  { version: 'v1.6.1', date: '2026-07-07', label: '改善', text: 'GASウェブアプリのURLを初回起動時からあらかじめ入力済みにし、設定不要ですぐクラウド連携できるように' },
   { version: 'v1.6.0', date: '2026-07-06', label: '新機能', text: '組織図マスタから事業所と職員を取り込む機能を追加(取り込み後に個別修正可) / 送迎ルート数を曜日別に設定可能に / 日中の必要人数ルールを「3対1(うち看護師1名)+訪問介護1名+訪看ルート看護師1名」に変更 / 拠点に訪問体制強化加算チェックを追加(ONで訪問介護が2名必要に)' },
   { version: 'v1.5.0', date: '2026-07-06', label: '新機能', text: '介護職員(正社員・非常勤)に「夜勤可能」チェックを追加 / 夜勤者が休みの日は夜勤可能な職員を自動で代わりに配置 / 夜勤は2日分の勤務としてカウント(勤務日数の集計・自動配分に反映)' },
   { version: 'v1.4.0', date: '2026-07-06', label: '新機能', text: '職種に支配人・計画作成を追加(出勤日は0.5人換算) / 人員配置を常勤換算(時間ベース)に変更: 常勤1名=8時間=1人分、非常勤は勤務時間÷8 / 3対1の計算から訪問介護専任を除外(最低ライン=3対1のうち1名看護師+訪看ルート看護師1名) / ドライバーに勤務時間帯を2枠追加(中抜け対応)' },
@@ -740,6 +745,8 @@ const ROLE_LABELS = {
 const ROLE_ORDER = { shihainin:0, keikaku:1, kaigo_full:2, kaigo_part:3, driver:4, yakin:5, ns_full:6, ns_part:7 };
 const MAX_CONSECUTIVE = 4; // 連勤の上限(固定曜日契約の非常勤は契約どおり勤務するため対象外)
 const LS_KEY = 'kaerie_shift_app_v1';
+// このアプリ専用のGASウェブアプリURL(初回起動時の初期値として使う)
+const DEFAULT_GAS_URL = 'https://script.google.com/macros/s/AKfycbxkzwV0TQx0zvJxhwtM8NIVxX_xW1qSOCN6x8mpJjMzWMAzZhQBFavTyFlORn3xi_u7/exec';
 
 /* ================= 状態 ================= */
 let state = {
@@ -747,7 +754,7 @@ let state = {
   staff: [],      // {id,facilityId,name,role,monthlyOff,contractType:'fixed'|'weekly',daysPerWeek,workDays:[0-6],nightDays:[0-6],hoursPerDay,workStart,workEnd}
   shifts: {},     // key 'facId_YYYYMM' -> {staffId:{day:code}}
   wishes: {},     // key 'facId_YYYYMM' -> {staffId:{day:'kibou'|'yukyu'}} 希望休・有給(自動作成でも保持)
-  gasUrl: '',
+  gasUrl: DEFAULT_GAS_URL,
 };
 let currentFacId = null;
 let currentYm = defaultYm();  // 'YYYYMM'
@@ -1715,6 +1722,8 @@ function buildStaffFromOrg(fac, o){
   return s;
 }
 
+let orgAllOffices = []; // 事業所名の全件(検索用にメモリ上だけに保持。件数が多いので一覧は都度絞り込む)
+
 async function orgFetchOffices(){
   if(!state.gasUrl){ toast('設定タブでGASのURLを設定してください'); return; }
   toast('事業所リストを読み込み中…');
@@ -1722,17 +1731,38 @@ async function orgFetchOffices(){
     const res = await fetch(state.gasUrl + '?action=orgOffices', { redirect:'follow' });
     const data = await res.json();
     if(data.error) throw new Error(data.error);
-    const sel = document.getElementById('orgOfficeSelect');
-    sel.innerHTML = '';
-    (data.offices || []).forEach(name => {
-      const op = document.createElement('option');
-      op.value = name; op.textContent = name;
-      sel.appendChild(op);
-    });
-    toast(`${(data.offices || []).length}件の事業所を読み込みました`);
+    orgAllOffices = data.offices || [];
+    document.getElementById('orgSearchInput').disabled = false;
+    document.getElementById('orgSearchInput').value = '';
+    renderOrgOfficeOptions('');
+    toast(`${orgAllOffices.length}件の事業所名を読み込みました。検索欄にキーワードを入力してください`);
   }catch(e){
     toast('読み込みに失敗しました。GASの更新(再デプロイ)が必要かもしれません');
   }
+}
+
+// 検索キーワードで事業所名を絞り込んでプルダウンに表示する(件数が多いため未入力時は一覧を出さない)
+function renderOrgOfficeOptions(query){
+  const sel = document.getElementById('orgOfficeSelect');
+  const q = query.trim();
+  sel.innerHTML = '';
+  if(orgAllOffices.length === 0){
+    sel.appendChild(new Option('「事業所リストを読み込む」を押してください', ''));
+    document.getElementById('orgMatchCount').textContent = '-';
+    return;
+  }
+  if(!q){
+    sel.appendChild(new Option(`検索キーワードを入力してください(全${orgAllOffices.length}件)`, ''));
+    document.getElementById('orgMatchCount').textContent = `全${orgAllOffices.length}件`;
+    return;
+  }
+  const matches = orgAllOffices.filter(name => name.includes(q));
+  document.getElementById('orgMatchCount').textContent = `${matches.length}件`;
+  if(matches.length === 0){
+    sel.appendChild(new Option('該当する事業所がありません', ''));
+    return;
+  }
+  matches.forEach(name => sel.appendChild(new Option(name, name)));
 }
 
 async function orgImportOffice(){
@@ -2033,6 +2063,7 @@ function bindEvents(){
   // 組織図からの取り込み
   document.getElementById('btnOrgList').addEventListener('click', orgFetchOffices);
   document.getElementById('btnOrgImport').addEventListener('click', orgImportOffice);
+  document.getElementById('orgSearchInput').addEventListener('input', e => renderOrgOfficeOptions(e.target.value));
 
   // 拠点フォーム
   document.getElementById('fcType').addEventListener('change', updateFacFormVisibility);
