@@ -527,9 +527,9 @@ tr.summary-row:first-of-type td{border-top:2px solid var(--ocean);}
         <label>所属拠点</label>
         <select id="stFac"></select>
       </div>
-      <div class="form-field" id="stMonthlyOffWrap">
-        <label>月の休み日数</label>
-        <input type="number" id="stMonthlyOff" min="0" max="25" value="9">
+      <div class="form-field" id="stMonthlyOffWrap" style="display:none;">
+        <label>月の休み日数(正社員は拠点タブの「年間休日設定」で全員一括設定します)</label>
+        <p style="font-size:0.82rem;color:var(--gray);padding-top:8px;">この拠点の今月の休み日数: <b id="stMonthlyOffInfo"></b>日</p>
       </div>
       <div class="form-field" id="stContractWrap" style="display:none;">
         <label>契約タイプ</label>
@@ -661,6 +661,13 @@ tr.summary-row:first-of-type td{border-top:2px solid var(--ocean);}
           訪問体制強化加算(訪問介護の必要数が1名→2名になります)
         </label>
       </div>
+      <div class="form-field" id="fcAnnualOffWrap" style="grid-column:1/-1;">
+        <label>正社員・支配人・計画作成の月の休み日数(年間・全員共通)</label>
+        <div class="users-by-wd" id="fcAnnualOff"></div>
+        <p style="font-size:0.75rem;color:var(--gray);margin-top:4px;">
+          ここで設定した日数が、この拠点の正社員・支配人・計画作成 全員にそのまま適用されます。職員ごとに個別設定する必要はありません。
+        </p>
+      </div>
       <div class="form-field" id="fcNeedWrap" style="display:none;">
         <label>1日に必要な日勤人数</label>
         <input type="number" id="fcNeed" min="1" max="30" value="2">
@@ -729,6 +736,7 @@ tr.summary-row:first-of-type td{border-top:2px solid var(--ocean);}
 /* ================= 修正ログ =================
    コードを変更したら必ずここに1行追加すること */
 const CHANGELOG_DATA = [
+  { version: 'v1.10.0', date: '2026-07-07', label: '改善', text: '正社員・支配人・計画作成の「月の休み日数」を職員ごとの個別入力から、拠点タブの「年間休日設定」(1〜12月・全員共通)に変更。職員を一人ずつ編集する必要がなくなり、月替わりでも自動で反映' },
   { version: 'v1.9.0', date: '2026-07-07', label: '新機能', text: 'シフト表に人員配置数のサマリー行を追加(【通い】【訪問介護】【訪問看護】を日別に表示、看多機拠点のみ) / 自動作成の処理順を「月全体にまんべんなく散らす順」に変更し、人手が足りない月でも不足が月末などに集中せず分散するように修正' },
   { version: 'v1.8.0', date: '2026-07-07', label: '新機能', text: 'シフトに「訪介」(訪問介護担当・加算ありは2名)と「訪看」(訪問看護ルートの看護師)を自動指定(その日の出勤者からランダム、マスから手動変更も可) / 余剰の日があるのに不足の日が残る問題を修正(不足日へ勤務を移し替える再配分を追加)' },
   { version: 'v1.7.0', date: '2026-07-07', label: '新機能', text: '組織図取り込みで、同じ場所の看多機と訪問看護を自動で1つの拠点(1枚のシフト)にまとめるように。どちらの事業所を選んでも両方の職員を取り込みます' },
@@ -767,8 +775,9 @@ const DEFAULT_GAS_URL = 'https://script.google.com/macros/s/AKfycbxkzwV0TQx0zvJx
 
 /* ================= 状態 ================= */
 let state = {
-  facilities: [], // {id,name,type:'kantaki'|'houkan',pattern:'three'|'day',usersByWd:[日〜土],dayNeed,openDays}
-  staff: [],      // {id,facilityId,name,role,monthlyOff,contractType:'fixed'|'weekly',daysPerWeek,workDays:[0-6],nightDays:[0-6],hoursPerDay,workStart,workEnd}
+  facilities: [], // {id,name,type:'kantaki'|'houkan',pattern:'three'|'day',usersByWd:[日〜土],dayNeed,openDays,annualOff:[1月〜12月]}
+  staff: [],      // {id,facilityId,name,role,contractType:'fixed'|'weekly',daysPerWeek,workDays:[0-6],nightDays:[0-6],hoursPerDay,workStart,workEnd}
+  // 正社員・支配人・計画作成の月の休み日数は拠点ごとに annualOff で一括管理(職員個別には持たない)
   shifts: {},     // key 'facId_YYYYMM' -> {staffId:{day:code}}
   wishes: {},     // key 'facId_YYYYMM' -> {staffId:{day:'kibou'|'yukyu'}} 希望休・有給(自動作成でも保持)
   gasUrl: DEFAULT_GAS_URL,
@@ -885,6 +894,15 @@ function routesOf(fac, wd){
 // 訪問介護の必要人数(基本1名、訪問体制強化加算ありなら2名)
 function homonKaigoNeed(fac){ return fac && fac.kasanHoumon ? 2 : 1; }
 
+// 正社員・支配人・計画作成の月の休み日数(拠点の年間設定から、指定月(YYYYMM)分を取り出す。全員共通)
+function annualOffFor(fac, ym){
+  const mm = +ym.slice(4, 6); // 1〜12
+  if(fac && fac.annualOff && fac.annualOff.length === 12 && fac.annualOff[mm - 1] != null){
+    return fac.annualOff[mm - 1];
+  }
+  return 9;
+}
+
 /* ---- 旧バージョンのデータを新形式に揃える ---- */
 function normalizeData(){
   state.facilities.forEach(f => {
@@ -898,9 +916,9 @@ function normalizeData(){
       f.routesByWd = [v, v, v, v, v, v, v];
     }
     if(f.kasanHoumon == null) f.kasanHoumon = false;
+    if(!f.annualOff || f.annualOff.length !== 12) f.annualOff = new Array(12).fill(9);
   });
   state.staff.forEach(s => {
-    if((isFulltime(s) || isManagement(s)) && s.monthlyOff == null) s.monthlyOff = 9;
     if(isParttime(s)){
       if(!s.contractType) s.contractType = 'weekly';
       if(s.hoursPerDay == null) s.hoursPerDay = 6;
@@ -1077,7 +1095,7 @@ function generateShifts(){
   const target = {}, assigned = {}, earlyCount = {}, lateCount = {};
   roster.forEach(s => {
     let base;
-    if(isFulltime(s) || isManagement(s)) base = dim - (s.monthlyOff != null ? s.monthlyOff : 9);
+    if(isFulltime(s) || isManagement(s)) base = dim - annualOffFor(fac, currentYm);
     else base = Math.round((s.daysPerWeek || 5) * dim / 7);
     target[s.id] = Math.max(0, base - countYukyu(s.id));
     assigned[s.id] = 0;
@@ -1614,10 +1632,11 @@ function renderStaffView(){
     const wds = (s.workDays || []).length === 7 ? '毎日可'
       : [1,2,3,4,5,6,0].filter(w => (s.workDays||[]).includes(w)).map(w => WD_CHARS[w]).join('');
     let cond = '';
+    const offNow = annualOffFor(fac, currentYm);
     if(isFulltime(s)){
-      cond = `月${s.monthlyOff != null ? s.monthlyOff : 9}休 / 勤務可: ${wds}`;
+      cond = `月${offNow}休(全員共通) / 勤務可: ${wds}`;
     }else if(isManagement(s)){
-      cond = `月${s.monthlyOff != null ? s.monthlyOff : 9}休 / 勤務可: ${wds} / 0.5人換算`;
+      cond = `月${offNow}休(全員共通) / 勤務可: ${wds} / 0.5人換算`;
     }else if(isParttime(s)){
       cond = (s.contractType === 'fixed'
         ? `固定: ${wds}`
@@ -1647,7 +1666,7 @@ function fillStaffForm(s){
   document.getElementById('stName').value = s ? s.name : '';
   document.getElementById('stRole').value = s ? s.role : 'kaigo_full';
   document.getElementById('stDays').value = s ? (s.daysPerWeek || 5) : 5;
-  document.getElementById('stMonthlyOff').value = s && s.monthlyOff != null ? s.monthlyOff : 9;
+  document.getElementById('stMonthlyOffInfo').textContent = annualOffFor(currentFacility(), currentYm);
   document.getElementById('stContract').value = s && s.contractType ? s.contractType : 'fixed';
   document.getElementById('stHours').value = s && s.hoursPerDay != null ? s.hoursPerDay : 6;
   document.getElementById('stStart').value = s && s.workStart ? s.workStart : '09:00';
@@ -1751,6 +1770,29 @@ function readNumsByWd(boxId){
   });
   return out;
 }
+// 月別の数値入力(1月〜12月)。正社員等の年間休日設定に使用
+function renderNumsByMonth(boxId, values, fallback){
+  const box = document.getElementById(boxId);
+  box.innerHTML = '';
+  for(let m = 1; m <= 12; m++){
+    const div = document.createElement('div');
+    div.className = 'uwd';
+    div.innerHTML = `<span>${m}月</span>`;
+    const inp = document.createElement('input');
+    inp.type = 'number'; inp.min = 0; inp.max = 25;
+    inp.value = values && values[m - 1] != null ? values[m - 1] : fallback;
+    inp.dataset.month = m;
+    div.appendChild(inp);
+    box.appendChild(div);
+  }
+}
+function readNumsByMonth(boxId){
+  const out = new Array(12).fill(0);
+  document.querySelectorAll('#' + boxId + ' input').forEach(inp => {
+    out[+inp.dataset.month - 1] = +inp.value || 0;
+  });
+  return out;
+}
 
 function fillFacForm(f){
   document.getElementById('fcName').value = f ? f.name : '';
@@ -1759,6 +1801,7 @@ function fillFacForm(f){
   renderNumsByWd('fcUsersByWd', f ? f.usersByWd : null, 15);
   renderNumsByWd('fcRoutesByWd', f ? f.routesByWd : null, 1);
   document.getElementById('fcKasanHoumon').checked = f ? !!f.kasanHoumon : false;
+  renderNumsByMonth('fcAnnualOff', f ? f.annualOff : null, 9);
   document.getElementById('fcNeed').value = f ? (f.dayNeed || 2) : 2;
   renderWdChecks('fcOpen', f && f.openDays && f.openDays.length ? f.openDays : [1,2,3,4,5]);
   updateFacFormVisibility();
@@ -1867,9 +1910,9 @@ function buildStaffFromOrg(fac, o){
   const role = mapOrgRole(fac.name, o.shokushu, o.koyou);
   const s = { id: 'e' + o.empId, facilityId: fac.id, name: o.name, role, nightDays: [] };
   if(role === 'shihainin' || role === 'keikaku'){
-    s.monthlyOff = 9; s.workDays = wk;
+    s.workDays = wk; // 月の休み日数は拠点の「年間休日設定」で全員一括管理
   }else if(role === 'kaigo_full' || role === 'ns_full'){
-    s.monthlyOff = 9; s.workDays = all;
+    s.workDays = all;
   }else if(role === 'driver'){
     s.daysPerWeek = 5; s.workDays = [1,2,3,4,5,6];
     s.workStart = '08:30'; s.workEnd = '10:30'; s.workStart2 = '15:30'; s.workEnd2 = '17:30';
@@ -2189,7 +2232,6 @@ function bindEvents(){
       role: document.getElementById('stRole').value,
       facilityId: document.getElementById('stFac').value,
       daysPerWeek: +document.getElementById('stDays').value,
-      monthlyOff: +document.getElementById('stMonthlyOff').value || 0,
       contractType: document.getElementById('stContract').value,
       hoursPerDay: +document.getElementById('stHours').value || 0,
       workStart: document.getElementById('stStart').value,
@@ -2264,6 +2306,7 @@ function bindEvents(){
       usersByWd: readNumsByWd('fcUsersByWd'),
       routesByWd: readNumsByWd('fcRoutesByWd'),
       kasanHoumon: document.getElementById('fcKasanHoumon').checked,
+      annualOff: readNumsByMonth('fcAnnualOff'),
       dayNeed: +document.getElementById('fcNeed').value || 2,
       openDays: readWdChecks('fcOpen'),
     };
