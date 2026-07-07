@@ -591,6 +591,25 @@ td.chk-bad{background:var(--danger);color:var(--white);font-weight:700;}
 <!-- ============ 拠点 ============ -->
 <section class="view" id="view-fac">
   <div class="card">
+    <h2>組織図から事業所を取り込む</h2>
+    <div class="form-grid">
+      <div class="form-field">
+        <label>事業所を選択</label>
+        <select id="orgOfficeSelect">
+          <option value="">「事業所リストを読み込む」を押してください</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-actions">
+      <button class="btn btn-secondary" id="btnOrgList">事業所リストを読み込む</button>
+      <button class="btn btn-primary" id="btnOrgImport">この事業所と職員を取り込む</button>
+    </div>
+    <p style="font-size:0.78rem;color:var(--gray);margin-top:8px;">
+      組織図の従業員が職種つきで登録されます(クラウド連携の設定が必要)。
+      勤務曜日・週回数などは仮の値になるので、取り込み後に職員タブで個別に修正してください。
+    </p>
+  </div>
+  <div class="card">
     <h2 id="facFormTitle">拠点を追加</h2>
     <div class="form-grid">
       <div class="form-field">
@@ -615,9 +634,16 @@ td.chk-bad{background:var(--danger);color:var(--white);font-weight:700;}
         <label>曜日別の通い利用者数(3対1計算に使用)</label>
         <div class="users-by-wd" id="fcUsersByWd"></div>
       </div>
-      <div class="form-field" id="fcRoutesWrap">
-        <label>送迎ルート数(1日に必要な運転者の人数。送迎がなければ0)</label>
-        <input type="number" id="fcRoutes" min="0" max="10" value="1">
+      <div class="form-field" id="fcRoutesWrap" style="grid-column:1/-1;">
+        <label>曜日別の送迎ルート数(1日に必要な運転者の人数。送迎がない曜日は0)</label>
+        <div class="users-by-wd" id="fcRoutesByWd"></div>
+      </div>
+      <div class="form-field" id="fcKasanWrap">
+        <label>加算</label>
+        <label style="display:flex;align-items:center;gap:8px;min-height:44px;font-size:0.9rem;color:var(--ink);cursor:pointer;">
+          <input type="checkbox" id="fcKasanHoumon" style="width:22px;height:22px;">
+          訪問体制強化加算(訪問介護の必要数が1名→2名になります)
+        </label>
       </div>
       <div class="form-field" id="fcNeedWrap" style="display:none;">
         <label>1日に必要な日勤人数</label>
@@ -687,6 +713,7 @@ td.chk-bad{background:var(--danger);color:var(--white);font-weight:700;}
 /* ================= 修正ログ =================
    コードを変更したら必ずここに1行追加すること */
 const CHANGELOG_DATA = [
+  { version: 'v1.6.0', date: '2026-07-06', label: '新機能', text: '組織図マスタから事業所と職員を取り込む機能を追加(取り込み後に個別修正可) / 送迎ルート数を曜日別に設定可能に / 日中の必要人数ルールを「3対1(うち看護師1名)+訪問介護1名+訪看ルート看護師1名」に変更 / 拠点に訪問体制強化加算チェックを追加(ONで訪問介護が2名必要に)' },
   { version: 'v1.5.0', date: '2026-07-06', label: '新機能', text: '介護職員(正社員・非常勤)に「夜勤可能」チェックを追加 / 夜勤者が休みの日は夜勤可能な職員を自動で代わりに配置 / 夜勤は2日分の勤務としてカウント(勤務日数の集計・自動配分に反映)' },
   { version: 'v1.4.0', date: '2026-07-06', label: '新機能', text: '職種に支配人・計画作成を追加(出勤日は0.5人換算) / 人員配置を常勤換算(時間ベース)に変更: 常勤1名=8時間=1人分、非常勤は勤務時間÷8 / 3対1の計算から訪問介護専任を除外(最低ライン=3対1のうち1名看護師+訪看ルート看護師1名) / ドライバーに勤務時間帯を2枠追加(中抜け対応)' },
   { version: 'v1.3.1', date: '2026-07-06', label: 'バグ修正', text: '自動作成で勤務が月の前半に偏り、後半が空になる問題を修正(ペース配分を導入し、勤務日数を月全体に均等に割り振るように)' },
@@ -810,10 +837,14 @@ function isParttime(s){ return s.role === 'kaigo_part' || s.role === 'ns_part'; 
 function isFixedPart(s){ return isParttime(s) && s.contractType === 'fixed'; }
 // 送迎に出られる職員(専任ドライバー or 運転可チェックあり)
 function canDoDrive(s){ return s.role === 'driver' || !!s.canDrive; }
-function routesOf(fac){
+// その曜日の送迎ルート数
+function routesOf(fac, wd){
   if(!fac || fac.type !== 'kantaki') return 0;
-  return fac.routes != null ? +fac.routes : 1;
+  if(fac.routesByWd && fac.routesByWd.length === 7) return +fac.routesByWd[wd] || 0;
+  return fac.routes != null ? +fac.routes : 1; // 旧データ互換
 }
+// 訪問介護の必要人数(基本1名、訪問体制強化加算ありなら2名)
+function homonKaigoNeed(fac){ return fac && fac.kasanHoumon ? 2 : 1; }
 
 /* ---- 旧バージョンのデータを新形式に揃える ---- */
 function normalizeData(){
@@ -823,6 +854,11 @@ function normalizeData(){
       f.usersByWd = [v, v, v, v, v, v, v];
     }
     if(f.routes == null) f.routes = f.type === 'kantaki' ? 1 : 0;
+    if(!f.routesByWd || f.routesByWd.length !== 7){
+      const v = +f.routes || 0;
+      f.routesByWd = [v, v, v, v, v, v, v];
+    }
+    if(f.kasanHoumon == null) f.kasanHoumon = false;
   });
   state.staff.forEach(s => {
     if((isFulltime(s) || isManagement(s)) && s.monthlyOff == null) s.monthlyOff = 9;
@@ -901,16 +937,20 @@ function checkDay(day){
   const issues = [];
 
   if(fac && fac.type === 'kantaki'){
-    const users = usersFor(fac, weekdayOf(currentYm, day));
-    const needCare = Math.ceil(users / 3); // 利用者3人に職員1人(常勤換算)
+    const wd = weekdayOf(currentYm, day);
+    const users = usersFor(fac, wd);
+    const kayoiNeed = Math.ceil(users / 3); // 利用者3人に職員1人(常勤換算)
+    const homonNeed = homonKaigoNeed(fac);  // 訪問介護1名(訪問体制強化加算ありなら2名)
+    const needCare = kayoiNeed + homonNeed;
     // 看護師2人目は訪問看護のルートに入るため3対1側に含めない(換算値の大きい方を通い側に残す)
     const nsUnits = nurses.map(r => unitOf(r.s)).sort((a, b) => b - a);
     const routeUnit = nurses.length >= 2 ? nsUnits[1] : 0;
     const units = dayCare.reduce((t, r) => t + unitOf(r.s), 0) - routeUnit;
+    const kasanNote = fac.kasanHoumon ? '・訪問体制強化加算あり' : '';
     if(units < needCare){
-      issues.push({ level:'bad', text:`日中の人員が不足(3対1側 常勤換算${fmtUnit(units)}人分/${needCare}人分必要 = 通い${users}名の3対1。支配人・計画作成は0.5、非常勤は時間÷8で換算。訪看ルートの看護師1名は除く)` });
+      issues.push({ level:'bad', text:`日中の人員が不足(常勤換算${fmtUnit(units)}人分/${needCare}人分必要 = 通い${users}名の3対1で${kayoiNeed}人分+訪問介護${homonNeed}名${kasanNote}。訪看ルートの看護師1名は除く)` });
     }else{
-      issues.push({ level:'ok', text:`日中の人員 3対1側 常勤換算${fmtUnit(units)}人分(必要${needCare}人分: 通い${users}名の3対1。訪看ルートの看護師1名は除く)` });
+      issues.push({ level:'ok', text:`日中の人員 常勤換算${fmtUnit(units)}人分(必要${needCare}人分: 通い${users}名の3対1で${kayoiNeed}人分+訪問介護${homonNeed}名${kasanNote}。訪看ルートの看護師1名は除く)` });
     }
     if(nurses.length < 2){
       issues.push({ level:'bad', text:`日中の看護師が${nurses.length}名(2名必要: 1名は通い側・1名は訪問看護ルート)` });
@@ -922,7 +962,7 @@ function checkDay(day){
     }else{
       issues.push({ level:'ok', text:`夜勤 ${nights.map(r=>r.s.name).join('、')}` });
     }
-    const routes = routesOf(fac);
+    const routes = routesOf(fac, wd);
     if(routes > 0){
       if(driveCapable.length < routes){
         issues.push({ level:'warn', text:`送迎できる人が不足(${driveCapable.length}名/${routes}ルート。ドライバーか運転可の職員が必要)` });
@@ -1062,8 +1102,11 @@ function generateShifts(){
   for(let d = 1; d <= dim; d++){
     if(!isOpenDay(fac, currentYm, d)) continue; // 休業日は組まない
     const wd = weekdayOf(currentYm, d);
-    // 看多機: 3対1(常勤換算・うち1名看護師) + 訪問看護ルートの看護師1名(3対1に含めない)
-    const needCare = fac.type === 'kantaki' ? Math.ceil(usersFor(fac, wd) / 3) : 0;
+    // 看多機: 3対1(常勤換算・うち1名看護師) + 訪問介護1名(加算ありは2名)
+    // + 訪問看護ルートの看護師1名(3対1に含めない)
+    const needCare = fac.type === 'kantaki'
+      ? Math.ceil(usersFor(fac, wd) / 3) + homonKaigoNeed(fac)
+      : 0;
     const nurseNeed = fac.type === 'kantaki' ? 2 : 1;
     // 固定曜日の非常勤などで既に埋まっている分を考慮する
     const placed = roster.filter(s => isCareWorker(s) && ['早','日','遅'].includes(getCode(g, s.id, d)));
@@ -1087,7 +1130,7 @@ function generateShifts(){
     );
 
     // 送迎: 当日出勤できる専任ドライバーを先に把握
-    const routes = routesOf(fac);
+    const routes = routesOf(fac, wd);
     const drvPool = roster.filter(s =>
       s.role === 'driver' && cellEmpty(s, d) &&
       (s.workDays || []).includes(wd) &&
@@ -1500,9 +1543,11 @@ function renderFacView(){
           .map(w => WD_CHARS[w]).join('');
     let numLabel;
     if(f.type === 'kantaki'){
-      const needs = [0,1,2,3,4,5,6].map(wd => Math.ceil(usersFor(f, wd) / 3));
+      const needs = [0,1,2,3,4,5,6].map(wd => Math.ceil(usersFor(f, wd) / 3) + homonKaigoNeed(f));
       const mn = Math.min(...needs), mx = Math.max(...needs);
-      numLabel = `通い(曜日別設定) → 3対1で常勤換算${mn === mx ? mn : mn + '〜' + mx}人分+看護師2名(うち1名は訪看ルート) / 送迎${routesOf(f)}ルート`;
+      const rts = [0,1,2,3,4,5,6].map(wd => routesOf(f, wd));
+      const rmn = Math.min(...rts), rmx = Math.max(...rts);
+      numLabel = `日中 常勤換算${mn === mx ? mn : mn + '〜' + mx}人分(3対1+訪問介護${homonKaigoNeed(f)}名)+看護師2名(1名は訪看ルート) / 送迎${rmn === rmx ? rmn : rmn + '〜' + rmx}ルート${f.kasanHoumon ? ' / 訪問体制強化加算' : ''}`;
     }else{
       numLabel = `日勤${f.dayNeed}名必要`;
     }
@@ -1517,25 +1562,25 @@ function renderFacView(){
     list.appendChild(div);
   });
 }
-// 曜日別の通い利用者数入力(月〜日の順で表示)
-function renderUsersByWd(values){
-  const box = document.getElementById('fcUsersByWd');
+// 曜日別の数値入力(月〜日の順で表示)。通い利用者数・送迎ルート数で共用
+function renderNumsByWd(boxId, values, fallback){
+  const box = document.getElementById(boxId);
   box.innerHTML = '';
   [1,2,3,4,5,6,0].forEach(wd => {
     const div = document.createElement('div');
     div.className = 'uwd';
     div.innerHTML = `<span>${WD_CHARS[wd]}</span>`;
     const inp = document.createElement('input');
-    inp.type = 'number'; inp.min = 0; inp.max = 29;
-    inp.value = values[wd] != null ? values[wd] : 15;
+    inp.type = 'number'; inp.min = 0; inp.max = 99;
+    inp.value = values && values[wd] != null ? values[wd] : fallback;
     inp.dataset.wd = wd;
     div.appendChild(inp);
     box.appendChild(div);
   });
 }
-function readUsersByWd(){
+function readNumsByWd(boxId){
   const out = [0,0,0,0,0,0,0];
-  document.querySelectorAll('#fcUsersByWd input').forEach(inp => {
+  document.querySelectorAll('#' + boxId + ' input').forEach(inp => {
     out[+inp.dataset.wd] = +inp.value || 0;
   });
   return out;
@@ -1545,8 +1590,9 @@ function fillFacForm(f){
   document.getElementById('fcName').value = f ? f.name : '';
   document.getElementById('fcType').value = f ? f.type : 'kantaki';
   document.getElementById('fcPattern').value = f ? f.pattern : 'three';
-  renderUsersByWd(f && f.usersByWd && f.usersByWd.length === 7 ? f.usersByWd : [15,15,15,15,15,15,15]);
-  document.getElementById('fcRoutes').value = f && f.routes != null ? f.routes : 1;
+  renderNumsByWd('fcUsersByWd', f ? f.usersByWd : null, 15);
+  renderNumsByWd('fcRoutesByWd', f ? f.routesByWd : null, 1);
+  document.getElementById('fcKasanHoumon').checked = f ? !!f.kasanHoumon : false;
   document.getElementById('fcNeed').value = f ? (f.dayNeed || 2) : 2;
   renderWdChecks('fcOpen', f && f.openDays && f.openDays.length ? f.openDays : [1,2,3,4,5]);
   updateFacFormVisibility();
@@ -1557,6 +1603,7 @@ function updateFacFormVisibility(){
   const isKantaki = document.getElementById('fcType').value === 'kantaki';
   document.getElementById('fcUsersWrap').style.display = isKantaki ? '' : 'none';
   document.getElementById('fcRoutesWrap').style.display = isKantaki ? '' : 'none';
+  document.getElementById('fcKasanWrap').style.display = isKantaki ? '' : 'none';
   document.getElementById('fcNeedWrap').style.display = isKantaki ? 'none' : '';
   // 看多機は365日運営なので営業曜日の設定は訪問看護のみ
   document.getElementById('fcOpenWrap').style.display = isKantaki ? 'none' : '';
@@ -1630,6 +1677,100 @@ async function gasTest(){
     else{ toast('応答はありましたが形式が想定と異なります'); }
   }catch(e){
     toast('接続できませんでした。URLとデプロイ設定を確認してください');
+  }
+}
+
+/* ================= 組織図からの取り込み ================= */
+// 組織図の職種名・雇用形態からアプリの職種に変換する
+function mapOrgRole(officeName, shokushu, koyou){
+  const full = /正社員|契約社員/.test(koyou || '');
+  const sh = shokushu || '';
+  if(/看護/.test(sh)) return full ? 'ns_full' : 'ns_part';
+  if(/運転/.test(sh)) return 'driver';
+  if(/ケアマネ|計画/.test(sh)) return 'keikaku';
+  if(/責任者|支配人|管理者/.test(sh)){
+    // 訪問看護事業所の責任者は看護師(管理者)として扱う
+    return /訪問看護/.test(officeName || '') ? 'ns_full' : 'shihainin';
+  }
+  return full ? 'kaigo_full' : 'kaigo_part';
+}
+
+// 組織図の1人分から職員データを作る(勤務条件は仮の初期値)
+function buildStaffFromOrg(fac, o){
+  const all = [0,1,2,3,4,5,6], wk = [1,2,3,4,5];
+  const role = mapOrgRole(fac.name, o.shokushu, o.koyou);
+  const s = { id: 'e' + o.empId, facilityId: fac.id, name: o.name, role, nightDays: [] };
+  if(role === 'shihainin' || role === 'keikaku'){
+    s.monthlyOff = 9; s.workDays = wk;
+  }else if(role === 'kaigo_full' || role === 'ns_full'){
+    s.monthlyOff = 9; s.workDays = all;
+  }else if(role === 'driver'){
+    s.daysPerWeek = 5; s.workDays = [1,2,3,4,5,6];
+    s.workStart = '08:30'; s.workEnd = '10:30'; s.workStart2 = '15:30'; s.workEnd2 = '17:30';
+  }else{ // 非常勤
+    s.contractType = 'weekly'; s.daysPerWeek = 3; s.workDays = wk;
+    s.hoursPerDay = isNurse(s) ? 8 : 6;
+    s.workStart = '09:00'; s.workEnd = isNurse(s) ? '18:00' : '16:00';
+  }
+  return s;
+}
+
+async function orgFetchOffices(){
+  if(!state.gasUrl){ toast('設定タブでGASのURLを設定してください'); return; }
+  toast('事業所リストを読み込み中…');
+  try{
+    const res = await fetch(state.gasUrl + '?action=orgOffices', { redirect:'follow' });
+    const data = await res.json();
+    if(data.error) throw new Error(data.error);
+    const sel = document.getElementById('orgOfficeSelect');
+    sel.innerHTML = '';
+    (data.offices || []).forEach(name => {
+      const op = document.createElement('option');
+      op.value = name; op.textContent = name;
+      sel.appendChild(op);
+    });
+    toast(`${(data.offices || []).length}件の事業所を読み込みました`);
+  }catch(e){
+    toast('読み込みに失敗しました。GASの更新(再デプロイ)が必要かもしれません');
+  }
+}
+
+async function orgImportOffice(){
+  const office = document.getElementById('orgOfficeSelect').value;
+  if(!office){ toast('先に「事業所リストを読み込む」を押してください'); return; }
+  toast('職員を読み込み中…');
+  try{
+    const res = await fetch(state.gasUrl + '?action=orgStaff&office=' + encodeURIComponent(office), { redirect:'follow' });
+    const data = await res.json();
+    if(data.error) throw new Error(data.error);
+    if(!data.staff || data.staff.length === 0){ toast('この事業所の職員が見つかりません'); return; }
+
+    let fac = state.facilities.find(f => f.name === office);
+    if(fac){
+      if(!confirm(`「${office}」は登録済みです。職員を組織図の内容で入れ直しますか?\n(職員に設定した勤務条件はやり直しになります。シフトは残ります)`)) return;
+      state.staff = state.staff.filter(s => s.facilityId !== fac.id);
+    }else{
+      const isHoukan = /訪問看護/.test(office);
+      fac = {
+        id: uid('f'), name: office,
+        type: isHoukan ? 'houkan' : 'kantaki',
+        pattern: isHoukan ? 'day' : 'three',
+        usersByWd: [15,15,15,15,15,15,15],
+        routesByWd: isHoukan ? [0,0,0,0,0,0,0] : [1,1,1,1,1,1,1],
+        kasanHoumon: false,
+        dayNeed: 2,
+        openDays: isHoukan ? [1,2,3,4,5] : [0,1,2,3,4,5,6],
+      };
+      state.facilities.push(fac);
+    }
+    data.staff.forEach(o => state.staff.push(buildStaffFromOrg(fac, o)));
+    normalizeData();
+    currentFacId = fac.id;
+    markDirty();
+    renderAll();
+    toast(`「${office}」の職員${data.staff.length}名を取り込みました。職員タブで勤務条件を調整してください`);
+  }catch(e){
+    toast('取り込みに失敗しました: ' + e.message);
   }
 }
 
@@ -1889,6 +2030,10 @@ function bindEvents(){
     }
   });
 
+  // 組織図からの取り込み
+  document.getElementById('btnOrgList').addEventListener('click', orgFetchOffices);
+  document.getElementById('btnOrgImport').addEventListener('click', orgImportOffice);
+
   // 拠点フォーム
   document.getElementById('fcType').addEventListener('change', updateFacFormVisibility);
   document.getElementById('btnFacSave').addEventListener('click', () => {
@@ -1898,8 +2043,9 @@ function bindEvents(){
       name,
       type: document.getElementById('fcType').value,
       pattern: document.getElementById('fcPattern').value,
-      usersByWd: readUsersByWd(),
-      routes: Math.max(0, +document.getElementById('fcRoutes').value || 0),
+      usersByWd: readNumsByWd('fcUsersByWd'),
+      routesByWd: readNumsByWd('fcRoutesByWd'),
+      kasanHoumon: document.getElementById('fcKasanHoumon').checked,
       dayNeed: +document.getElementById('fcNeed').value || 2,
       openDays: readWdChecks('fcOpen'),
     };
