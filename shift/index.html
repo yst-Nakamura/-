@@ -192,6 +192,8 @@ table.shift td.total-col,table.shift th.total-col{
 td.c-早{background:var(--sky);}
 td.c-日{background:var(--mint);}
 td.c-遅{background:#F0E2CF;}
+td.c-訪介{background:#E3CFA8;font-size:0.66rem !important;letter-spacing:-0.06em;}
+td.c-訪看{background:#BFD9D6;color:var(--green);font-size:0.66rem !important;letter-spacing:-0.06em;}
 td.c-夜{background:var(--ink);color:var(--white);}
 td.c-明{background:var(--mist);color:var(--gray);}
 td.c-休{background:var(--white);color:var(--gray);font-weight:400;}
@@ -460,6 +462,8 @@ td.chk-bad{background:var(--danger);color:var(--white);font-weight:700;}
     <span><span class="chip" style="background:var(--sky)">早</span>早番</span>
     <span><span class="chip" style="background:var(--mint)">日</span>日勤</span>
     <span><span class="chip" style="background:#F0E2CF">遅</span>遅番</span>
+    <span><span class="chip" style="background:#E3CFA8;font-size:0.55rem;">訪介</span>訪問介護担当</span>
+    <span><span class="chip" style="background:#BFD9D6;color:var(--green);font-size:0.55rem;">訪看</span>訪問看護ルート</span>
     <span><span class="chip" style="background:var(--ink);color:var(--white)">夜</span>夜勤</span>
     <span><span class="chip" style="background:var(--mist)">明</span>夜勤明け</span>
     <span><span class="chip">休</span>休み</span>
@@ -719,6 +723,7 @@ td.chk-bad{background:var(--danger);color:var(--white);font-weight:700;}
 /* ================= 修正ログ =================
    コードを変更したら必ずここに1行追加すること */
 const CHANGELOG_DATA = [
+  { version: 'v1.8.0', date: '2026-07-07', label: '新機能', text: 'シフトに「訪介」(訪問介護担当・加算ありは2名)と「訪看」(訪問看護ルートの看護師)を自動指定(その日の出勤者からランダム、マスから手動変更も可) / 余剰の日があるのに不足の日が残る問題を修正(不足日へ勤務を移し替える再配分を追加)' },
   { version: 'v1.7.0', date: '2026-07-07', label: '新機能', text: '組織図取り込みで、同じ場所の看多機と訪問看護を自動で1つの拠点(1枚のシフト)にまとめるように。どちらの事業所を選んでも両方の職員を取り込みます' },
   { version: 'v1.6.1', date: '2026-07-07', label: '改善', text: 'GASウェブアプリのURLを初回起動時からあらかじめ入力済みにし、設定不要ですぐクラウド連携できるように' },
   { version: 'v1.6.0', date: '2026-07-06', label: '新機能', text: '組織図マスタから事業所と職員を取り込む機能を追加(取り込み後に個別修正可) / 送迎ルート数を曜日別に設定可能に / 日中の必要人数ルールを「3対1(うち看護師1名)+訪問介護1名+訪看ルート看護師1名」に変更 / 拠点に訪問体制強化加算チェックを追加(ONで訪問介護が2名必要に)' },
@@ -733,7 +738,9 @@ const CHANGELOG_DATA = [
 
 /* ================= 定数 ================= */
 const WD_CHARS = ['日','月','火','水','木','金','土'];
-const CODES = ['早','日','遅','夜','明','休','有'];
+const CODES = ['早','日','遅','訪介','訪看','夜','明','休','有'];
+// 日中勤務として数えるコード(訪介=訪問介護担当、訪看=訪問看護ルートの看護師)
+const DAY_CODES = ['早','日','遅','訪介','訪看'];
 const ROLE_LABELS = {
   shihainin:  '支配人',
   keikaku:    '計画作成',
@@ -814,7 +821,7 @@ function setCode(g, staffId, day, code){
   if(!g[staffId]) g[staffId] = {};
   if(code) g[staffId][day] = code; else delete g[staffId][day];
 }
-function isWorkCode(c){ return ['早','日','遅','夜'].includes(c); }
+function isWorkCode(c){ return ['早','日','遅','夜','訪介','訪看'].includes(c); }
 
 /* ---- 希望休・有給(自動作成でも保持される) ---- */
 function wishGrid(){
@@ -939,9 +946,9 @@ function checkDay(day){
   const roster = facStaff();
   const rows = roster.map(s => ({ s, c: getCode(g, s.id, day) }));
 
-  const dayCare  = rows.filter(r => ['早','日','遅'].includes(r.c) && isCareWorker(r.s));
+  const dayCare  = rows.filter(r => DAY_CODES.includes(r.c) && isCareWorker(r.s));
   const nurses   = dayCare.filter(r => isNurse(r.s));
-  const driveCapable = rows.filter(r => ['早','日','遅'].includes(r.c) && canDoDrive(r.s));
+  const driveCapable = rows.filter(r => DAY_CODES.includes(r.c) && canDoDrive(r.s));
   const nights   = rows.filter(r => r.c === '夜');
 
   const issues = [];
@@ -952,9 +959,16 @@ function checkDay(day){
     const kayoiNeed = Math.ceil(users / 3); // 利用者3人に職員1人(常勤換算)
     const homonNeed = homonKaigoNeed(fac);  // 訪問介護1名(訪問体制強化加算ありなら2名)
     const needCare = kayoiNeed + homonNeed;
-    // 看護師2人目は訪問看護のルートに入るため3対1側に含めない(換算値の大きい方を通い側に残す)
-    const nsUnits = nurses.map(r => unitOf(r.s)).sort((a, b) => b - a);
-    const routeUnit = nurses.length >= 2 ? nsUnits[1] : 0;
+    // 訪問看護ルートの看護師は3対1側に含めない。
+    // 「訪看」マークがあればその人、なければ2人目(換算値の小さい方)を除外する
+    const routeMarked = nurses.filter(r => r.c === '訪看');
+    let routeUnit;
+    if(routeMarked.length > 0){
+      routeUnit = routeMarked.reduce((t, r) => t + unitOf(r.s), 0);
+    }else{
+      const nsUnits = nurses.map(r => unitOf(r.s)).sort((a, b) => b - a);
+      routeUnit = nurses.length >= 2 ? nsUnits[1] : 0;
+    }
     const units = dayCare.reduce((t, r) => t + unitOf(r.s), 0) - routeUnit;
     const kasanNote = fac.kasanHoumon ? '・訪問体制強化加算あり' : '';
     if(units < needCare){
@@ -964,8 +978,18 @@ function checkDay(day){
     }
     if(nurses.length < 2){
       issues.push({ level:'bad', text:`日中の看護師が${nurses.length}名(2名必要: 1名は通い側・1名は訪問看護ルート)` });
+    }else if(routeMarked.length === 0){
+      issues.push({ level:'warn', text:`看護師 ${nurses.length}名。訪問看護ルート担当(訪看)が未指定です(マスをタップして指定)` });
     }else{
-      issues.push({ level:'ok', text:`看護師 ${nurses.length}名(うち1名は訪問看護ルート)` });
+      issues.push({ level:'ok', text:`看護師 ${nurses.length}名(訪看ルート: ${routeMarked.map(r=>r.s.name).join('、')})` });
+    }
+    const homonMarked = dayCare.filter(r => r.c === '訪介');
+    if(dayCare.length > 0){
+      if(homonMarked.length < homonNeed){
+        issues.push({ level:'warn', text:`訪問介護担当(訪介)が${homonMarked.length}名/${homonNeed}名(マスをタップして指定)` });
+      }else{
+        issues.push({ level:'ok', text:`訪問介護担当 ${homonMarked.map(r=>r.s.name).join('、')}` });
+      }
     }
     if(nights.length < 1){
       issues.push({ level:'bad', text:'夜勤者がいません' });
@@ -1119,7 +1143,7 @@ function generateShifts(){
       : 0;
     const nurseNeed = fac.type === 'kantaki' ? 2 : 1;
     // 固定曜日の非常勤などで既に埋まっている分を考慮する
-    const placed = roster.filter(s => isCareWorker(s) && ['早','日','遅'].includes(getCode(g, s.id, d)));
+    const placed = roster.filter(s => isCareWorker(s) && DAY_CODES.includes(getCode(g, s.id, d)));
     // 3対1側の常勤換算(2人目の看護師=訪看ルートは除外)
     const units3 = list => {
       const ns = list.filter(isNurse).map(unitOf).sort((a, b) => b - a);
@@ -1202,7 +1226,7 @@ function generateShifts(){
         drvPlaced++;
       }
       const driveOnDuty = () => roster.filter(s =>
-        ['早','日','遅'].includes(getCode(g, s.id, d)) && canDoDrive(s)).length;
+        DAY_CODES.includes(getCode(g, s.id, d)) && canDoDrive(s)).length;
       while(driveOnDuty() < routes){
         const i = pool.findIndex(s => s.canDrive);
         if(i < 0) break;
@@ -1223,7 +1247,7 @@ function generateShifts(){
       if(!cellEmpty(s, d)) continue;
       if(!(s.workDays || []).includes(weekdayOf(currentYm, d))) continue;
       if(runLenIfWorked(s, d) > MAX_CONSECUTIVE) continue;
-      const count = roster.filter(x => ['早','日','遅'].includes(getCode(g, x.id, d))).length;
+      const count = roster.filter(x => DAY_CODES.includes(getCode(g, x.id, d))).length;
       days.push({ d, count });
     }
     // 配置が薄い日から埋める(契約日数を満たすことを優先し、ここではペース制限なし)
@@ -1235,6 +1259,90 @@ function generateShifts(){
       assigned[s.id]++;
     }
   });
+
+  // ---- 3.5 再配分: 余っている日から不足している日へ勤務を移す ----
+  // その日の不足量(人員の常勤換算・看護師数)を返す
+  const dayShort = d => {
+    if(!isOpenDay(fac, currentYm, d)) return null;
+    const wd = weekdayOf(currentYm, d);
+    const dayStaff = roster.filter(s => isCareWorker(s) && DAY_CODES.includes(getCode(g, s.id, d)));
+    const ns = dayStaff.filter(isNurse);
+    const nurseNeed2 = fac.type === 'kantaki' ? 2 : 1;
+    let careShort;
+    if(fac.type === 'kantaki'){
+      const need = Math.ceil(usersFor(fac, wd) / 3) + homonKaigoNeed(fac);
+      const nsUnits = ns.map(unitOf).sort((a, b) => b - a);
+      const routeUnit = ns.length >= 2 ? nsUnits[1] : 0;
+      careShort = need - (dayStaff.reduce((t, s) => t + unitOf(s), 0) - routeUnit);
+    }else{
+      careShort = (fac.dayNeed || 2) - dayStaff.length;
+    }
+    return { careShort, nurseShort: nurseNeed2 - ns.length };
+  };
+  for(let pass = 0; pass < 3; pass++){
+    let moved = false;
+    for(let d = 1; d <= dim; d++){
+      let st = dayShort(d);
+      if(!st || (st.careShort <= 0 && st.nurseShort <= 0)) continue;
+      const wd = weekdayOf(currentYm, d);
+      // この日に入れる職員(看護師不足なら看護師を先に)
+      const cands = roster.filter(s =>
+        isCareWorker(s) && !isFixedPart(s) &&
+        cellEmpty(s, d) &&
+        (s.workDays || []).includes(wd) &&
+        runLenIfWorked(s, d) <= MAX_CONSECUTIVE
+      ).sort((a, b) => (isNurse(b) ? 1 : 0) - (isNurse(a) ? 1 : 0));
+      for(const s of cands){
+        st = dayShort(d);
+        if(st.careShort <= 0 && st.nurseShort <= 0) break;
+        if(st.nurseShort > 0 && st.careShort <= 0 && !isNurse(s)) continue;
+        // sが働いている日のうち、s抜きでも基準を満たす「余剰日」を探す
+        for(let d2 = 1; d2 <= dim; d2++){
+          if(d2 === d) continue;
+          const c2 = getCode(g, s.id, d2);
+          if(!DAY_CODES.includes(c2)) continue;
+          setCode(g, s.id, d2, ''); // 仮に外してみる
+          const st2 = dayShort(d2);
+          if(st2 && st2.careShort <= 0 && st2.nurseShort <= 0 &&
+             runLenIfWorked(s, d) <= MAX_CONSECUTIVE){
+            setCode(g, s.id, d, '日'); // 移動成立
+            moved = true;
+            break;
+          }
+          setCode(g, s.id, d2, c2); // 戻す
+        }
+      }
+    }
+    if(!moved) break;
+  }
+
+  // ---- 3.8 訪問担当の指定: 訪看(訪問看護ルートの看護師)と訪介(訪問介護担当)をランダムに選ぶ ----
+  if(fac.type === 'kantaki'){
+    const pickRandom = arr => arr[Math.floor(Math.random() * arr.length)];
+    for(let d = 1; d <= dim; d++){
+      if(!isOpenDay(fac, currentYm, d)) continue;
+      // 訪看: 看護師が2名以上いる日に1名(早番・遅番を崩さないよう日勤を優先)
+      const dayNurses = roster.filter(s => isNurse(s) && DAY_CODES.includes(getCode(g, s.id, d)));
+      if(dayNurses.length >= 2 && !dayNurses.some(s => getCode(g, s.id, d) === '訪看')){
+        const prefer = dayNurses.filter(s => getCode(g, s.id, d) === '日');
+        const chosen = pickRandom(prefer.length ? prefer : dayNurses);
+        setCode(g, chosen.id, d, '訪看');
+      }
+      // 訪介: 出勤中の介護職員から1名(訪問体制強化加算ありは2名)
+      let need = homonKaigoNeed(fac);
+      need -= roster.filter(s => getCode(g, s.id, d) === '訪介').length;
+      while(need > 0){
+        const kaigoOn = roster.filter(s =>
+          (s.role === 'kaigo_full' || s.role === 'kaigo_part') &&
+          ['早','日','遅'].includes(getCode(g, s.id, d)));
+        if(kaigoOn.length === 0) break;
+        const prefer = kaigoOn.filter(s => getCode(g, s.id, d) === '日');
+        const chosen = pickRandom(prefer.length ? prefer : kaigoOn);
+        setCode(g, chosen.id, d, '訪介');
+        need--;
+      }
+    }
+  }
 
   // ---- 4. 残りの空きマスを「休」に ----
   roster.forEach(s => {
