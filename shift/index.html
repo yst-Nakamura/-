@@ -610,6 +610,8 @@ td.chk-bad{background:var(--danger);color:var(--white);font-weight:700;}
     </div>
     <p style="font-size:0.78rem;color:var(--gray);margin-top:8px;">
       組織図の従業員が職種つきで登録されます(クラウド連携の設定が必要)。
+      同じ場所の看多機と訪問看護(例: 看多機かえりえ○○と訪問看護かえりえ○○)は、
+      どちらを選んでも<b>自動で両方まとめて1枚のシフト</b>になります。
       勤務曜日・週回数などは仮の値になるので、取り込み後に職員タブで個別に修正してください。
     </p>
   </div>
@@ -717,6 +719,7 @@ td.chk-bad{background:var(--danger);color:var(--white);font-weight:700;}
 /* ================= 修正ログ =================
    コードを変更したら必ずここに1行追加すること */
 const CHANGELOG_DATA = [
+  { version: 'v1.7.0', date: '2026-07-07', label: '新機能', text: '組織図取り込みで、同じ場所の看多機と訪問看護を自動で1つの拠点(1枚のシフト)にまとめるように。どちらの事業所を選んでも両方の職員を取り込みます' },
   { version: 'v1.6.1', date: '2026-07-07', label: '改善', text: 'GASウェブアプリのURLを初回起動時からあらかじめ入力済みにし、設定不要ですぐクラウド連携できるように' },
   { version: 'v1.6.0', date: '2026-07-06', label: '新機能', text: '組織図マスタから事業所と職員を取り込む機能を追加(取り込み後に個別修正可) / 送迎ルート数を曜日別に設定可能に / 日中の必要人数ルールを「3対1(うち看護師1名)+訪問介護1名+訪看ルート看護師1名」に変更 / 拠点に訪問体制強化加算チェックを追加(ONで訪問介護が2名必要に)' },
   { version: 'v1.5.0', date: '2026-07-06', label: '新機能', text: '介護職員(正社員・非常勤)に「夜勤可能」チェックを追加 / 夜勤者が休みの日は夜勤可能な職員を自動で代わりに配置 / 夜勤は2日分の勤務としてカウント(勤務日数の集計・自動配分に反映)' },
@@ -1767,38 +1770,66 @@ function renderOrgOfficeOptions(query){
 
 async function orgImportOffice(){
   const office = document.getElementById('orgOfficeSelect').value;
-  if(!office){ toast('先に「事業所リストを読み込む」を押してください'); return; }
+  if(!office){ toast('検索して事業所を選んでください'); return; }
+
+  // 同じ場所の看多機と訪問看護は1枚のシフトにまとめる。
+  // 選んだ事業所名の「看多機」⇔「訪問看護」を入れ替えた名前が組織図にあれば対とみなす
+  let kantakiName = null, houkanName = null;
+  if(office.indexOf('看多機') >= 0){
+    kantakiName = office;
+    const pair = office.replace('看多機', '訪問看護');
+    if(orgAllOffices.indexOf(pair) >= 0) houkanName = pair;
+  }else if(office.indexOf('訪問看護') >= 0){
+    const pair = office.replace('訪問看護', '看多機');
+    if(orgAllOffices.indexOf(pair) >= 0){ kantakiName = pair; houkanName = office; }
+  }
+  const isPaired = !!(kantakiName && houkanName);
+  const mainName = kantakiName || office; // 拠点名は看多機側を使う
+  const isHoukanOnly = !kantakiName && /訪問看護/.test(office);
+
   toast('職員を読み込み中…');
   try{
-    const res = await fetch(state.gasUrl + '?action=orgStaff&office=' + encodeURIComponent(office), { redirect:'follow' });
-    const data = await res.json();
-    if(data.error) throw new Error(data.error);
-    if(!data.staff || data.staff.length === 0){ toast('この事業所の職員が見つかりません'); return; }
+    const fetchStaff = async name => {
+      const res = await fetch(state.gasUrl + '?action=orgStaff&office=' + encodeURIComponent(name), { redirect:'follow' });
+      const d = await res.json();
+      if(d.error) throw new Error(d.error);
+      return d.staff || [];
+    };
+    const mainStaff = await fetchStaff(mainName);
+    const subStaff = isPaired ? await fetchStaff(houkanName) : [];
+    if(mainStaff.length + subStaff.length === 0){ toast('この事業所の職員が見つかりません'); return; }
 
-    let fac = state.facilities.find(f => f.name === office);
+    let fac = state.facilities.find(f => f.name === mainName);
     if(fac){
-      if(!confirm(`「${office}」は登録済みです。職員を組織図の内容で入れ直しますか?\n(職員に設定した勤務条件はやり直しになります。シフトは残ります)`)) return;
+      if(!confirm(`「${mainName}」は登録済みです。職員を組織図の内容で入れ直しますか?\n(職員に設定した勤務条件はやり直しになります。シフトは残ります)`)) return;
       state.staff = state.staff.filter(s => s.facilityId !== fac.id);
     }else{
-      const isHoukan = /訪問看護/.test(office);
       fac = {
-        id: uid('f'), name: office,
-        type: isHoukan ? 'houkan' : 'kantaki',
-        pattern: isHoukan ? 'day' : 'three',
+        id: uid('f'), name: mainName,
+        type: isHoukanOnly ? 'houkan' : 'kantaki',
+        pattern: isHoukanOnly ? 'day' : 'three',
         usersByWd: [15,15,15,15,15,15,15],
-        routesByWd: isHoukan ? [0,0,0,0,0,0,0] : [1,1,1,1,1,1,1],
+        routesByWd: isHoukanOnly ? [0,0,0,0,0,0,0] : [1,1,1,1,1,1,1],
         kasanHoumon: false,
         dayNeed: 2,
-        openDays: isHoukan ? [1,2,3,4,5] : [0,1,2,3,4,5,6],
+        openDays: isHoukanOnly ? [1,2,3,4,5] : [0,1,2,3,4,5,6],
       };
       state.facilities.push(fac);
     }
-    data.staff.forEach(o => state.staff.push(buildStaffFromOrg(fac, o)));
+    // 看多機側の職員(職種変換は看多機の事業所名で判定)
+    mainStaff.forEach(o => state.staff.push(buildStaffFromOrg(fac, o)));
+    // 訪問看護側の職員は同じ拠点に追加(責任者→看護師の変換が効くよう訪看の事業所名で判定)
+    subStaff.forEach(o => {
+      const s = buildStaffFromOrg({ id: fac.id, name: houkanName }, o);
+      state.staff.push(s);
+    });
     normalizeData();
     currentFacId = fac.id;
     markDirty();
     renderAll();
-    toast(`「${office}」の職員${data.staff.length}名を取り込みました。職員タブで勤務条件を調整してください`);
+    toast(isPaired
+      ? `「${mainName}」${mainStaff.length}名+「${houkanName}」${subStaff.length}名を1つのシフトに取り込みました`
+      : `「${mainName}」の職員${mainStaff.length}名を取り込みました。職員タブで勤務条件を調整してください`);
   }catch(e){
     toast('取り込みに失敗しました: ' + e.message);
   }
