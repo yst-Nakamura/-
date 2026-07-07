@@ -210,6 +210,12 @@ td.chk-ok{background:#DCEBE9;color:var(--green);font-weight:700;}
 td.chk-warn{background:#F0E2CF;color:var(--sand);font-weight:700;}
 td.chk-bad{background:var(--danger);color:var(--white);font-weight:700;}
 
+/* 人員配置の人数サマリー行(配置チェックの直前に表示) */
+tr.summary-row td{height:30px;font-size:0.78rem;color:var(--ink);font-weight:700;background:var(--white);}
+tr.summary-row th.name-col{font-size:0.72rem;font-weight:500;color:var(--gray);background:var(--mist);}
+tr.summary-row:first-of-type th.name-col,
+tr.summary-row:first-of-type td{border-top:2px solid var(--ocean);}
+
 /* 凡例 */
 .legend{
   display:flex;gap:10px;flex-wrap:wrap;
@@ -723,6 +729,7 @@ td.chk-bad{background:var(--danger);color:var(--white);font-weight:700;}
 /* ================= 修正ログ =================
    コードを変更したら必ずここに1行追加すること */
 const CHANGELOG_DATA = [
+  { version: 'v1.9.0', date: '2026-07-07', label: '新機能', text: 'シフト表に人員配置数のサマリー行を追加(【通い】【訪問介護】【訪問看護】を日別に表示、看多機拠点のみ) / 自動作成の処理順を「月全体にまんべんなく散らす順」に変更し、人手が足りない月でも不足が月末などに集中せず分散するように修正' },
   { version: 'v1.8.0', date: '2026-07-07', label: '新機能', text: 'シフトに「訪介」(訪問介護担当・加算ありは2名)と「訪看」(訪問看護ルートの看護師)を自動指定(その日の出勤者からランダム、マスから手動変更も可) / 余剰の日があるのに不足の日が残る問題を修正(不足日へ勤務を移し替える再配分を追加)' },
   { version: 'v1.7.0', date: '2026-07-07', label: '新機能', text: '組織図取り込みで、同じ場所の看多機と訪問看護を自動で1つの拠点(1枚のシフト)にまとめるように。どちらの事業所を選んでも両方の職員を取り込みます' },
   { version: 'v1.6.1', date: '2026-07-07', label: '改善', text: 'GASウェブアプリのURLを初回起動時からあらかじめ入力済みにし、設定不要ですぐクラウド連携できるように' },
@@ -787,6 +794,21 @@ function addMonths(ym, n){
 }
 function daysInMonth(ym){ return new Date(+ym.slice(0,4), +ym.slice(4,6), 0).getDate(); }
 function weekdayOf(ym, day){ return new Date(+ym.slice(0,4), +ym.slice(4,6)-1, day).getDay(); }
+// 1..nを「中央から広げるように」並べ替える(二分探索的な順番)。
+// 人手が足りない月でも、自動作成が処理の最後に回した日にだけしわ寄せが行かないよう、
+// 「処理順」自体を月全体にまんべんなく散らすために使う
+function spreadOrder(n){
+  const order = [];
+  const visit = (lo, hi) => {
+    if(lo > hi) return;
+    const mid = Math.floor((lo + hi) / 2);
+    order.push(mid);
+    visit(lo, mid - 1);
+    visit(mid + 1, hi);
+  };
+  visit(1, n);
+  return order;
+}
 function ymLabel(ym){ return ym.slice(0,4) + '年' + (+ym.slice(4,6)) + '月'; }
 function uid(prefix){ return prefix + Date.now().toString(36) + Math.random().toString(36).slice(2,6); }
 function isNurse(s){ return s.role === 'ns_full' || s.role === 'ns_part'; }
@@ -1063,9 +1085,18 @@ function generateShifts(){
     lateCount[s.id] = 0;
   });
 
-  // ペース配分: 勤務が月の前半に偏って後半が空にならないよう、
-  // その日までに使える勤務日数を日付に比例した上限で抑える
-  const paceCap = (s, d) => Math.min(target[s.id], Math.ceil(target[s.id] * d / dim) + 1);
+  // 営業日を「中央から広げる順」に並べ替える。人手が足りない月でも、
+  // 割当に失敗する日が月末に集中せず、月全体にまんべんなく散らばるようにする
+  const openDaysList = [];
+  for(let d = 1; d <= dim; d++){ if(isOpenDay(fac, currentYm, d)) openDaysList.push(d); }
+  const dayOrder = spreadOrder(openDaysList.length).map(i => openDaysList[i - 1]);
+  const progressOf = {};
+  dayOrder.forEach((d, i) => { progressOf[d] = i + 1; });
+  const totalOpenDays = openDaysList.length || 1;
+
+  // ペース配分: 特定の職員に処理順の前半だけ勤務が偏らないよう、
+  // 処理がどこまで進んだか(進捗率)に応じて使える勤務日数の上限を抑える
+  const paceCap = (s, d) => Math.min(target[s.id], Math.ceil(target[s.id] * (progressOf[d] || 1) / totalOpenDays) + 1);
 
   const cellEmpty = (s, d) => d >= 1 && d <= dim && !getCode(g, s.id, d);
   // その日に勤務を入れた場合の連勤日数(前後の勤務とつながる分も含めて数える)
@@ -1132,9 +1163,9 @@ function generateShifts(){
   });
 
   // ---- 2. 日ごとに日中の職員を割り当て(固定曜日の非常勤以外) ----
+  // 処理順は dayOrder(月全体にまんべんなく散らした順)。休業日は最初から含まれない
   const dayWorkers = roster.filter(s => isCareWorker(s) && !isFixedPart(s));
-  for(let d = 1; d <= dim; d++){
-    if(!isOpenDay(fac, currentYm, d)) continue; // 休業日は組まない
+  for(const d of dayOrder){
     const wd = weekdayOf(currentYm, d);
     // 看多機: 3対1(常勤換算・うち1名看護師) + 訪問介護1名(加算ありは2名)
     // + 訪問看護ルートの看護師1名(3対1に含めない)
@@ -1428,6 +1459,23 @@ function renderShiftTable(){
     }
     html += `<td class="total-col">${workCount}</td></tr>`;
   });
+
+  // 人員配置の人数サマリー(看多機のみ: 通い・訪問介護・訪問看護)
+  if(fac.type === 'kantaki'){
+    const countCode = (d, pred) => roster.filter(s => pred(getCode(g, s.id, d))).length;
+    const summaryRows = [
+      { label: '通い',     pred: c => ['早','日','遅'].includes(c) },
+      { label: '訪問介護', pred: c => c === '訪介' },
+      { label: '訪問看護', pred: c => c === '訪看' },
+    ];
+    summaryRows.forEach(row => {
+      html += `<tr class="summary-row"><th class="name-col">【${row.label}】</th>`;
+      for(let d = 1; d <= dim; d++){
+        html += `<td>${countCode(d, row.pred)}</td>`;
+      }
+      html += '<td class="total-col"></td></tr>';
+    });
+  }
 
   // チェック行
   html += '<tr class="check-row"><th class="name-col">配置チェック</th>';
