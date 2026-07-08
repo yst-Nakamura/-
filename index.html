@@ -877,6 +877,10 @@ function renderShotakiDashboard() {
     return;
   }
 
+  const nowS = new Date();
+  const curYmS = `${nowS.getFullYear()}${String(nowS.getMonth()+1).padStart(2,'0')}`;
+  const prevYmS = addMonths(curYmS, -1);
+
   const rows = facList.map(f => {
     const ctx = getFacCtx(f.id);
     const latestYm = Object.keys(ctx.monthData).sort().pop();
@@ -888,14 +892,18 @@ function renderShotakiDashboard() {
         <td><button class="detail-link" onclick="showFacility('${f.id}')">詳細 →</button></td>
       </tr>`;
     }
+    const isStaleS = latestYm < prevYmS;
     const users = Object.values(ctx.monthData[latestYm].users);
     const levels = users.map(u => getLevel(u.baseCode)).filter(l => l !== null);
     const avgLevel = levels.length ? (levels.reduce((s, l) => s + l, 0) / levels.length).toFixed(2) : null;
     const avgColor = !avgLevel ? '#a0aec0' : avgLevel >= 4 ? '#c53030' : avgLevel >= 3 ? '#c05621' : '#2b6cb0';
-    return `<tr>
+    const ymCellS = isStaleS
+      ? `<td style="font-size:12px;font-weight:bold;color:#c53030;background:#fff5f5;border-left:3px solid #fc8181;padding-left:8px" title="前月データ未連携">⚠ ${ymLabel(latestYm)}</td>`
+      : `<td style="font-size:12px;color:#718096">${ymLabel(latestYm)}</td>`;
+    return `<tr${isStaleS ? ' style="background:#fffafa"' : ''}>
       <td class="fac-name"><a class="fac-name-link" onclick="showFacility('${f.id}')">${esc(f.name)}</a></td>
       <td>${_svcTypeBadge(f.id)}</td>
-      <td style="font-size:12px;color:#718096">${ymLabel(latestYm)}</td>
+      ${ymCellS}
       <td style="text-align:center">${avgLevel
         ? `<a onclick="showAvgLevelHistory('${f.id}')" style="cursor:pointer;text-decoration:none;display:inline-block" title="推移を見る">
              <span style="font-weight:bold;color:${avgColor};font-size:14px">${avgLevel}</span>
@@ -951,24 +959,32 @@ function renderHoumonDashboard() {
     return;
   }
 
+  const nowH = new Date();
+  const curYmH = `${nowH.getFullYear()}${String(nowH.getMonth()+1).padStart(2,'0')}`;
+  const prevYmH = addMonths(curYmH, -1);
+
   const rows = facList.map(f => {
     const ctx = getFacCtx(f.id);
     const kaigoLatestYm = Object.keys(ctx.monthData || {}).sort().pop();
     const iryoLatestYm  = Object.keys(ctx.iryoMonthData || {}).sort().pop();
+    const isStaleH = (kaigoLatestYm && kaigoLatestYm < prevYmH) || (iryoLatestYm && iryoLatestYm < prevYmH);
 
     // 介護保険データ
     let kaigoCell = `<span style="color:#a0aec0;font-size:12px">—</span>`;
     let kinkyuCell = `<span style="color:#a0aec0;font-size:12px">—</span>`;
     let tokubetsuCell = `<span style="color:#a0aec0;font-size:12px">—</span>`;
     if (kaigoLatestYm) {
+      const isKaigoStale = kaigoLatestYm < prevYmH;
       const users = Object.values(ctx.monthData[kaigoLatestYm].users);
       const kaigoCount = users.filter(u => !u.userSvcType || u.userSvcType === 'kaigo').length;
       const shienCount = users.filter(u => u.userSvcType === 'shien').length;
       const kinkyuCount = users.filter(u => u.items.some(i => i.name && i.name.includes('緊急時訪問看護加算'))).length;
       const tokubetsuCount = users.filter(u => u.items.some(i => i.name && i.name.includes('特別管理加算'))).length;
+      const ymStyleK = isKaigoStale ? 'font-size:10px;color:#c53030;font-weight:bold' : 'font-size:10px;color:#718096';
+      const ymPrefixK = isKaigoStale ? '⚠ ' : '';
       kaigoCell = `<span style="font-weight:bold;color:#38a169;font-size:14px">${users.length}</span><span style="font-size:11px;color:#718096"> 名</span>
         <div style="font-size:10px;color:#a0aec0">要介護${kaigoCount}・要支援${shienCount}</div>
-        <div style="font-size:10px;color:#718096">${ymLabel(kaigoLatestYm)}</div>`;
+        <div style="${ymStyleK}">${ymPrefixK}${ymLabel(kaigoLatestYm)}</div>`;
       kinkyuCell = kinkyuCount > 0
         ? `<span style="background:#c6f6d5;color:#22543d;padding:2px 8px;border-radius:8px;font-size:12px;font-weight:bold">${kinkyuCount}名</span>`
         : `<span style="color:#a0aec0;font-size:12px">—</span>`;
@@ -980,12 +996,15 @@ function renderHoumonDashboard() {
     // 医療保険データ
     let iryoCell = `<span style="color:#a0aec0;font-size:12px">—</span>`;
     if (iryoLatestYm) {
+      const isIryoStale = iryoLatestYm < prevYmH;
       const iryoUsers = Object.values(ctx.iryoMonthData[iryoLatestYm].users || {});
+      const ymStyleI = isIryoStale ? 'font-size:10px;color:#c53030;font-weight:bold' : 'font-size:10px;color:#718096';
+      const ymPrefixI = isIryoStale ? '⚠ ' : '';
       iryoCell = `<span style="font-weight:bold;color:#3182ce;font-size:14px">${iryoUsers.length}</span><span style="font-size:11px;color:#718096"> 名</span>
-        <div style="font-size:10px;color:#718096">${ymLabel(iryoLatestYm)}</div>`;
+        <div style="${ymStyleI}">${ymPrefixI}${ymLabel(iryoLatestYm)}</div>`;
     }
 
-    return `<tr>
+    return `<tr${isStaleH ? ' style="background:#fffafa"' : ''}>
       <td class="fac-name"><a class="fac-name-link" onclick="showFacility('${f.id}')">${esc(f.name)}</a></td>
       <td>${_svcTypeBadge(f.id)}</td>
       <td style="text-align:center">${kaigoCell}</td>
@@ -1031,6 +1050,7 @@ function renderDashboard() {
 
   const now = new Date();
   const currentYm = `${now.getFullYear()}${String(now.getMonth()+1).padStart(2,'0')}`;
+  const prevYm = addMonths(currentYm, -1); // 前月: これより古いlatestYmは遅延とみなす
 
   // KPI
   const total = kangoFacs.length;
@@ -1120,10 +1140,14 @@ function renderDashboard() {
          </a>`
       : `<span style="color:#a0aec0;font-size:12px">—</span>`;
 
-    return { f, row: `<tr>
+    const isStaleKango = latestYm < prevYm;
+    const ymCellKango = isStaleKango
+      ? `<td style="font-size:12px;font-weight:bold;color:#c53030;background:#fff5f5;border-left:3px solid #fc8181;padding-left:8px" title="前月データ未連携">⚠ ${ymLabel(latestYm)}</td>`
+      : `<td style="font-size:12px;color:#718096">${ymLabel(latestYm)}</td>`;
+    return { f, row: `<tr${isStaleKango ? ' style="background:#fffafa"' : ''}>
       <td class="fac-name"><a class="fac-name-link" onclick="showFacility('${f.id}')">${esc(f.name)}</a></td>
       <td>${_svcTypeBadge(f.id)}</td>
-      <td style="font-size:12px;color:#718096">${ymLabel(latestYm)}</td>
+      ${ymCellKango}
       <td style="text-align:center">${avgCell}</td>
       <td>${sb(cur1ok, !curThreeM)}</td>
       <td>${sb(cur2ok, !curThreeM)}</td>
@@ -1265,11 +1289,12 @@ function renderAddonMatrix() {
 
   // テーブル行（加算ごと）
   const tRows = addonList.map(addonName => {
-    const isKango = addonName.includes('看護体制強化加算');
-    const rowBg = isKango ? 'background:#f0f9ff;' : '';
-    const nameCellStyle = isKango
-      ? 'padding:8px 12px;font-size:12px;font-weight:bold;color:#2b6cb0;border-bottom:1px solid #f0f4f8;white-space:nowrap;border-right:2px solid #e2e8f0'
-      : 'padding:8px 12px;font-size:12px;border-bottom:1px solid #f0f4f8;white-space:nowrap;border-right:2px solid #e2e8f0';
+    const isKangoRow = addonName.includes('看護体制強化加算');
+    const rowBg = isKangoRow ? 'background:#f0f9ff;' : '';
+    const nameBg = isKangoRow ? '#f0f9ff' : '#fff';
+    const nameCellStyle = isKangoRow
+      ? `padding:8px 12px;font-size:12px;font-weight:bold;color:#2b6cb0;border-bottom:1px solid #f0f4f8;white-space:nowrap;border-right:2px solid #e2e8f0;position:sticky;left:0;z-index:1;background:${nameBg}`
+      : `padding:8px 12px;font-size:12px;border-bottom:1px solid #f0f4f8;white-space:nowrap;border-right:2px solid #e2e8f0;position:sticky;left:0;z-index:1;background:${nameBg}`;
 
     let colIdx = 0;
     const cells = activeGroups.flatMap(g => g.stats.map((s, i) => {
@@ -1316,7 +1341,7 @@ function renderAddonMatrix() {
       <table style="width:100%;border-collapse:collapse;font-size:13px">
         <thead>
           <tr>
-            <th rowspan="2" style="background:#2d3748;color:#e2e8f0;padding:10px 14px;text-align:left;font-size:12px;white-space:nowrap;border-right:2px solid rgba(255,255,255,.2);vertical-align:bottom">加算名</th>
+            <th rowspan="2" style="background:#2d3748;color:#e2e8f0;padding:10px 14px;text-align:left;font-size:12px;white-space:nowrap;border-right:2px solid rgba(255,255,255,.2);vertical-align:bottom;position:sticky;left:0;z-index:3">加算名</th>
             ${areaHeaderCells}
           </tr>
           <tr>${facHeaderCells}</tr>
@@ -3373,6 +3398,13 @@ function renderAddonChecklist(users) {
 // 修正ログモーダル
 // ============================================================
 const CHANGELOG_DATA = [
+  {
+    version: 'v1.6.7', date: '2026-07-08', label: '改善',
+    labelColor: '#276749', labelBg: '#c6f6d5',
+    items: [
+      { tag: '改善', tagColor: '#276749', tagBg: '#c6f6d5', text: '加算取得状況一覧の加算名列をスクロール時に固定表示（sticky）。各ダッシュボード（看多機・小多機・訪問看護）で前月データが未連携の場合、最終連携月を赤字＋⚠マークで警告表示し、行を薄ピンクでハイライト' },
+    ]
+  },
   {
     version: 'v1.6.6', date: '2026-07-06', label: '改善',
     labelColor: '#2c5282', labelBg: '#bee3f8',
