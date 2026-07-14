@@ -193,6 +193,7 @@ td.c-早{background:var(--sky);}
 td.c-日{background:var(--mint);}
 td.c-遅{background:#F0E2CF;}
 td.c-リ{background:var(--ocean);font-weight:700;}
+td.c-半{background:var(--mint);color:var(--sand);font-weight:700;}
 td.c-訪介{background:#E3CFA8;font-size:0.66rem !important;letter-spacing:-0.06em;}
 td.c-訪看{background:#BFD9D6;color:var(--green);font-size:0.66rem !important;letter-spacing:-0.06em;}
 /* オンコール担当のマーク(マスの右上に小さく「オ」) */
@@ -510,6 +511,7 @@ tr.summary-row:first-of-type td{border-top:2px solid var(--ocean);}
     <span><span class="chip" style="background:var(--mint)">日</span>日勤</span>
     <span><span class="chip" style="background:#F0E2CF">遅</span>遅番</span>
     <span><span class="chip" style="background:var(--ocean)">リ</span>日勤リーダー</span>
+    <span><span class="chip" style="background:var(--mint);color:var(--sand);">半</span>支配人・計画作成の半日勤務(0.5換算。「日」に変えると1.0換算)</span>
     <span><span class="chip" style="background:#E3CFA8;font-size:0.55rem;">訪介</span>訪問介護担当</span>
     <span><span class="chip" style="background:#BFD9D6;color:var(--green);font-size:0.55rem;">訪看</span>訪問看護ルート</span>
     <span><span class="chip" style="color:var(--danger)">オ</span>オンコール担当</span>
@@ -617,13 +619,6 @@ tr.summary-row:first-of-type td{border-top:2px solid var(--ocean);}
             <input type="time" id="stEnd2">
           </div>
         </div>
-      </div>
-      <div class="form-field" id="stCanOncallWrap">
-        <label>オンコール</label>
-        <label style="display:flex;align-items:center;gap:8px;min-height:44px;font-size:0.9rem;color:var(--ink);cursor:pointer;">
-          <input type="checkbox" id="stCanOncall" style="width:22px;height:22px;">
-          オンコールに入れる(勤務日のみ・翌日も勤務の日のみ・連続2日まで)
-        </label>
       </div>
       <div class="form-field" id="stNightWrap" style="display:none;">
         <label>夜勤の固定曜日</label>
@@ -808,6 +803,7 @@ tr.summary-row:first-of-type td{border-top:2px solid var(--ocean);}
 /* ================= 修正ログ =================
    コードを変更したら必ずここに1行追加すること */
 const CHANGELOG_DATA = [
+  { version: 'v1.14.0', date: '2026-07-14', label: '新機能', text: '職員一覧のオンコールチェック(看護師)も早番・遅番・リーダーと同じくその場で保存できるように / 支配人・計画作成の日勤コードを「半」(0.5換算)に変更。手入力で通常の「日」に変えた日は1.0換算になる / シフト表の下に日別の「常勤換算」数を追加(訪問介護・訪問看護は除く。訪看担当以外の看護師は含む)' },
   { version: 'v1.13.0', date: '2026-07-14', label: '改善', text: '職員一覧に早番可・遅番可・送迎・夜勤(代わり)・リーダーのチェックボックスを直接配置し、「保存」ボタンでその場で更新できるように(編集画面を開く手間を削減)。職員の編集画面からはこれらのチェックボックスを削除(一覧側で編集) / 非常勤・送迎ドライバーの勤務時間帯の入力レイアウトを修正(2つの時間帯を枠で区切り見やすく)' },
   { version: 'v1.12.0', date: '2026-07-07', label: '新機能', text: '職員がスマホから休み希望を出せる専用ページを追加(QRコード掲示ポスターつき)。締切は対象月の前月10日、入力できる日数は拠点ごとに設定可能(既定3日、拠点タブで変更)。送信された希望は「クラウドから読込」で希望休として自動反映' },
   { version: 'v1.11.0', date: '2026-07-07', label: '新機能', text: '拠点に早番・日勤・遅番のルート数を追加(必要人数として自動作成・チェックに反映) / 職員に早番可・遅番可・リーダー可・オンコール可のチェックを追加 / 毎日1名を日勤リーダー「リ」として自動指定 / オンコール担当を自動割当(勤務日のみ・翌日も勤務・連続2日まで、表のオンコール行をタップで変更可) / シフト表に「全体/訪問看護のみ」の表示切替を追加(同じ内容で看護職員だけの表を表示・印刷・CSVできる)' },
@@ -828,9 +824,11 @@ const CHANGELOG_DATA = [
 
 /* ================= 定数 ================= */
 const WD_CHARS = ['日','月','火','水','木','金','土'];
-const CODES = ['早','日','遅','リ','訪介','訪看','夜','明','休','有'];
-// 日中勤務として数えるコード(訪介=訪問介護担当、訪看=訪問看護ルートの看護師)
-const DAY_CODES = ['早','日','遅','リ','訪介','訪看']; // リ=日勤リーダー
+const CODES = ['早','日','遅','半','リ','訪介','訪看','夜','明','休','有'];
+// 日中勤務として数えるコード(訪介=訪問介護担当、訪看=訪問看護ルートの看護師、半=支配人・計画作成の半日勤務)
+const DAY_CODES = ['早','日','遅','半','リ','訪介','訪看']; // リ=日勤リーダー
+// 常勤換算(FTE)に含める日中コード。訪問介護・訪問看護は別枠のため含めない
+const FTE_CODES = ['早','日','遅','半','リ'];
 const ROLE_LABELS = {
   shihainin:  '支配人',
   keikaku:    '計画作成',
@@ -907,6 +905,14 @@ function unitOf(s){
   return 1;
 }
 function fmtUnit(n){ return String(Math.round(n * 100) / 100); }
+// その日の実際のシフトコードに応じた常勤換算。支配人・計画作成は既定「半」(0.5)だが、
+// 手入力で通常の「日」に変えた日は1.0として数える。他職種は常にunitOf(s)と同じ
+function unitOfOn(s, code){
+  if(isManagement(s)) return code === '日' ? 1 : 0.5;
+  return unitOf(s);
+}
+// この職員が日中枠に入る時の既定コード。支配人・計画作成は半日(0.5)扱いの「半」
+function dayCodeFor(s){ return isManagement(s) ? '半' : '日'; }
 function shiftKey(){ return currentFacId + '_' + currentYm; }
 function currentFacility(){ return state.facilities.find(f => f.id === currentFacId) || null; }
 // 営業日か? 看多機は365日運営。訪問看護は営業曜日設定に従う(未設定なら月〜金)
@@ -929,7 +935,7 @@ function setCode(g, staffId, day, code){
   if(!g[staffId]) g[staffId] = {};
   if(code) g[staffId][day] = code; else delete g[staffId][day];
 }
-function isWorkCode(c){ return ['早','日','遅','リ','夜','訪介','訪看'].includes(c); }
+function isWorkCode(c){ return ['早','日','遅','半','リ','夜','訪介','訪看'].includes(c); }
 
 /* ---- 希望休・有給(自動作成でも保持される) ---- */
 function wishGrid(){
@@ -1092,12 +1098,12 @@ function checkDay(day){
     const routeMarked = nurses.filter(r => r.c === '訪看');
     let routeUnit;
     if(routeMarked.length > 0){
-      routeUnit = routeMarked.reduce((t, r) => t + unitOf(r.s), 0);
+      routeUnit = routeMarked.reduce((t, r) => t + unitOfOn(r.s, r.c), 0);
     }else{
-      const nsUnits = nurses.map(r => unitOf(r.s)).sort((a, b) => b - a);
+      const nsUnits = nurses.map(r => unitOfOn(r.s, r.c)).sort((a, b) => b - a);
       routeUnit = nurses.length >= 2 ? nsUnits[1] : 0;
     }
-    const units = dayCare.reduce((t, r) => t + unitOf(r.s), 0) - routeUnit;
+    const units = dayCare.reduce((t, r) => t + unitOfOn(r.s, r.c), 0) - routeUnit;
     const kasanNote = fac.kasanHoumon ? '・訪問体制強化加算あり' : '';
     if(units < needCare){
       issues.push({ level:'bad', text:`日中の人員が不足(常勤換算${fmtUnit(units)}人分/${needCare}人分必要 = 通い${users}名の3対1で${kayoiNeed}人分+訪問介護${homonNeed}名${kasanNote}。訪看ルートの看護師1名は除く)` });
@@ -1383,14 +1389,15 @@ function generateShifts(){
         .sort((a, b) => lateCount[a.id] - lateCount[b.id]);
       const latePicked = latePool.slice(0, lateNeed);
       picks.forEach(s => {
-        const code = earlyPicked.includes(s) ? '早' : (latePicked.includes(s) ? '遅' : '日');
+        const code = isManagement(s) ? '半'
+          : earlyPicked.includes(s) ? '早' : (latePicked.includes(s) ? '遅' : '日');
         setCode(g, s.id, d, code);
         assigned[s.id]++;
         if(code === '早') earlyCount[s.id]++;
         if(code === '遅') lateCount[s.id]++;
       });
     }else{
-      picks.forEach(s => { setCode(g, s.id, d, '日'); assigned[s.id]++; });
+      picks.forEach(s => { setCode(g, s.id, d, dayCodeFor(s)); assigned[s.id]++; });
     }
 
     // 送迎: 専任ドライバーをルート数まで配置し、足りなければ運転可の職員を追加
@@ -1432,7 +1439,7 @@ function generateShifts(){
     for(const { d } of days){
       if(assigned[s.id] >= target[s.id]) break;
       if(runLenIfWorked(s, d) > MAX_CONSECUTIVE) continue;
-      setCode(g, s.id, d, '日');
+      setCode(g, s.id, d, dayCodeFor(s));
       assigned[s.id]++;
     }
   });
@@ -1482,7 +1489,7 @@ function generateShifts(){
           const st2 = dayShort(d2);
           if(st2 && st2.careShort <= 0 && st2.nurseShort <= 0 &&
              runLenIfWorked(s, d) <= MAX_CONSECUTIVE){
-            setCode(g, s.id, d, '日'); // 移動成立
+            setCode(g, s.id, d, dayCodeFor(s)); // 移動成立
             moved = true;
             break;
           }
@@ -1652,7 +1659,7 @@ function renderShiftTable(){
     const summaryRows = nsOnly
       ? [{ label: '訪問看護', pred: c => c === '訪看' }]
       : [
-          { label: '通い',     pred: c => ['早','日','遅','リ'].includes(c) },
+          { label: '通い',     pred: c => ['早','日','遅','半','リ'].includes(c) },
           { label: '訪問介護', pred: c => c === '訪介' },
           { label: '訪問看護', pred: c => c === '訪看' },
         ];
@@ -1663,6 +1670,18 @@ function renderShiftTable(){
       }
       html += '<td class="total-col"></td></tr>';
     });
+    // 常勤換算数(訪問介護・訪問看護は含めない。訪看担当以外の看護師は含めてよい)
+    if(!nsOnly){
+      html += '<tr class="summary-row"><th class="name-col">【常勤換算】</th>';
+      for(let d = 1; d <= dim; d++){
+        const sum = rosterAll.reduce((t, s) => {
+          const c = getCode(g, s.id, d);
+          return FTE_CODES.includes(c) ? t + unitOfOn(s, c) : t;
+        }, 0);
+        html += `<td>${fmtUnit(sum)}</td>`;
+      }
+      html += '<td class="total-col"></td></tr>';
+    }
   }
 
   // オンコール行(オンコール可の看護師がいる拠点のみ。タップで担当を選べる)
@@ -1790,8 +1809,8 @@ function readWdChecks(containerId){
 function hasInlineChk(role){
   return ['kaigo_full','kaigo_part','ns_full','ns_part'].includes(role);
 }
-// 職員一覧の行内チェックボックスHTML(早番可・遅番可・送迎・夜勤代わり・リーダー)。
-// 送迎・夜勤代わりは介護のみ(看護師は対象外、既存の入力欄と同じ条件)
+// 職員一覧の行内チェックボックスHTML(早番可・遅番可・送迎・夜勤代わり・オンコール・リーダー)。
+// 送迎・夜勤代わりは介護のみ、オンコールは看護師のみ(既存の入力欄と同じ条件)
 function inlineChkHtml(s){
   if(!hasInlineChk(s.role)) return '';
   const chk = (field, label, title, checked) =>
@@ -1802,6 +1821,9 @@ function inlineChkHtml(s){
   if(s.role === 'kaigo_full' || s.role === 'kaigo_part'){
     html += chk('canDrive', '送', '車の運転ができる(送迎対応可)', !!s.canDrive);
     html += chk('canNight', '夜', '夜勤に入れる(夜勤者が休みの日の代わり)', !!s.canNight);
+  }
+  if(s.role === 'ns_full' || s.role === 'ns_part'){
+    html += chk('canOncall', 'オ', 'オンコールに入れる(勤務日のみ・翌日も勤務の日のみ・連続2日まで)', !!s.canOncall);
   }
   html += chk('canLeader', 'リ', '日勤リーダーができる', !!s.canLeader);
   html += '</div>';
@@ -1884,7 +1906,6 @@ function fillStaffForm(s){
   document.getElementById('stEnd').value = s && s.workEnd ? s.workEnd : '16:00';
   document.getElementById('stStart2').value = s && s.workStart2 ? s.workStart2 : '';
   document.getElementById('stEnd2').value = s && s.workEnd2 ? s.workEnd2 : '';
-  document.getElementById('stCanOncall').checked = s ? !!s.canOncall : false;
   if(s) document.getElementById('stFac').value = s.facilityId;
   renderWdChecks('stWd', s ? (s.workDays || []) : [1,2,3,4,5]);
   renderWdChecks('stNightWd', s ? (s.nightDays || []) : []);
@@ -1912,10 +1933,7 @@ function updateStaffFormVisibility(){
   // ドライバーは中抜けがあるため時間帯を2枠入力できる
   document.getElementById('stTime2Wrap').style.display = driver ? '' : 'none';
   document.getElementById('stNightWrap').style.display = yakin ? '' : 'none';
-  // 早番可・遅番可・送迎・夜勤(代わり)・リーダーは職員一覧のチェックボックスで編集する(このフォームでは扱わない)
-  // オンコールは看護師のみ
-  document.getElementById('stCanOncallWrap').style.display =
-    (role === 'ns_full' || role === 'ns_part') ? '' : 'none';
+  // 早番可・遅番可・送迎・夜勤(代わり)・リーダー・オンコールは職員一覧のチェックボックスで編集する(このフォームでは扱わない)
 }
 
 /* ---- 拠点画面 ---- */
@@ -2543,13 +2561,11 @@ function bindEvents(){
       workEnd: document.getElementById('stEnd').value,
       workStart2: document.getElementById('stStart2').value,
       workEnd2: document.getElementById('stEnd2').value,
-      canOncall: document.getElementById('stCanOncall').checked,
       workDays: readWdChecks('stWd'),
       nightDays: readWdChecks('stNightWd'),
     };
-    // 早番可・遅番可・送迎・夜勤(代わり)・リーダーは職員一覧のチェックボックスで編集するため、
+    // 早番可・遅番可・送迎・夜勤(代わり)・リーダー・オンコールは職員一覧のチェックボックスで編集するため、
     // このフォームでは触らない(新規作成時のみ既定値を設定)
-    if(data.role !== 'ns_full' && data.role !== 'ns_part') data.canOncall = false;
     if(data.role !== 'yakin' && data.workDays.length === 0){
       toast('勤務する曜日を選んでください'); return;
     }
@@ -2563,7 +2579,7 @@ function bindEvents(){
     }else{
       state.staff.push({
         id: uid('s'),
-        canEarly: true, canLate: true, canDrive: false, canNight: false, canLeader: false,
+        canEarly: true, canLate: true, canDrive: false, canNight: false, canLeader: false, canOncall: false,
         ...data,
       });
     }
