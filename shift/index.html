@@ -632,6 +632,9 @@ tr.summary-row:first-of-type td{border-top:2px solid var(--ocean);}
   </div>
   <div class="card">
     <h2>職員一覧(<span id="staffFacName"></span>)</h2>
+    <p style="font-size:0.78rem;color:var(--gray);margin-bottom:8px;">
+      複数の職員のチェックをまとめて変えてから、どなたか1人の「保存」を押せば全員分が一度に保存されます。
+    </p>
     <div id="staffList"></div>
   </div>
 </section>
@@ -803,6 +806,7 @@ tr.summary-row:first-of-type td{border-top:2px solid var(--ocean);}
 /* ================= 修正ログ =================
    コードを変更したら必ずここに1行追加すること */
 const CHANGELOG_DATA = [
+  { version: 'v1.15.0', date: '2026-07-14', label: 'バグ修正', text: '職員一覧のチェックボックスを、どなたか1人の「保存」を押すだけで一覧に表示されている全員分まとめて保存できるように修正(以前はその行の職員分しか保存されなかった) / 編集フォームで入力中に保存せず別の職員の「編集」を押すと入力内容が消えていた問題を修正(切り替え前に確認するように)' },
   { version: 'v1.14.0', date: '2026-07-14', label: '新機能', text: '職員一覧のオンコールチェック(看護師)も早番・遅番・リーダーと同じくその場で保存できるように / 支配人・計画作成の日勤コードを「半」(0.5換算)に変更。手入力で通常の「日」に変えた日は1.0換算になる / シフト表の下に日別の「常勤換算」数を追加(訪問介護・訪問看護は除く。訪看担当以外の看護師は含む)' },
   { version: 'v1.13.0', date: '2026-07-14', label: '改善', text: '職員一覧に早番可・遅番可・送迎・夜勤(代わり)・リーダーのチェックボックスを直接配置し、「保存」ボタンでその場で更新できるように(編集画面を開く手間を削減)。職員の編集画面からはこれらのチェックボックスを削除(一覧側で編集) / 非常勤・送迎ドライバーの勤務時間帯の入力レイアウトを修正(2つの時間帯を枠で区切り見やすく)' },
   { version: 'v1.12.0', date: '2026-07-07', label: '新機能', text: '職員がスマホから休み希望を出せる専用ページを追加(QRコード掲示ポスターつき)。締切は対象月の前月10日、入力できる日数は拠点ごとに設定可能(既定3日、拠点タブで変更)。送信された希望は「クラウドから読込」で希望休として自動反映' },
@@ -2597,19 +2601,29 @@ function bindEvents(){
     const delId = e.target.dataset.del;
     const saveId = e.target.dataset.save;
     if(editId){
+      // 編集中に保存せず別の職員を開くと入力内容が消えるため、切り替え前に確認する
+      if(editingStaffId && editingStaffId !== editId){
+        const cur = state.staff.find(s => s.id === editingStaffId);
+        if(!confirm(`「${cur ? cur.name : ''}」の編集内容を保存せずに離れます。よろしいですか?`)) return;
+      }
       editingStaffId = editId;
       fillStaffForm(state.staff.find(s => s.id === editId));
       window.scrollTo({ top:0, behavior:'smooth' });
     }
     if(saveId){
-      const s = state.staff.find(x => x.id === saveId);
-      const row = e.target.closest('.list-item');
-      row.querySelectorAll('input[type=checkbox][data-field]').forEach(inp => {
-        s[inp.dataset.field] = inp.checked;
+      // どの職員の「保存」を押しても、一覧に表示されている全員分のチェックボックスをまとめて保存する
+      let count = 0;
+      document.querySelectorAll('#staffList .list-item[data-staffid]').forEach(row => {
+        const s = state.staff.find(x => x.id === row.dataset.staffid);
+        if(!s) return;
+        const boxes = row.querySelectorAll('input[type=checkbox][data-field]');
+        if(boxes.length === 0) return;
+        boxes.forEach(inp => { s[inp.dataset.field] = inp.checked; });
+        count++;
       });
       markDirty();
       renderStaffView();
-      toast(`${s.name}さんの設定を保存しました`);
+      toast(`${count}名分の設定を保存しました`);
     }
     if(delId){
       const s = state.staff.find(x => x.id === delId);
