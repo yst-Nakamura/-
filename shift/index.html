@@ -288,6 +288,33 @@ tr.summary-row:first-of-type td{border-top:2px solid var(--ocean);}
 }
 .list-item button.del{border-color:var(--danger);color:var(--danger);}
 
+/* 職員一覧の行内チェックボックス(早番・遅番・送迎・夜勤・リーダー) */
+.inline-chk-row{
+  display:flex;flex-wrap:wrap;gap:2px 10px;
+  width:100%;order:1;
+  padding:2px 0 4px;
+}
+.inline-chk{
+  display:flex;align-items:center;gap:4px;
+  min-height:32px;font-size:0.8rem;color:var(--ink);cursor:pointer;
+}
+.inline-chk input{width:19px;height:19px;flex-shrink:0;}
+.list-item button[data-save]{border-color:var(--green);color:var(--green);}
+
+/* 時間帯の入力ボックス(ドライバー・非常勤の勤務時間) */
+.time-range-box{
+  border:1px solid var(--mist);border-radius:8px;
+  padding:8px 10px;margin-top:6px;
+}
+.time-range-box .tag{
+  display:block;font-size:0.72rem;color:var(--gray);margin-bottom:4px;
+}
+.time-pair{display:flex;align-items:center;gap:6px;flex-wrap:nowrap;}
+.time-pair input[type=time]{
+  min-width:0;flex:1;
+  min-height:44px;padding:6px;border:1px solid var(--mist);border-radius:8px;
+}
+
 /* フォーム */
 .form-grid{
   display:grid;
@@ -567,54 +594,29 @@ tr.summary-row:first-of-type td{border-top:2px solid var(--ocean);}
         <div class="wd-checks" id="stWd"></div>
       </div>
       <div class="form-field" id="stTimeWrap" style="display:none;">
-        <label>1日の勤務時間と時間帯</label>
-        <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
+        <label>1日の勤務時間(合計)</label>
+        <div style="display:flex;gap:6px;align-items:center;">
           <input type="number" id="stHours" min="0.5" max="12" step="0.5" value="6" style="width:80px;min-height:44px;padding:8px;border:1px solid var(--mist);border-radius:8px;">
           <span>時間/日</span>
-          <input type="time" id="stStart" value="09:00" style="min-height:44px;padding:6px;border:1px solid var(--mist);border-radius:8px;">
-          <span>〜</span>
-          <input type="time" id="stEnd" value="16:00" style="min-height:44px;padding:6px;border:1px solid var(--mist);border-radius:8px;">
+        </div>
+        <div class="time-range-box">
+          <span class="tag">勤務時間帯①</span>
+          <div class="time-pair">
+            <input type="time" id="stStart" value="09:00">
+            <span>〜</span>
+            <input type="time" id="stEnd" value="16:00">
+          </div>
         </div>
       </div>
       <div class="form-field" id="stTime2Wrap" style="display:none;">
-        <label>2つ目の時間帯(中抜け後・なければ空欄)</label>
-        <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
-          <input type="time" id="stStart2" style="min-height:44px;padding:6px;border:1px solid var(--mist);border-radius:8px;">
-          <span>〜</span>
-          <input type="time" id="stEnd2" style="min-height:44px;padding:6px;border:1px solid var(--mist);border-radius:8px;">
+        <div class="time-range-box">
+          <span class="tag">勤務時間帯②(中抜け後・なければ空欄)</span>
+          <div class="time-pair">
+            <input type="time" id="stStart2">
+            <span>〜</span>
+            <input type="time" id="stEnd2">
+          </div>
         </div>
-      </div>
-      <div class="form-field" id="stShiftTimeWrap" style="display:none;">
-        <label>早番・遅番</label>
-        <label style="display:flex;align-items:center;gap:8px;min-height:44px;font-size:0.9rem;color:var(--ink);cursor:pointer;">
-          <input type="checkbox" id="stCanEarly" style="width:22px;height:22px;">
-          早番に入れる
-        </label>
-        <label style="display:flex;align-items:center;gap:8px;min-height:44px;font-size:0.9rem;color:var(--ink);cursor:pointer;">
-          <input type="checkbox" id="stCanLate" style="width:22px;height:22px;">
-          遅番に入れる
-        </label>
-      </div>
-      <div class="form-field" id="stDriveWrap">
-        <label>送迎</label>
-        <label style="display:flex;align-items:center;gap:8px;min-height:44px;font-size:0.9rem;color:var(--ink);cursor:pointer;">
-          <input type="checkbox" id="stCanDrive" style="width:22px;height:22px;">
-          車の運転ができる(送迎対応可)
-        </label>
-      </div>
-      <div class="form-field" id="stCanNightWrap">
-        <label>夜勤</label>
-        <label style="display:flex;align-items:center;gap:8px;min-height:44px;font-size:0.9rem;color:var(--ink);cursor:pointer;">
-          <input type="checkbox" id="stCanNight" style="width:22px;height:22px;">
-          夜勤に入れる(夜勤者が休みの日に代わりで配置。夜勤は2日分の勤務)
-        </label>
-      </div>
-      <div class="form-field" id="stCanLeaderWrap">
-        <label>リーダー</label>
-        <label style="display:flex;align-items:center;gap:8px;min-height:44px;font-size:0.9rem;color:var(--ink);cursor:pointer;">
-          <input type="checkbox" id="stCanLeader" style="width:22px;height:22px;">
-          日勤リーダーができる(毎日1名「リ」として自動配置)
-        </label>
       </div>
       <div class="form-field" id="stCanOncallWrap">
         <label>オンコール</label>
@@ -806,6 +808,7 @@ tr.summary-row:first-of-type td{border-top:2px solid var(--ocean);}
 /* ================= 修正ログ =================
    コードを変更したら必ずここに1行追加すること */
 const CHANGELOG_DATA = [
+  { version: 'v1.13.0', date: '2026-07-14', label: '改善', text: '職員一覧に早番可・遅番可・送迎・夜勤(代わり)・リーダーのチェックボックスを直接配置し、「保存」ボタンでその場で更新できるように(編集画面を開く手間を削減)。職員の編集画面からはこれらのチェックボックスを削除(一覧側で編集) / 非常勤・送迎ドライバーの勤務時間帯の入力レイアウトを修正(2つの時間帯を枠で区切り見やすく)' },
   { version: 'v1.12.0', date: '2026-07-07', label: '新機能', text: '職員がスマホから休み希望を出せる専用ページを追加(QRコード掲示ポスターつき)。締切は対象月の前月10日、入力できる日数は拠点ごとに設定可能(既定3日、拠点タブで変更)。送信された希望は「クラウドから読込」で希望休として自動反映' },
   { version: 'v1.11.0', date: '2026-07-07', label: '新機能', text: '拠点に早番・日勤・遅番のルート数を追加(必要人数として自動作成・チェックに反映) / 職員に早番可・遅番可・リーダー可・オンコール可のチェックを追加 / 毎日1名を日勤リーダー「リ」として自動指定 / オンコール担当を自動割当(勤務日のみ・翌日も勤務・連続2日まで、表のオンコール行をタップで変更可) / シフト表に「全体/訪問看護のみ」の表示切替を追加(同じ内容で看護職員だけの表を表示・印刷・CSVできる)' },
   { version: 'v1.10.0', date: '2026-07-07', label: '改善', text: '正社員・支配人・計画作成の「月の休み日数」を職員ごとの個別入力から、拠点タブの「年間休日設定」(1〜12月・全員共通)に変更。職員を一人ずつ編集する必要がなくなり、月替わりでも自動で反映' },
@@ -1783,6 +1786,28 @@ function readWdChecks(containerId){
     .filter(cb => cb.checked).map(cb => +cb.value);
 }
 
+// 職員一覧の行にチェックボックスを出す職種か(介護・看護のみ。送迎・夜勤専従・支配人・計画作成は対象外)
+function hasInlineChk(role){
+  return ['kaigo_full','kaigo_part','ns_full','ns_part'].includes(role);
+}
+// 職員一覧の行内チェックボックスHTML(早番可・遅番可・送迎・夜勤代わり・リーダー)。
+// 送迎・夜勤代わりは介護のみ(看護師は対象外、既存の入力欄と同じ条件)
+function inlineChkHtml(s){
+  if(!hasInlineChk(s.role)) return '';
+  const chk = (field, label, title, checked) =>
+    `<label class="inline-chk" title="${title}"><input type="checkbox" data-field="${field}" ${checked ? 'checked' : ''}> ${label}</label>`;
+  let html = '<div class="inline-chk-row">';
+  html += chk('canEarly', '早', '早番に入れる', s.canEarly !== false);
+  html += chk('canLate', '遅', '遅番に入れる', s.canLate !== false);
+  if(s.role === 'kaigo_full' || s.role === 'kaigo_part'){
+    html += chk('canDrive', '送', '車の運転ができる(送迎対応可)', !!s.canDrive);
+    html += chk('canNight', '夜', '夜勤に入れる(夜勤者が休みの日の代わり)', !!s.canNight);
+  }
+  html += chk('canLeader', 'リ', '日勤リーダーができる', !!s.canLeader);
+  html += '</div>';
+  return html;
+}
+
 function renderStaffView(){
   const fac = currentFacility();
   document.getElementById('staffFacName').textContent = fac ? fac.name : '拠点未登録';
@@ -1834,12 +1859,15 @@ function renderStaffView(){
       if(s.canLeader) cond += ' / リーダー可';
       if(s.canOncall) cond += ' / オンコール可';
     }
+    div.dataset.staffid = s.id;
     div.innerHTML = `
       <div class="li-main">
         <div>${escapeHtml(s.name)}</div>
         <div class="li-sub">${ROLE_LABELS[s.role] || s.role} / ${cond}</div>
       </div>
+      ${inlineChkHtml(s)}
       <button data-edit="${s.id}">編集</button>
+      ${hasInlineChk(s.role) ? `<button data-save="${s.id}">保存</button>` : ''}
       <button class="del" data-del="${s.id}">削除</button>`;
     list.appendChild(div);
   });
@@ -1856,11 +1884,6 @@ function fillStaffForm(s){
   document.getElementById('stEnd').value = s && s.workEnd ? s.workEnd : '16:00';
   document.getElementById('stStart2').value = s && s.workStart2 ? s.workStart2 : '';
   document.getElementById('stEnd2').value = s && s.workEnd2 ? s.workEnd2 : '';
-  document.getElementById('stCanDrive').checked = s ? !!s.canDrive : false;
-  document.getElementById('stCanNight').checked = s ? !!s.canNight : false;
-  document.getElementById('stCanEarly').checked = s ? s.canEarly !== false : true;
-  document.getElementById('stCanLate').checked = s ? s.canLate !== false : true;
-  document.getElementById('stCanLeader').checked = s ? !!s.canLeader : false;
   document.getElementById('stCanOncall').checked = s ? !!s.canOncall : false;
   if(s) document.getElementById('stFac').value = s.facilityId;
   renderWdChecks('stWd', s ? (s.workDays || []) : [1,2,3,4,5]);
@@ -1888,18 +1911,8 @@ function updateStaffFormVisibility(){
   document.getElementById('stTimeWrap').style.display = (part || driver) ? '' : 'none';
   // ドライバーは中抜けがあるため時間帯を2枠入力できる
   document.getElementById('stTime2Wrap').style.display = driver ? '' : 'none';
-  // 運転可・夜勤可チェックは介護職員のみ(看護師は介護に専念、ドライバーは常に運転)
-  document.getElementById('stDriveWrap').style.display =
-    (role === 'kaigo_full' || role === 'kaigo_part') ? '' : 'none';
-  document.getElementById('stCanNightWrap').style.display =
-    (role === 'kaigo_full' || role === 'kaigo_part') ? '' : 'none';
   document.getElementById('stNightWrap').style.display = yakin ? '' : 'none';
-  // 早番・遅番対応は3交代の日勤ローテーションに入る職種のみ(送迎・夜勤・支配人・計画作成は対象外)
-  document.getElementById('stShiftTimeWrap').style.display =
-    (role === 'kaigo_full' || role === 'kaigo_part' || role === 'ns_full' || role === 'ns_part') ? '' : 'none';
-  // リーダーは日勤に入る職種(介護・看護)から選ぶ
-  document.getElementById('stCanLeaderWrap').style.display =
-    (role === 'kaigo_full' || role === 'kaigo_part' || role === 'ns_full' || role === 'ns_part') ? '' : 'none';
+  // 早番可・遅番可・送迎・夜勤(代わり)・リーダーは職員一覧のチェックボックスで編集する(このフォームでは扱わない)
   // オンコールは看護師のみ
   document.getElementById('stCanOncallWrap').style.display =
     (role === 'ns_full' || role === 'ns_part') ? '' : 'none';
@@ -2530,24 +2543,12 @@ function bindEvents(){
       workEnd: document.getElementById('stEnd').value,
       workStart2: document.getElementById('stStart2').value,
       workEnd2: document.getElementById('stEnd2').value,
-      canDrive: document.getElementById('stCanDrive').checked,
-      canNight: document.getElementById('stCanNight').checked,
-      canEarly: document.getElementById('stCanEarly').checked,
-      canLate: document.getElementById('stCanLate').checked,
-      canLeader: document.getElementById('stCanLeader').checked,
       canOncall: document.getElementById('stCanOncall').checked,
       workDays: readWdChecks('stWd'),
       nightDays: readWdChecks('stNightWd'),
     };
-    if(data.role !== 'kaigo_full' && data.role !== 'kaigo_part'){
-      data.canDrive = false;
-      data.canNight = false;
-    }
-    if(!['kaigo_full','kaigo_part','ns_full','ns_part'].includes(data.role)){
-      data.canEarly = false;
-      data.canLate = false;
-      data.canLeader = false;
-    }
+    // 早番可・遅番可・送迎・夜勤(代わり)・リーダーは職員一覧のチェックボックスで編集するため、
+    // このフォームでは触らない(新規作成時のみ既定値を設定)
     if(data.role !== 'ns_full' && data.role !== 'ns_part') data.canOncall = false;
     if(data.role !== 'yakin' && data.workDays.length === 0){
       toast('勤務する曜日を選んでください'); return;
@@ -2560,7 +2561,11 @@ function bindEvents(){
       Object.assign(state.staff.find(s => s.id === editingStaffId), data);
       editingStaffId = null;
     }else{
-      state.staff.push({ id: uid('s'), ...data });
+      state.staff.push({
+        id: uid('s'),
+        canEarly: true, canLate: true, canDrive: false, canNight: false, canLeader: false,
+        ...data,
+      });
     }
     markDirty();
     fillStaffForm(null);
@@ -2574,10 +2579,21 @@ function bindEvents(){
   document.getElementById('staffList').addEventListener('click', e => {
     const editId = e.target.dataset.edit;
     const delId = e.target.dataset.del;
+    const saveId = e.target.dataset.save;
     if(editId){
       editingStaffId = editId;
       fillStaffForm(state.staff.find(s => s.id === editId));
       window.scrollTo({ top:0, behavior:'smooth' });
+    }
+    if(saveId){
+      const s = state.staff.find(x => x.id === saveId);
+      const row = e.target.closest('.list-item');
+      row.querySelectorAll('input[type=checkbox][data-field]').forEach(inp => {
+        s[inp.dataset.field] = inp.checked;
+      });
+      markDirty();
+      renderStaffView();
+      toast(`${s.name}さんの設定を保存しました`);
     }
     if(delId){
       const s = state.staff.find(x => x.id === delId);
