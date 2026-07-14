@@ -713,6 +713,10 @@ tr.summary-row:first-of-type td{border-top:2px solid var(--ocean);}
           訪問体制強化加算(訪問介護の必要数が1名→2名になります)
         </label>
       </div>
+      <div class="form-field" id="fcKibouDaysWrap">
+        <label>休み希望の入力可能日数(職員用ページの上限)</label>
+        <input type="number" id="fcKibouDays" min="0" max="15" value="3">
+      </div>
       <div class="form-field" id="fcAnnualOffWrap" style="grid-column:1/-1;">
         <label>正社員・支配人・計画作成の月の休み日数(年間・全員共通)</label>
         <div class="users-by-wd" id="fcAnnualOff"></div>
@@ -758,6 +762,20 @@ tr.summary-row:first-of-type td{border-top:2px solid var(--ocean);}
     </p>
   </div>
   <div class="card">
+    <h2>職員用 休み希望ページ</h2>
+    <p style="font-size:0.85rem;margin-bottom:8px;">
+      職員はスマホからこのページで休み希望を出せます(締切: 対象月の前月10日 / 上限日数は拠点タブで設定)。
+      送信された希望は「クラウドから読込」で希望休として反映されます。
+    </p>
+    <p style="font-size:0.85rem;word-break:break-all;background:var(--mint);border-radius:8px;padding:8px 10px;margin-bottom:10px;">
+      <a href="kibou/" target="_blank">https://yst-nakamura.github.io/-/shift/kibou/</a>
+    </p>
+    <div class="form-actions">
+      <a class="btn btn-secondary" href="kibou/" target="_blank" style="display:inline-flex;align-items:center;text-decoration:none;">職員用ページを開く</a>
+      <a class="btn btn-secondary" href="kibou/qr.html" target="_blank" style="display:inline-flex;align-items:center;text-decoration:none;">QRコード掲示ポスターを開く</a>
+    </div>
+  </div>
+  <div class="card">
     <h2>データのバックアップ</h2>
     <div class="form-actions">
       <button class="btn btn-secondary" id="btnExportJson">ファイルに書き出す</button>
@@ -788,6 +806,7 @@ tr.summary-row:first-of-type td{border-top:2px solid var(--ocean);}
 /* ================= 修正ログ =================
    コードを変更したら必ずここに1行追加すること */
 const CHANGELOG_DATA = [
+  { version: 'v1.12.0', date: '2026-07-07', label: '新機能', text: '職員がスマホから休み希望を出せる専用ページを追加(QRコード掲示ポスターつき)。締切は対象月の前月10日、入力できる日数は拠点ごとに設定可能(既定3日、拠点タブで変更)。送信された希望は「クラウドから読込」で希望休として自動反映' },
   { version: 'v1.11.0', date: '2026-07-07', label: '新機能', text: '拠点に早番・日勤・遅番のルート数を追加(必要人数として自動作成・チェックに反映) / 職員に早番可・遅番可・リーダー可・オンコール可のチェックを追加 / 毎日1名を日勤リーダー「リ」として自動指定 / オンコール担当を自動割当(勤務日のみ・翌日も勤務・連続2日まで、表のオンコール行をタップで変更可) / シフト表に「全体/訪問看護のみ」の表示切替を追加(同じ内容で看護職員だけの表を表示・印刷・CSVできる)' },
   { version: 'v1.10.0', date: '2026-07-07', label: '改善', text: '正社員・支配人・計画作成の「月の休み日数」を職員ごとの個別入力から、拠点タブの「年間休日設定」(1〜12月・全員共通)に変更。職員を一人ずつ編集する必要がなくなり、月替わりでも自動で反映' },
   { version: 'v1.9.0', date: '2026-07-07', label: '新機能', text: 'シフト表に人員配置数のサマリー行を追加(【通い】【訪問介護】【訪問看護】を日別に表示、看多機拠点のみ) / 自動作成の処理順を「月全体にまんべんなく散らす順」に変更し、人手が足りない月でも不足が月末などに集中せず分散するように修正' },
@@ -975,6 +994,7 @@ function normalizeData(){
     if(f.earlyRoutes == null) f.earlyRoutes = 1;
     if(f.dayRoutes == null) f.dayRoutes = 1;
     if(f.lateRoutes == null) f.lateRoutes = 1;
+    if(f.kibouDays == null) f.kibouDays = 3;
   });
   state.staff.forEach(s => {
     if(isParttime(s)){
@@ -1982,6 +2002,7 @@ function fillFacForm(f){
   document.getElementById('fcEarlyRoutes').value = f && f.earlyRoutes != null ? f.earlyRoutes : 1;
   document.getElementById('fcDayRoutes').value = f && f.dayRoutes != null ? f.dayRoutes : 1;
   document.getElementById('fcLateRoutes').value = f && f.lateRoutes != null ? f.lateRoutes : 1;
+  document.getElementById('fcKibouDays').value = f && f.kibouDays != null ? f.kibouDays : 3;
   document.getElementById('fcKasanHoumon').checked = f ? !!f.kasanHoumon : false;
   renderNumsByMonth('fcAnnualOff', f ? f.annualOff : null, 9);
   document.getElementById('fcNeed').value = f ? (f.dayNeed || 2) : 2;
@@ -2024,6 +2045,19 @@ async function gasLoad(){
     if(data.shifts) state.shifts = data.shifts;
     if(data.wishes) state.wishes = data.wishes;
     if(data.oncalls) state.oncalls = data.oncalls;
+    // 職員がスマホから出した休み希望を希望休として取り込む
+    // (その職員のその月の希望休は送信内容で置き換え。有給はそのまま残す)
+    if(data.kibouSubs){
+      data.kibouSubs.forEach(sub => {
+        const key = sub.facilityId + '_' + sub.ym;
+        if(!state.wishes[key]) state.wishes[key] = {};
+        const byDay = {};
+        const prev = state.wishes[key][sub.staffId] || {};
+        Object.keys(prev).forEach(d => { if(prev[d] === 'yukyu') byDay[d] = 'yukyu'; });
+        (sub.days || []).forEach(d => { if(!byDay[d]) byDay[d] = 'kibou'; });
+        state.wishes[key][sub.staffId] = byDay;
+      });
+    }
     normalizeData();
     if(!currentFacility() && state.facilities.length) currentFacId = state.facilities[0].id;
     dirty = false;
@@ -2580,6 +2614,7 @@ function bindEvents(){
       earlyRoutes: Math.max(0, +document.getElementById('fcEarlyRoutes').value || 0),
       dayRoutes: Math.max(0, +document.getElementById('fcDayRoutes').value || 0),
       lateRoutes: Math.max(0, +document.getElementById('fcLateRoutes').value || 0),
+      kibouDays: Math.max(0, +document.getElementById('fcKibouDays').value || 0),
       kasanHoumon: document.getElementById('fcKasanHoumon').checked,
       annualOff: readNumsByMonth('fcAnnualOff'),
       dayNeed: +document.getElementById('fcNeed').value || 2,

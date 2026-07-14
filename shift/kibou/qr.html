@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>休み希望はスマホから | かえりえ</title>
+<style>
+:root{
+  --ink:#090401; --ocean:#91B9C1; --sky:#C3DCF0; --sand:#C19569;
+  --mist:#D8DDE1; --mint:#EBF4F8; --green:#5F8C8A; --gray:#6B7880; --white:#FFFFFF;
+}
+*{margin:0;padding:0;box-sizing:border-box;}
+body{
+  font-family:"Noto Sans JP","Hiragino Kaku Gothic ProN","Yu Gothic",sans-serif;
+  background:var(--mint);color:var(--ink);line-height:1.7;
+  display:flex;justify-content:center;padding:20px;
+}
+.poster{
+  background:var(--white);
+  width:100%;max-width:640px;
+  border:1px solid var(--mist);border-radius:16px;
+  padding:36px 32px;text-align:center;
+}
+h1{
+  font-size:1.7rem;letter-spacing:-0.02em;line-height:1.4;
+  border-bottom:4px solid var(--ocean);padding-bottom:14px;margin-bottom:20px;
+}
+.qr{width:min(320px, 70vw);height:auto;margin:10px auto;display:block;}
+.url{
+  font-size:0.85rem;color:var(--gray);word-break:break-all;
+  background:var(--mint);border-radius:8px;padding:6px 10px;margin:10px 0 24px;
+}
+ol{
+  text-align:left;display:inline-block;font-size:1.05rem;font-weight:500;
+  margin-bottom:20px;
+}
+ol li{padding:4px 0;}
+.rules{
+  background:var(--mint);border-radius:12px;padding:14px 18px;
+  text-align:left;font-size:0.9rem;
+}
+.rules b{color:var(--green);}
+.print-btn{
+  margin-top:20px;min-height:48px;padding:10px 26px;
+  border:none;border-radius:10px;background:var(--green);color:var(--white);
+  font-size:0.95rem;font-weight:700;font-family:inherit;cursor:pointer;
+}
+@media print{
+  body{background:var(--white);padding:0;}
+  .poster{border:none;max-width:none;}
+  .print-btn{display:none;}
+  @page{size:A4 portrait;margin:15mm;}
+}
+</style>
+</head>
+<body>
+<div class="poster">
+  <h1>休み希望はスマホから<br>入力できます</h1>
+  <img class="qr" alt="休み希望入力ページのQRコード" src="data:image/png;base64,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">
+  <div class="url">https://yst-nakamura.github.io/-/shift/kibou/</div>
+  <ol>
+    <li>スマホのカメラでQRコードを読み取る</li>
+    <li>事業所と自分の名前を選ぶ</li>
+    <li>休みたい日をタップして「送信」</li>
+  </ol>
+  <div class="rules">
+    <b>■ 締切</b>: 翌月分は <b>今月10日まで</b>(過ぎると入力できません)<br>
+    <b>■ 日数</b>: 入力できる日数は事業所ごとに決まっています(画面に表示されます)<br>
+    <b>■ やり直し</b>: 締切までなら何度でも出し直せます(最後に送った内容が有効)
+  </div>
+  <button class="print-btn" onclick="window.print()">このポスターを印刷する</button>
+</div>
+</body>
+</html>

@@ -1,0 +1,428 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>休み希望の入力 | かえりえ</title>
+<style>
+:root{
+  --ink:#090401;
+  --ocean:#91B9C1;
+  --sky:#C3DCF0;
+  --sand:#C19569;
+  --mist:#D8DDE1;
+  --mint:#EBF4F8;
+  --green:#5F8C8A;
+  --gray:#6B7880;
+  --danger:#7A3B2E;
+  --white:#FFFFFF;
+}
+*{margin:0;padding:0;box-sizing:border-box;}
+body{
+  font-family:"Noto Sans JP","Hiragino Kaku Gothic ProN","Yu Gothic",sans-serif;
+  background:var(--mint);
+  color:var(--ink);
+  font-size:16px;
+  line-height:1.7;
+}
+button{font-family:inherit;cursor:pointer;}
+select{font-family:inherit;font-size:16px;}
+
+header{
+  background:var(--ink);
+  color:var(--white);
+  padding:14px 16px;
+  text-align:center;
+}
+header h1{font-size:1.1rem;font-weight:700;letter-spacing:-0.02em;}
+header p{font-size:0.75rem;color:var(--mist);}
+
+main{padding:14px;max-width:480px;margin:0 auto;}
+
+.step-card{
+  background:var(--white);
+  border:1px solid var(--mist);
+  border-radius:14px;
+  padding:16px;
+  margin-bottom:12px;
+}
+.step-card h2{
+  font-size:0.95rem;
+  margin-bottom:10px;
+  display:flex;align-items:center;gap:8px;
+}
+.step-num{
+  display:inline-flex;align-items:center;justify-content:center;
+  width:26px;height:26px;border-radius:50%;
+  background:var(--green);color:var(--white);
+  font-size:0.85rem;font-weight:700;flex-shrink:0;
+}
+.step-card select{
+  width:100%;min-height:50px;padding:10px 12px;
+  border:1px solid var(--ocean);border-radius:10px;background:var(--white);
+}
+
+/* 月選択チップ */
+.month-chips{display:flex;gap:8px;}
+.month-chips button{
+  flex:1;min-height:60px;
+  border:2px solid var(--mist);border-radius:12px;background:var(--white);
+  font-size:0.95rem;font-weight:700;line-height:1.3;
+}
+.month-chips button small{display:block;font-size:0.68rem;font-weight:500;color:var(--gray);}
+.month-chips button.selected{border-color:var(--green);background:#DCEBE9;}
+.month-chips button.closed{opacity:0.55;}
+.month-chips button.closed small{color:var(--danger);}
+
+/* 日付チップ */
+.day-grid{display:flex;flex-wrap:wrap;gap:6px;}
+.day-grid button{
+  width:calc((100% - 36px) / 7);
+  aspect-ratio:1/1.15;
+  min-height:48px;
+  border:1px solid var(--mist);border-radius:10px;background:var(--white);
+  font-size:0.95rem;font-weight:700;line-height:1.15;color:var(--ink);
+}
+.day-grid button small{display:block;font-size:0.6rem;font-weight:400;color:var(--gray);}
+.day-grid button.sun small{color:var(--danger);}
+.day-grid button.sat small{color:#3d6a99;}
+.day-grid button.on{background:var(--green);border-color:var(--green);color:var(--white);}
+.day-grid button.on small{color:var(--mint);}
+.day-grid button:disabled{opacity:0.4;}
+
+.counter{
+  text-align:center;font-size:0.9rem;margin:10px 0 4px;
+  color:var(--gray);
+}
+.counter b{color:var(--green);font-size:1.1rem;}
+
+.submit-btn{
+  width:100%;min-height:56px;
+  border:none;border-radius:14px;
+  background:var(--green);color:var(--white);
+  font-size:1.05rem;font-weight:700;
+  margin-top:4px;
+}
+.submit-btn:disabled{background:var(--mist);color:var(--gray);}
+
+.note{font-size:0.75rem;color:var(--gray);margin-top:10px;}
+.deadline-note{
+  background:#F0E2CF;border-radius:10px;padding:8px 12px;
+  font-size:0.8rem;margin-bottom:12px;color:var(--ink);
+}
+
+/* 完了画面 */
+.done-card{
+  background:var(--white);border:2px solid var(--green);border-radius:14px;
+  padding:24px 16px;text-align:center;
+}
+.done-card .done-mark{font-size:2.4rem;color:var(--green);}
+.done-card h2{font-size:1.1rem;margin:6px 0 10px;}
+.done-card .days-list{font-size:1rem;font-weight:700;color:var(--green);margin-bottom:12px;}
+.done-card button{
+  min-height:48px;padding:10px 22px;border:1px solid var(--ocean);
+  border-radius:10px;background:var(--white);font-size:0.9rem;
+}
+
+#loading{text-align:center;padding:40px 0;color:var(--gray);}
+#errorBox{
+  background:#F5E9E5;border:1px solid var(--danger);border-radius:10px;
+  padding:10px 14px;font-size:0.85rem;color:var(--danger);
+  margin-bottom:12px;display:none;
+}
+#toast{
+  position:fixed;bottom:24px;left:50%;transform:translateX(-50%);
+  background:var(--ink);color:var(--white);padding:10px 22px;border-radius:24px;
+  font-size:0.85rem;opacity:0;pointer-events:none;transition:opacity 0.25s;z-index:99;
+  max-width:90vw;
+}
+#toast.show{opacity:0.95;}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>休み希望の入力</h1>
+  <p>かえりえ シフト作成</p>
+</header>
+
+<main>
+  <div id="loading">読み込み中…</div>
+  <div id="errorBox"></div>
+
+  <div id="formArea" style="display:none;">
+    <div class="step-card">
+      <h2><span class="step-num">1</span>事業所を選ぶ</h2>
+      <select id="selFac"></select>
+    </div>
+
+    <div class="step-card">
+      <h2><span class="step-num">2</span>自分の名前を選ぶ</h2>
+      <select id="selStaff"></select>
+    </div>
+
+    <div class="step-card">
+      <h2><span class="step-num">3</span>何月分の希望かを選ぶ</h2>
+      <div class="month-chips" id="monthChips"></div>
+    </div>
+
+    <div class="step-card" id="dayCard" style="display:none;">
+      <h2><span class="step-num">4</span>休みたい日をタップ</h2>
+      <div class="deadline-note" id="deadlineNote"></div>
+      <div class="day-grid" id="dayGrid"></div>
+      <div class="counter" id="counter"></div>
+      <button class="submit-btn" id="btnSubmit">この内容で送信する</button>
+      <p class="note">
+        送信後も締切(前月10日)までは、同じ手順でやり直せます(最後に送った内容が有効です)。
+      </p>
+    </div>
+  </div>
+
+  <div id="doneArea" style="display:none;">
+    <div class="done-card">
+      <div class="done-mark">✓</div>
+      <h2>送信しました</h2>
+      <div id="doneInfo" style="font-size:0.9rem;color:var(--gray);"></div>
+      <div class="days-list" id="doneDays"></div>
+      <button id="btnAgain">入力しなおす</button>
+    </div>
+  </div>
+</main>
+
+<div id="toast"></div>
+
+<script>
+'use strict';
+
+const GAS_URL = 'https://script.google.com/macros/s/AKfycbxkzwV0TQx0zvJxhwtM8NIVxX_xW1qSOCN6x8mpJjMzWMAzZhQBFavTyFlORn3xi_u7/exec';
+const WD_CHARS = ['日','月','火','水','木','金','土'];
+const LS_KEY = 'kaerie_kibou_page_v1';
+
+let info = { facilities: [], staff: [] };
+let selectedYm = null;
+let selectedDays = new Set();
+
+function toast(msg){
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(t._timer);
+  t._timer = setTimeout(() => t.classList.remove('show'), 3000);
+}
+function showError(msg){
+  const box = document.getElementById('errorBox');
+  box.textContent = msg;
+  box.style.display = '';
+}
+
+/* ---- 月・締切の計算 ---- */
+function daysInMonthCal(y, m){ return new Date(y, m, 0).getDate(); }
+// 対象月の締切 = 前月10日の23:59:59
+function deadlineOf(ym){
+  const y = +ym.slice(0,4), m = +ym.slice(4,6);
+  const py = m === 1 ? y - 1 : y;
+  const pm = m === 1 ? 12 : m - 1;
+  return new Date(py, pm - 1, 10, 23, 59, 59);
+}
+function ymAdd(base, n){
+  const d = new Date(base.getFullYear(), base.getMonth() + n, 1);
+  return '' + d.getFullYear() + String(d.getMonth() + 1).padStart(2, '0');
+}
+function ymLabel(ym){ return (+ym.slice(0,4)) + '年' + (+ym.slice(4,6)) + '月'; }
+
+function currentFacility(){
+  return info.facilities.find(f => f.id === document.getElementById('selFac').value) || null;
+}
+function maxDays(){
+  const f = currentFacility();
+  return f && f.kibouDays != null ? f.kibouDays : 3;
+}
+
+/* ---- 描画 ---- */
+function renderFacSelect(){
+  const sel = document.getElementById('selFac');
+  sel.innerHTML = '';
+  info.facilities.forEach(f => sel.appendChild(new Option(f.name, f.id)));
+  // 前回の選択を復元
+  try{
+    const saved = JSON.parse(localStorage.getItem(LS_KEY) || '{}');
+    if(saved.facId && info.facilities.some(f => f.id === saved.facId)) sel.value = saved.facId;
+  }catch(e){}
+  renderStaffSelect();
+}
+
+function renderStaffSelect(){
+  const sel = document.getElementById('selStaff');
+  const facId = document.getElementById('selFac').value;
+  sel.innerHTML = '';
+  sel.appendChild(new Option('名前を選んでください', ''));
+  info.staff.filter(s => s.facilityId === facId)
+    .forEach(s => sel.appendChild(new Option(s.name, s.id)));
+  try{
+    const saved = JSON.parse(localStorage.getItem(LS_KEY) || '{}');
+    if(saved.staffId && [...sel.options].some(o => o.value === saved.staffId)) sel.value = saved.staffId;
+  }catch(e){}
+}
+
+function renderMonthChips(){
+  const box = document.getElementById('monthChips');
+  box.innerHTML = '';
+  const now = new Date();
+  [1, 2].forEach(n => {
+    const ym = ymAdd(now, n);
+    const dl = deadlineOf(ym);
+    const open = now <= dl;
+    const b = document.createElement('button');
+    b.className = (selectedYm === ym ? 'selected' : '') + (open ? '' : ' closed');
+    b.disabled = !open;
+    b.innerHTML = `${ymLabel(ym)}分<small>${open
+      ? `締切: ${dl.getMonth() + 1}月10日`
+      : '受付終了(前月10日まで)'}</small>`;
+    b.addEventListener('click', () => {
+      selectedYm = ym;
+      selectedDays = new Set();
+      renderMonthChips();
+      loadExisting();
+    });
+    box.appendChild(b);
+  });
+}
+
+function renderDayGrid(){
+  const card = document.getElementById('dayCard');
+  if(!selectedYm || !document.getElementById('selStaff').value){
+    card.style.display = 'none';
+    return;
+  }
+  card.style.display = '';
+  const y = +selectedYm.slice(0,4), m = +selectedYm.slice(4,6);
+  const dim = daysInMonthCal(y, m);
+  const grid = document.getElementById('dayGrid');
+  grid.innerHTML = '';
+  for(let d = 1; d <= dim; d++){
+    const wd = new Date(y, m - 1, d).getDay();
+    const b = document.createElement('button');
+    b.className = (selectedDays.has(d) ? 'on ' : '') + (wd === 0 ? 'sun' : wd === 6 ? 'sat' : '');
+    b.innerHTML = `${d}<small>${WD_CHARS[wd]}</small>`;
+    b.addEventListener('click', () => {
+      if(selectedDays.has(d)){
+        selectedDays.delete(d);
+      }else{
+        if(selectedDays.size >= maxDays()){
+          toast(`休み希望は${maxDays()}日までです`);
+          return;
+        }
+        selectedDays.add(d);
+      }
+      renderDayGrid();
+    });
+    grid.appendChild(b);
+  }
+  const remain = maxDays() - selectedDays.size;
+  document.getElementById('counter').innerHTML =
+    `選択中 <b>${selectedDays.size}</b> 日 / あと <b>${remain}</b> 日えらべます`;
+  const dl = deadlineOf(selectedYm);
+  document.getElementById('deadlineNote').textContent =
+    `${ymLabel(selectedYm)}分の締切は ${dl.getMonth() + 1}月10日 です。`;
+  document.getElementById('btnSubmit').disabled = false;
+}
+
+/* ---- 通信 ---- */
+async function loadInfo(){
+  try{
+    const res = await fetch(GAS_URL + '?action=kibouInfo', { redirect:'follow' });
+    const data = await res.json();
+    if(data.error) throw new Error(data.error);
+    info = data;
+    if(info.facilities.length === 0){
+      showError('事業所が登録されていません。管理者に連絡してください。');
+      document.getElementById('loading').style.display = 'none';
+      return;
+    }
+    document.getElementById('loading').style.display = 'none';
+    document.getElementById('formArea').style.display = '';
+    renderFacSelect();
+    renderMonthChips();
+  }catch(e){
+    document.getElementById('loading').style.display = 'none';
+    showError('読み込みに失敗しました。電波の良いところでもう一度開いてください。');
+  }
+}
+
+// 送信済みの希望があれば表示に反映する
+async function loadExisting(){
+  const facId = document.getElementById('selFac').value;
+  const staffId = document.getElementById('selStaff').value;
+  if(!facId || !staffId || !selectedYm){ renderDayGrid(); return; }
+  try{
+    const res = await fetch(GAS_URL + `?action=kibouGet&facilityId=${encodeURIComponent(facId)}&staffId=${encodeURIComponent(staffId)}&ym=${selectedYm}`, { redirect:'follow' });
+    const data = await res.json();
+    if(data.days && data.days.length){
+      selectedDays = new Set(data.days);
+      toast('送信済みの希望を表示しています(変更して再送信できます)');
+    }
+  }catch(e){ /* 取得失敗時は空のまま */ }
+  renderDayGrid();
+}
+
+async function submit(){
+  const facId = document.getElementById('selFac').value;
+  const staffId = document.getElementById('selStaff').value;
+  if(!staffId){ toast('名前を選んでください'); return; }
+  if(!selectedYm){ toast('何月分かを選んでください'); return; }
+  const btn = document.getElementById('btnSubmit');
+  btn.disabled = true;
+  btn.textContent = '送信中…';
+  try{
+    const res = await fetch(GAS_URL, {
+      method:'POST',
+      redirect:'follow',
+      headers:{ 'Content-Type':'text/plain;charset=utf-8' },
+      body: JSON.stringify({
+        action:'submitKibou',
+        facilityId: facId,
+        staffId: staffId,
+        ym: selectedYm,
+        days: [...selectedDays].sort((a,b)=>a-b),
+      }),
+    });
+    const data = await res.json();
+    if(data.error) throw new Error(data.error);
+    // 選択を記憶して完了画面へ
+    localStorage.setItem(LS_KEY, JSON.stringify({ facId, staffId }));
+    const staffName = (info.staff.find(s => s.id === staffId) || {}).name || '';
+    document.getElementById('doneInfo').textContent =
+      `${staffName}さん / ${ymLabel(selectedYm)}分`;
+    document.getElementById('doneDays').textContent =
+      data.days.length ? data.days.map(d => d + '日').join('、') : '休み希望なし(0日)で送信しました';
+    document.getElementById('formArea').style.display = 'none';
+    document.getElementById('doneArea').style.display = '';
+    window.scrollTo(0, 0);
+  }catch(e){
+    toast('送信できませんでした: ' + e.message);
+  }
+  btn.disabled = false;
+  btn.textContent = 'この内容で送信する';
+}
+
+/* ---- イベント ---- */
+document.getElementById('selFac').addEventListener('change', () => {
+  renderStaffSelect();
+  selectedDays = new Set();
+  loadExisting();
+});
+document.getElementById('selStaff').addEventListener('change', () => {
+  selectedDays = new Set();
+  loadExisting();
+});
+document.getElementById('btnSubmit').addEventListener('click', submit);
+document.getElementById('btnAgain').addEventListener('click', () => {
+  document.getElementById('doneArea').style.display = 'none';
+  document.getElementById('formArea').style.display = '';
+  loadExisting();
+});
+
+loadInfo();
+</script>
+</body>
+</html>
