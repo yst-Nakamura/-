@@ -806,6 +806,7 @@ tr.summary-row:first-of-type td{border-top:2px solid var(--ocean);}
 /* ================= 修正ログ =================
    コードを変更したら必ずここに1行追加すること */
 const CHANGELOG_DATA = [
+  { version: 'v1.16.0', date: '2026-07-14', label: 'バグ修正', text: '連勤の判定が月をまたぐと途切れる問題を修正。前月末に4連勤していると、翌月1日から自動作成しても続けて勤務を入れないように(crossMonthCodeで前月・翌月のシフトも参照して連勤日数を判定)' },
   { version: 'v1.15.0', date: '2026-07-14', label: 'バグ修正', text: '職員一覧のチェックボックスを、どなたか1人の「保存」を押すだけで一覧に表示されている全員分まとめて保存できるように修正(以前はその行の職員分しか保存されなかった) / 編集フォームで入力中に保存せず別の職員の「編集」を押すと入力内容が消えていた問題を修正(切り替え前に確認するように)' },
   { version: 'v1.14.0', date: '2026-07-14', label: '新機能', text: '職員一覧のオンコールチェック(看護師)も早番・遅番・リーダーと同じくその場で保存できるように / 支配人・計画作成の日勤コードを「半」(0.5換算)に変更。手入力で通常の「日」に変えた日は1.0換算になる / シフト表の下に日別の「常勤換算」数を追加(訪問介護・訪問看護は除く。訪看担当以外の看護師は含む)' },
   { version: 'v1.13.0', date: '2026-07-14', label: '改善', text: '職員一覧に早番可・遅番可・送迎・夜勤(代わり)・リーダーのチェックボックスを直接配置し、「保存」ボタンでその場で更新できるように(編集画面を開く手間を削減)。職員の編集画面からはこれらのチェックボックスを削除(一覧側で編集) / 非常勤・送迎ドライバーの勤務時間帯の入力レイアウトを修正(2つの時間帯を枠で区切り見やすく)' },
@@ -918,6 +919,15 @@ function unitOfOn(s, code){
 // この職員が日中枠に入る時の既定コード。支配人・計画作成は半日(0.5)扱いの「半」
 function dayCodeFor(s){ return isManagement(s) ? '半' : '日'; }
 function shiftKey(){ return currentFacId + '_' + currentYm; }
+// 月をまたいだ連勤判定用: 基準の年月(baseYm)から見て day が前月末・翌月頭にはみ出す場合、
+// その月のシフトデータ(state.shifts、現在の拠点)から実際のコードを取得する
+function crossMonthCode(staffId, baseYm, day){
+  let y = baseYm, d = day;
+  while(d < 1){ y = addMonths(y, -1); d += daysInMonth(y); }
+  while(d > daysInMonth(y)){ d -= daysInMonth(y); y = addMonths(y, 1); }
+  const g2 = state.shifts[currentFacId + '_' + y] || {};
+  return (g2[staffId] && g2[staffId][d]) || '';
+}
 function currentFacility(){ return state.facilities.find(f => f.id === currentFacId) || null; }
 // 営業日か? 看多機は365日運営。訪問看護は営業曜日設定に従う(未設定なら月〜金)
 function isOpenDay(fac, ym, day){
@@ -1243,14 +1253,17 @@ function generateShifts(){
   const paceCap = (s, d) => Math.min(target[s.id], Math.ceil(target[s.id] * (progressOf[d] || 1) / totalOpenDays) + 1);
 
   const cellEmpty = (s, d) => d >= 1 && d <= dim && !getCode(g, s.id, d);
-  // その日に勤務を入れた場合の連勤日数(前後の勤務とつながる分も含めて数える)
+  // その日に勤務を入れた場合の連勤日数(前後の勤務とつながる分も含めて数える)。
+  // 月の1日・末日付近では前月末・翌月頭のシフト(crossMonthCode)も見て、月をまたいだ連勤を防ぐ
   const runLenIfWorked = (s, d) => {
     let n = 1;
-    for(let x = d - 1; x >= 1; x--){
-      if(isWorkCode(getCode(g, s.id, x))) n++; else break;
+    for(let x = d - 1, steps = 0; steps < MAX_CONSECUTIVE + 3; x--, steps++){
+      const code = x >= 1 ? getCode(g, s.id, x) : crossMonthCode(s.id, currentYm, x);
+      if(isWorkCode(code)) n++; else break;
     }
-    for(let x = d + 1; x <= dim; x++){
-      if(isWorkCode(getCode(g, s.id, x))) n++; else break;
+    for(let x = d + 1, steps = 0; steps < MAX_CONSECUTIVE + 3; x++, steps++){
+      const code = x <= dim ? getCode(g, s.id, x) : crossMonthCode(s.id, currentYm, x);
+      if(isWorkCode(code)) n++; else break;
     }
     return n;
   };
