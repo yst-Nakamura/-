@@ -605,6 +605,42 @@ const AREA_DEFS = [
   { area: '第７エリア', color: '#702459', bg: '#fff5f7', keys: ['万成西町', '中津', '鶴崎', '高見馬場'] },
 ];
 
+// 体制加算キーワード（全利用者に算定されるべき加算。一部のみの場合は請求事故リスク）
+const TAISEI_ADDON_KEYWORDS = [
+  '看護体制強化加算',
+  '処遇改善加算',
+  '訪問体制強化加算',
+  'サービス提供体制強化加算',
+  '総合マネジメント体制強化加算',
+  '生産性向上推進体制加算',
+  '科学的介護推進体制加算',
+];
+
+// 体制加算の算定漏れ・過剰算定を検出して警告リストを返す
+function getTaiseiAlerts(usersObj) {
+  const users = Object.values(usersObj || {});
+  const total = users.length;
+  if (total === 0) return [];
+  const alerts = [];
+  for (const kw of TAISEI_ADDON_KEYWORDS) {
+    const cnt = users.filter(u => (u.items || []).some(i => i.name && i.name.includes(kw))).length;
+    if (cnt > 0 && cnt < total) alerts.push(`${kw}（${cnt}/${total}名）`);
+  }
+  return alerts;
+}
+
+// 体制加算アラートがある場合の事業所名セル HTML
+function _facNameCell(facId, facName, alerts) {
+  const link = `<a class="fac-name-link" onclick="showFacility('${facId}')">${esc(facName)}</a>`;
+  if (!alerts || alerts.length === 0) return `<td class="fac-name">${link}</td>`;
+  const detail = alerts.map(a => `<div style="font-size:10px;line-height:1.4">${a}</div>`).join('');
+  return `<td class="fac-name" style="border:2px solid #e53e3e;border-radius:6px;background:#fff5f5;padding:6px 8px">
+    ${link}
+    <div style="color:#c53030;font-size:11px;font-weight:bold;margin-top:4px">⚠ 体制加算 算定不一致</div>
+    <div style="color:#c53030;margin-top:2px">${detail}</div>
+  </td>`;
+}
+
 function getAreaDef(facName) {
   for (const a of AREA_DEFS) {
     if (a.keys.some(k => facName.includes(k))) return a;
@@ -900,8 +936,9 @@ function renderShotakiDashboard() {
     const ymCellS = isStaleS
       ? `<td style="font-size:12px;font-weight:bold;color:#c53030;background:#fff5f5;border-left:3px solid #fc8181;padding-left:8px" title="前月データ未連携">⚠ ${ymLabel(latestYm)}</td>`
       : `<td style="font-size:12px;color:#718096">${ymLabel(latestYm)}</td>`;
+    const taiseiAlertsS = getTaiseiAlerts(ctx.monthData[latestYm].users);
     return `<tr${isStaleS ? ' style="background:#fffafa"' : ''}>
-      <td class="fac-name"><a class="fac-name-link" onclick="showFacility('${f.id}')">${esc(f.name)}</a></td>
+      ${_facNameCell(f.id, f.name, taiseiAlertsS)}
       <td>${_svcTypeBadge(f.id)}</td>
       ${ymCellS}
       <td style="text-align:center">${avgLevel
@@ -1004,8 +1041,13 @@ function renderHoumonDashboard() {
         <div style="${ymStyleI}">${ymPrefixI}${ymLabel(iryoLatestYm)}</div>`;
     }
 
+    const allHoumonUsers = {
+      ...((kaigoLatestYm && ctx.monthData[kaigoLatestYm]) ? ctx.monthData[kaigoLatestYm].users : {}),
+      ...((iryoLatestYm && ctx.iryoMonthData[iryoLatestYm]) ? ctx.iryoMonthData[iryoLatestYm].users : {}),
+    };
+    const taiseiAlertsH = getTaiseiAlerts(allHoumonUsers);
     return `<tr${isStaleH ? ' style="background:#fffafa"' : ''}>
-      <td class="fac-name"><a class="fac-name-link" onclick="showFacility('${f.id}')">${esc(f.name)}</a></td>
+      ${_facNameCell(f.id, f.name, taiseiAlertsH)}
       <td>${_svcTypeBadge(f.id)}</td>
       <td style="text-align:center">${kaigoCell}</td>
       <td style="text-align:center">${iryoCell}</td>
@@ -1144,8 +1186,9 @@ function renderDashboard() {
     const ymCellKango = isStaleKango
       ? `<td style="font-size:12px;font-weight:bold;color:#c53030;background:#fff5f5;border-left:3px solid #fc8181;padding-left:8px" title="前月データ未連携">⚠ ${ymLabel(latestYm)}</td>`
       : `<td style="font-size:12px;color:#718096">${ymLabel(latestYm)}</td>`;
+    const taiseiAlerts = getTaiseiAlerts(ctx.monthData[latestYm].users);
     return { f, row: `<tr${isStaleKango ? ' style="background:#fffafa"' : ''}>
-      <td class="fac-name"><a class="fac-name-link" onclick="showFacility('${f.id}')">${esc(f.name)}</a></td>
+      ${_facNameCell(f.id, f.name, taiseiAlerts)}
       <td>${_svcTypeBadge(f.id)}</td>
       ${ymCellKango}
       <td style="text-align:center">${avgCell}</td>
@@ -3398,6 +3441,13 @@ function renderAddonChecklist(users) {
 // 修正ログモーダル
 // ============================================================
 const CHANGELOG_DATA = [
+  {
+    version: 'v1.6.8', date: '2026-07-16', label: '新機能',
+    labelColor: '#744210', labelBg: '#fefcbf',
+    items: [
+      { tag: '新機能', tagColor: '#744210', tagBg: '#fefcbf', text: '体制加算（処遇改善加算・看護体制強化加算・サービス提供体制強化加算・総合マネジメント体制強化加算・生産性向上推進体制加算・科学的介護推進体制加算・訪問体制強化加算）の算定人数が全利用者数と一致しない場合、ダッシュボードの事業所名に赤枠アラートを表示' },
+    ]
+  },
   {
     version: 'v1.6.7', date: '2026-07-08', label: '改善',
     labelColor: '#276749', labelBg: '#c6f6d5',
