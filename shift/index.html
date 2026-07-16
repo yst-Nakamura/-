@@ -813,6 +813,7 @@ tr.summary-row:first-of-type td{border-top:2px solid var(--ocean);}
 /* ================= 修正ログ =================
    コードを変更したら必ずここに1行追加すること */
 const CHANGELOG_DATA = [
+  { version: 'v1.18.0', date: '2026-07-15', label: '改善', text: '夜勤明けの翌日を必ず休みにするように修正(夜勤入り→夜勤明け→休みの3日並びを自動生成)。固定夜勤者・代替夜勤の両方に適用(次の夜勤予定日と重なる場合は休みにしない)' },
   { version: 'v1.17.0', date: '2026-07-14', label: '新機能', text: '拠点に曜日別の訪問看護ルート数を追加。看護師の必要人数を「通い側1名+訪問看護ルート数」に一般化し、ルート数ぶんの看護師を自動で「訪看」に割り当てるように(あふれた看護師はそのまま通常の日勤)。3対1の計算・不足チェックのメッセージもルート数に対応' },
   { version: 'v1.16.0', date: '2026-07-14', label: 'バグ修正', text: '連勤の判定が月をまたぐと途切れる問題を修正。前月末に4連勤していると、翌月1日から自動作成しても続けて勤務を入れないように(crossMonthCodeで前月・翌月のシフトも参照して連勤日数を判定)' },
   { version: 'v1.15.0', date: '2026-07-14', label: 'バグ修正', text: '職員一覧のチェックボックスを、どなたか1人の「保存」を押すだけで一覧に表示されている全員分まとめて保存できるように修正(以前はその行の職員分しか保存されなかった) / 編集フォームで入力中に保存せず別の職員の「編集」を押すと入力内容が消えていた問題を修正(切り替え前に確認するように)' },
@@ -1288,8 +1289,9 @@ function generateShifts(){
     return n;
   };
 
-  // ---- 1. 夜勤者を固定曜日に配置(翌日は明け) ----
-  // 固定曜日が連続している場合(例: 日曜と月曜)は連続夜勤とし、最後の夜勤の翌日にだけ「明」を入れる
+  // ---- 1. 夜勤者を固定曜日に配置(翌日は明け、その次の日は休み) ----
+  // 固定曜日が連続している場合(例: 日曜と月曜)は連続夜勤とし、最後の夜勤の翌日にだけ「明」を入れる。
+  // 夜勤入り→夜勤明け→休み、を基本の並びとする(次の夜勤予定日と重なる場合は休みにしない)
   roster.filter(s => s.role === 'yakin').forEach(s => {
     for(let d = 1; d <= dim; d++){
       const wd = weekdayOf(currentYm, d);
@@ -1298,13 +1300,19 @@ function generateShifts(){
         assigned[s.id]++;
         const nextWd = weekdayOf(currentYm, d + 1);
         const nextIsNight = d < dim && (s.nightDays || []).includes(nextWd) && cellEmpty(s, d + 1);
-        if(!nextIsNight && d < dim && cellEmpty(s, d + 1)) setCode(g, s.id, d + 1, '明');
+        if(!nextIsNight && d < dim && cellEmpty(s, d + 1)){
+          setCode(g, s.id, d + 1, '明');
+          const afterAkeWd = weekdayOf(currentYm, d + 2);
+          if(d + 2 <= dim && cellEmpty(s, d + 2) && !(s.nightDays || []).includes(afterAkeWd)){
+            setCode(g, s.id, d + 2, '休');
+          }
+        }
       }
     }
   });
 
   // ---- 1.2 夜勤の穴埋め: 夜勤者が休みの日は夜勤可能な介護職員を代わりに配置 ----
-  // 夜勤は2日分の勤務としてカウントする(翌日は明け)
+  // 夜勤は2日分の勤務としてカウントする(翌日は明け、その次の日は休み)
   if(fac.type === 'kantaki'){
     for(let d = 1; d <= dim; d++){
       if(roster.some(s => getCode(g, s.id, d) === '夜')) continue; // その日の夜勤は確保済み
@@ -1321,7 +1329,10 @@ function generateShifts(){
       if(subs.length > 0){
         const s = subs[0];
         setCode(g, s.id, d, '夜');
-        if(d < dim) setCode(g, s.id, d + 1, '明');
+        if(d < dim){
+          setCode(g, s.id, d + 1, '明');
+          if(d + 2 <= dim && cellEmpty(s, d + 2)) setCode(g, s.id, d + 2, '休');
+        }
         assigned[s.id] += 2; // 夜勤は2日分
       }
     }
