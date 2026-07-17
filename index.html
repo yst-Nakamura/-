@@ -605,6 +605,12 @@ const AREA_DEFS = [
   { area: '第７エリア', color: '#702459', bg: '#fff5f7', keys: ['万成西町', '中津', '鶴崎', '高見馬場'] },
 ];
 
+// 加算名の末尾数字をイ/ロ/ハ/ニに変換（例: 処遇改善加算Ⅱ2 → 処遇改善加算Ⅱロ）
+function normalizeAddonName(name) {
+  const map = {'1':'イ','2':'ロ','3':'ハ','4':'ニ','5':'ホ'};
+  return name.replace(/([ⅠⅡⅢⅣⅤⅰⅱⅲⅳⅴ])(\d)$/, (_, r, d) => r + (map[d] || d));
+}
+
 // 体制加算キーワード（全利用者に算定されるべき加算。一部のみの場合は請求事故リスク）
 const TAISEI_ADDON_KEYWORDS = [
   '看護体制強化加算',
@@ -1277,6 +1283,7 @@ function renderAddonMatrix() {
       let short = i.name;
       if (isKango) short = short.replace('看護小規模多機能型', '').replace('看護小規模', '');
       else if (svcType === 'shotaki') short = short.replace('小規模多機能型居宅介護', '').replace('小規模多機能型', '');
+      short = normalizeAddonName(short);
       addonCounts[short] = (addonCounts[short] || 0) + 1;
     }));
 
@@ -3441,6 +3448,13 @@ function renderAddonChecklist(users) {
 // 修正ログモーダル
 // ============================================================
 const CHANGELOG_DATA = [
+  {
+    version: 'v1.6.10', date: '2026-07-17', label: '改善',
+    labelColor: '#2c5282', labelBg: '#bee3f8',
+    items: [
+      { tag: '改善', tagColor: '#2c5282', tagBg: '#bee3f8', text: '加算取得状況一覧の処遇改善加算等の表記を修正。RMデータ上の末尾数字（1/2/3）を正式表記のイ/ロ/ハに変換して表示（例: 処遇改善加算Ⅱ2 → 処遇改善加算Ⅱロ）' },
+    ]
+  },
   {
     version: 'v1.6.9', date: '2026-07-16', label: 'バグ修正',
     labelColor: '#9b2c2c', labelBg: '#fed7d7',
