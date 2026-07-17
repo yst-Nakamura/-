@@ -608,6 +608,7 @@ const AREA_DEFS = [
 // 加算名の末尾数字をイ/ロ/ハ/ニに変換（例: 処遇改善加算Ⅱ2 → 処遇改善加算Ⅱロ）
 function normalizeAddonName(name) {
   const map = {'1':'イ','2':'ロ','3':'ハ','4':'ニ','5':'ホ'};
+  if (!name.includes('処遇改善加算')) return name;
   return name.replace(/([ⅠⅡⅢⅣⅤⅰⅱⅲⅳⅴ])(\d)$/, (_, r, d) => r + (map[d] || d));
 }
 
@@ -3452,7 +3453,7 @@ const CHANGELOG_DATA = [
     version: 'v1.6.10', date: '2026-07-17', label: '改善',
     labelColor: '#2c5282', labelBg: '#bee3f8',
     items: [
-      { tag: '改善', tagColor: '#2c5282', tagBg: '#bee3f8', text: '加算取得状況一覧の処遇改善加算等の表記を修正。RMデータ上の末尾数字（1/2/3）を正式表記のイ/ロ/ハに変換して表示（例: 処遇改善加算Ⅱ2 → 処遇改善加算Ⅱロ）' },
+      { tag: '改善', tagColor: '#2c5282', tagBg: '#bee3f8', text: '加算取得状況一覧の処遇改善加算の表記を修正。RMデータ上の末尾数字（1/2/3）を正式表記のイ/ロ/ハに変換して表示（例: 処遇改善加算Ⅱ2 → 処遇改善加算Ⅱロ）。処遇改善加算のみに適用' },
     ]
   },
   {
