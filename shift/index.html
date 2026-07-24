@@ -842,6 +842,7 @@ tr.summary-row:first-of-type td{border-top:2px solid var(--ocean);}
 /* ================= 修正ログ =================
    コードを変更したら必ずここに1行追加すること */
 const CHANGELOG_DATA = [
+  { version: 'v1.25.0', date: '2026-07-24', label: 'バグ修正', text: '職員編集フォームで資格をチェックした後、一覧側の「保存」ボタン(早番可・遅番可等のチェック用)を押すと資格の変更が保存されずに消えてしまう不具合を修正。編集フォームを開いたまま一覧側の保存ボタンを押した場合も、フォームの資格チェックを一緒に保存するように変更。あわせて、組織図からの拠点・職員の一括取り込み時にも、取り込んだ職員がすぐ休み希望入力システム(kibou)で選べるよう、取り込み時点でクラウドへ自動保存するように変更(従来は新規登録フォームからの追加のみ自動保存対象だった)' },
   { version: 'v1.24.0', date: '2026-07-24', label: '改善', text: 'シフト表でその日の送迎担当が一目でわかるように、担当者のマスに「送」マークを表示し、【送迎担当】の一覧行を追加(拠点のルート数ぶん、送迎可の職員から自動で算出。手入力でシフトを変えても常に現在の状態と一致)。希望休(kibou)を通常の「休」と区別できるよう、専用コード「希休」で表示するように変更(自動作成でも希望休だけを保持、通常の休みと見分けがつくように)。手動でマスを直接「休」に変えた場合は希望休として記録されなくなり、「希休」を選んだ場合のみ希望休として記録される' },
   { version: 'v1.23.0', date: '2026-07-24', label: '新機能', text: '支配人・計画作成も職員一覧のチェックで「送迎ルートに入れる(運転可)」を設定できるように追加(自動作成で送迎ルートの候補にも含まれる)。拠点・職員を新規登録した時点で自動的にクラウドへ保存するように変更し、休み希望入力システム(kibou)にすぐ反映されるようにした(既存の拠点・職員の編集時は従来どおり手動保存のまま)' },
   { version: 'v1.22.0', date: '2026-07-24', label: '新機能', text: 'シフト表に「勤務形態一覧表」出力ボタンを追加。行政提出様式(標準様式1「従業者の勤務の体制及び勤務形態一覧表」看護小規模多機能型居宅介護)にそのまま使えるxlsxファイルを、拠点名・職員の職種/勤務形態/資格/氏名・日々のシフト記号ごと自動生成する(看多機の拠点のみ、暦月集計)。シフト記号表(勤務時間帯)は時刻・休憩時間の入力が不要な「勤務時間数を直接入力する」方式で自動作成するため、始業・終業時刻の入力は一切不要。管理者の資格欄と兼務状況欄のみ、出力後にExcelで手入力が必要' },
@@ -2017,6 +2018,17 @@ function readQualChecks(containerId){
   return [...document.querySelectorAll('#' + containerId + ' input')]
     .filter(cb => cb.checked).map(cb => cb.value);
 }
+// 編集フォームを開いたまま(保存前の状態で)一覧側の「保存」ボタンを押しても、
+// フォームでチェックした資格が失われないよう、その場合はフォームの資格チェックも一緒に保存する
+function commitEditFormQuals(){
+  if(!editingStaffId) return;
+  const s = state.staff.find(x => x.id === editingStaffId);
+  const role = document.getElementById('stRole').value;
+  if(!s || s.role !== role) return; // フォームが別の職員・職種を表示している場合は触らない
+  s.quals = hasKaigoQuals(role) ? readQualChecks('stKaigoQuals')
+    : hasNurseQuals(role) ? readQualChecks('stNurseQuals')
+    : [];
+}
 
 // 職員一覧の行にチェックボックスを出す職種か(介護・看護に加え、支配人・計画作成は送迎チェックのみ対象)
 function hasInlineChk(role){
@@ -2507,6 +2519,8 @@ async function orgImportOffice(){
     toast(isPaired
       ? `「${mainName}」${mainStaff.length}名+「${houkanName}」${subStaff.length}名を1つのシフトに取り込みました`
       : `「${mainName}」の職員${mainStaff.length}名を取り込みました。職員タブで勤務条件を調整してください`);
+    // 取り込んだ職員がすぐ休み希望システム(kibou)で選べるよう、取り込み時点でクラウドに同期する
+    if(state.gasUrl) gasSave();
   }catch(e){
     toast('取り込みに失敗しました: ' + e.message);
   }
@@ -3203,6 +3217,7 @@ function bindEvents(){
         boxes.forEach(inp => { s[inp.dataset.field] = inp.checked; });
         count++;
       });
+      commitEditFormQuals();
       markDirty();
       renderStaffView();
       toast(`${count}名分の設定を保存しました`);
