@@ -352,6 +352,20 @@ tr.summary-row:first-of-type td{border-top:2px solid var(--ocean);}
 }
 .wd-checks input{display:none;}
 .wd-checks label.on{background:var(--green);color:var(--white);border-color:var(--green);}
+.qual-checks{display:flex;gap:6px;flex-wrap:wrap;}
+.qual-checks label{
+  display:flex;align-items:center;justify-content:center;
+  min-height:44px;padding:0 12px;
+  border:1px solid var(--mist);
+  border-radius:8px;
+  font-size:0.85rem;
+  cursor:pointer;
+  background:var(--white);
+  color:var(--ink);
+  margin:0;font-weight:500;
+}
+.qual-checks input{display:none;}
+.qual-checks label.on{background:var(--green);color:var(--white);border-color:var(--green);}
 .form-actions{margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;}
 
 /* ===== 希望休・有給入力 ===== */
@@ -624,6 +638,14 @@ tr.summary-row:first-of-type td{border-top:2px solid var(--ocean);}
         <label>夜勤の固定曜日</label>
         <div class="wd-checks" id="stNightWd"></div>
       </div>
+      <div class="form-field" id="stKaigoQualWrap" style="display:none;">
+        <label>保有資格</label>
+        <div class="qual-checks" id="stKaigoQuals"></div>
+      </div>
+      <div class="form-field" id="stNurseQualWrap" style="display:none;">
+        <label>保有資格(専門)</label>
+        <div class="qual-checks" id="stNurseQuals"></div>
+      </div>
     </div>
     <div class="form-actions">
       <button class="btn btn-primary" id="btnStaffSave">保存</button>
@@ -813,6 +835,7 @@ tr.summary-row:first-of-type td{border-top:2px solid var(--ocean);}
 /* ================= 修正ログ =================
    コードを変更したら必ずここに1行追加すること */
 const CHANGELOG_DATA = [
+  { version: 'v1.19.0', date: '2026-07-24', label: '新機能', text: '職員の編集画面で保有資格をチェックできるように(介護福祉士・実務経験・初任者・認知症初期研修・無資格・准看護師/看護師は専門管理・精神訪問看護)。シフト表の職員名欄にチェック済み資格を略称バッジで表示。シフト表の最下部にサービス提供体制強化加算の判定用【介護士総時間数】【介護福祉士時間数】【介護福祉士の割合】を追加(対象: 介護正社員・非常勤・夜勤専従・送迎ドライバー。夜勤は18時間固定で計算)' },
   { version: 'v1.18.0', date: '2026-07-15', label: '改善', text: '夜勤明けの翌日を必ず休みにするように修正(夜勤入り→夜勤明け→休みの3日並びを自動生成)。固定夜勤者・代替夜勤の両方に適用(次の夜勤予定日と重なる場合は休みにしない)' },
   { version: 'v1.17.0', date: '2026-07-14', label: '新機能', text: '拠点に曜日別の訪問看護ルート数を追加。看護師の必要人数を「通い側1名+訪問看護ルート数」に一般化し、ルート数ぶんの看護師を自動で「訪看」に割り当てるように(あふれた看護師はそのまま通常の日勤)。3対1の計算・不足チェックのメッセージもルート数に対応' },
   { version: 'v1.16.0', date: '2026-07-14', label: 'バグ修正', text: '連勤の判定が月をまたぐと途切れる問題を修正。前月末に4連勤していると、翌月1日から自動作成しても続けて勤務を入れないように(crossMonthCodeで前月・翌月のシフトも参照して連勤日数を判定)' },
@@ -856,6 +879,28 @@ const ROLE_LABELS = {
 // 表示の並び順: 支配人→計画作成→介護正社員→介護非常勤→送迎ドライバー→夜勤者→看護正社員→看護非常勤
 const ROLE_ORDER = { shihainin:0, keikaku:1, kaigo_full:2, kaigo_part:3, driver:4, yakin:5, ns_full:6, ns_part:7 };
 const MAX_CONSECUTIVE = 4; // 連勤の上限(固定曜日契約の非常勤は契約どおり勤務するため対象外)
+
+// 資格: 介護職員(介護正社員・介護非常勤・夜勤専従・送迎ドライバー)向け
+const KAIGO_QUALS = [
+  { key:'kaigofukushi', label:'介護福祉士',     badge:'福' },
+  { key:'jitsumu',      label:'実務経験',       badge:'実' },
+  { key:'shonin',       label:'初任者',         badge:'初' },
+  { key:'ninchisho',    label:'認知症初期研修', badge:'認' },
+  { key:'mushikaku',    label:'無資格',         badge:'無' },
+  { key:'junkangoshi',  label:'准看護師',       badge:'准' },
+];
+// 資格: 看護師向け(看護師は資格保有前提のため、追加の専門資格のみ)
+const NURSE_QUALS = [
+  { key:'senmonkanri',   label:'専門管理',     badge:'専' },
+  { key:'seishinhoumon', label:'精神訪問看護', badge:'精' },
+];
+const QUALS_BY_KEY = {};
+[...KAIGO_QUALS, ...NURSE_QUALS].forEach(q => { QUALS_BY_KEY[q.key] = q; });
+// サービス提供体制強化加算の集計対象職種(介護福祉士の勤務時間割合を出す母集団)
+const KAIGO_HOUR_ROLES = ['kaigo_full', 'kaigo_part', 'yakin', 'driver'];
+// 資格チェック欄を出す職種(介護側)
+function hasKaigoQuals(role){ return KAIGO_HOUR_ROLES.includes(role); }
+function hasNurseQuals(role){ return role === 'ns_full' || role === 'ns_part'; }
 const LS_KEY = 'kaerie_shift_app_v1';
 // このアプリ専用のGASウェブアプリURL(初回起動時の初期値として使う)
 const DEFAULT_GAS_URL = 'https://script.google.com/macros/s/AKfycbxkzwV0TQx0zvJxhwtM8NIVxX_xW1qSOCN6x8mpJjMzWMAzZhQBFavTyFlORn3xi_u7/exec';
@@ -991,6 +1036,18 @@ function isParttime(s){ return s.role === 'kaigo_part' || s.role === 'ns_part'; 
 function isFixedPart(s){ return isParttime(s) && s.contractType === 'fixed'; }
 // 送迎に出られる職員(専任ドライバー or 運転可チェックあり)
 function canDoDrive(s){ return s.role === 'driver' || !!s.canDrive; }
+// サービス提供体制強化加算用: 1日勤務あたりの契約時間(常勤は8時間、非常勤・ドライバーは設定時間)
+function dayHoursFor(s){
+  if(isParttime(s) || s.role === 'driver') return Math.min(8, s.hoursPerDay || 8);
+  return 8;
+}
+const NIGHT_SHIFT_HOURS = 18; // 夜勤(16時〜翌10時)の実働時間として固定
+// そのコードの勤務時間(時間)。明け・休み・有給・訪看(看護師専用)などは0時間
+function hoursForCode(s, code){
+  if(code === '夜') return NIGHT_SHIFT_HOURS;
+  if(['早','日','遅','リ','訪介'].includes(code)) return dayHoursFor(s);
+  return 0;
+}
 // その曜日の送迎ルート数
 function routesOf(fac, wd){
   if(!fac || fac.type !== 'kantaki') return 0;
@@ -1051,6 +1108,7 @@ function normalizeData(){
     if(s.canLate == null) s.canLate = true;
     if(s.canLeader == null) s.canLeader = false;
     if(s.canOncall == null) s.canOncall = false;
+    if(!Array.isArray(s.quals)) s.quals = [];
   });
   if(!state.oncalls) state.oncalls = {};
   if(!state.wishes) state.wishes = {};
@@ -1702,9 +1760,15 @@ function renderShiftTable(){
     if(s.canDrive) b += '<span class="role-badge drv">運</span>';
     return b;
   };
+  // チェック済みの資格を略称バッジで表示(例: 福・実・専 など)
+  const qualBadges = s => (s.quals || [])
+    .map(k => QUALS_BY_KEY[k])
+    .filter(Boolean)
+    .map(q => `<span class="role-badge qual" title="${escapeHtml(q.label)}">${q.badge}</span>`)
+    .join('');
 
   roster.forEach(s => {
-    html += `<tr><th class="name-col">${escapeHtml(s.name)}${roleBadge(s)}</th>`;
+    html += `<tr><th class="name-col">${escapeHtml(s.name)}${roleBadge(s)}${qualBadges(s)}</th>`;
     let workCount = 0;
     for(let d = 1; d <= dim; d++){
       const c = getCode(g, s.id, d);
@@ -1744,6 +1808,26 @@ function renderShiftTable(){
       }
       html += '<td class="total-col"></td></tr>';
     }
+  }
+
+  // サービス提供体制強化加算用: 介護士(介護正社員・介護非常勤・夜勤専従・送迎ドライバー)の
+  // 総勤務時間数と、そのうち介護福祉士の勤務時間数・割合を月合計で表示(日別ではなく合計のみ)
+  const kaigoHourStaff = rosterAll.filter(s => KAIGO_HOUR_ROLES.includes(s.role));
+  if(!nsOnly && kaigoHourStaff.length > 0){
+    let totalHours = 0, fukushiHours = 0;
+    kaigoHourStaff.forEach(s => {
+      const hasFukushi = (s.quals || []).includes('kaigofukushi');
+      for(let d = 1; d <= dim; d++){
+        const h = hoursForCode(s, getCode(g, s.id, d));
+        totalHours += h;
+        if(hasFukushi) fukushiHours += h;
+      }
+    });
+    const ratio = totalHours > 0 ? (fukushiHours / totalHours * 100) : 0;
+    const colspan = dim + 1;
+    html += `<tr class="summary-row"><th class="name-col">【介護士総時間数】</th><td colspan="${colspan}">${fmtUnit(totalHours)}時間</td></tr>`;
+    html += `<tr class="summary-row"><th class="name-col">【介護福祉士時間数】</th><td colspan="${colspan}">${fmtUnit(fukushiHours)}時間</td></tr>`;
+    html += `<tr class="summary-row"><th class="name-col">【介護福祉士の割合】</th><td colspan="${colspan}">${fmtUnit(ratio)}%</td></tr>`;
   }
 
   // オンコール行(オンコール可の看護師がいる拠点のみ。タップで担当を選べる)
@@ -1866,6 +1950,29 @@ function readWdChecks(containerId){
   return [...document.querySelectorAll('#' + containerId + ' input')]
     .filter(cb => cb.checked).map(cb => +cb.value);
 }
+// 資格チェック欄の描画・読み取り(quals配列のキーで管理)
+function renderQualChecks(containerId, quals, values){
+  const box = document.getElementById(containerId);
+  box.innerHTML = '';
+  quals.forEach(q => {
+    const lb = document.createElement('label');
+    lb.textContent = q.label;
+    if(values.includes(q.key)) lb.classList.add('on');
+    const cb = document.createElement('input');
+    cb.type = 'checkbox'; cb.value = q.key; cb.checked = values.includes(q.key);
+    lb.appendChild(cb);
+    lb.addEventListener('click', e => {
+      e.preventDefault();
+      cb.checked = !cb.checked;
+      lb.classList.toggle('on', cb.checked);
+    });
+    box.appendChild(lb);
+  });
+}
+function readQualChecks(containerId){
+  return [...document.querySelectorAll('#' + containerId + ' input')]
+    .filter(cb => cb.checked).map(cb => cb.value);
+}
 
 // 職員一覧の行にチェックボックスを出す職種か(介護・看護のみ。送迎・夜勤専従・支配人・計画作成は対象外)
 function hasInlineChk(role){
@@ -1971,6 +2078,8 @@ function fillStaffForm(s){
   if(s) document.getElementById('stFac').value = s.facilityId;
   renderWdChecks('stWd', s ? (s.workDays || []) : [1,2,3,4,5]);
   renderWdChecks('stNightWd', s ? (s.nightDays || []) : []);
+  renderQualChecks('stKaigoQuals', KAIGO_QUALS, s ? (s.quals || []) : []);
+  renderQualChecks('stNurseQuals', NURSE_QUALS, s ? (s.quals || []) : []);
   updateStaffFormVisibility();
   document.getElementById('staffFormTitle').textContent = s ? '職員を編集' : '職員を追加';
   document.getElementById('btnStaffCancel').style.display = s ? '' : 'none';
@@ -1995,6 +2104,8 @@ function updateStaffFormVisibility(){
   // ドライバーは中抜けがあるため時間帯を2枠入力できる
   document.getElementById('stTime2Wrap').style.display = driver ? '' : 'none';
   document.getElementById('stNightWrap').style.display = yakin ? '' : 'none';
+  document.getElementById('stKaigoQualWrap').style.display = hasKaigoQuals(role) ? '' : 'none';
+  document.getElementById('stNurseQualWrap').style.display = hasNurseQuals(role) ? '' : 'none';
   // 早番可・遅番可・送迎・夜勤(代わり)・リーダー・オンコールは職員一覧のチェックボックスで編集する(このフォームでは扱わない)
 }
 
@@ -2629,6 +2740,9 @@ function bindEvents(){
       workEnd2: document.getElementById('stEnd2').value,
       workDays: readWdChecks('stWd'),
       nightDays: readWdChecks('stNightWd'),
+      quals: hasKaigoQuals(document.getElementById('stRole').value) ? readQualChecks('stKaigoQuals')
+        : hasNurseQuals(document.getElementById('stRole').value) ? readQualChecks('stNurseQuals')
+        : [],
     };
     // 早番可・遅番可・送迎・夜勤(代わり)・リーダー・オンコールは職員一覧のチェックボックスで編集するため、
     // このフォームでは触らない(新規作成時のみ既定値を設定)
