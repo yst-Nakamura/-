@@ -836,6 +836,7 @@ tr.summary-row:first-of-type td{border-top:2px solid var(--ocean);}
 /* ================= 修正ログ =================
    コードを変更したら必ずここに1行追加すること */
 const CHANGELOG_DATA = [
+  { version: 'v1.23.0', date: '2026-07-24', label: '新機能', text: '支配人・計画作成も職員一覧のチェックで「送迎ルートに入れる(運転可)」を設定できるように追加(自動作成で送迎ルートの候補にも含まれる)。拠点・職員を新規登録した時点で自動的にクラウドへ保存するように変更し、休み希望入力システム(kibou)にすぐ反映されるようにした(既存の拠点・職員の編集時は従来どおり手動保存のまま)' },
   { version: 'v1.22.0', date: '2026-07-24', label: '新機能', text: 'シフト表に「勤務形態一覧表」出力ボタンを追加。行政提出様式(標準様式1「従業者の勤務の体制及び勤務形態一覧表」看護小規模多機能型居宅介護)にそのまま使えるxlsxファイルを、拠点名・職員の職種/勤務形態/資格/氏名・日々のシフト記号ごと自動生成する(看多機の拠点のみ、暦月集計)。シフト記号表(勤務時間帯)は時刻・休憩時間の入力が不要な「勤務時間数を直接入力する」方式で自動作成するため、始業・終業時刻の入力は一切不要。管理者の資格欄と兼務状況欄のみ、出力後にExcelで手入力が必要' },
   { version: 'v1.21.0', date: '2026-07-24', label: 'バグ修正', text: '入力した資格情報・拠点情報などが消えてしまう不具合を修正。この端末に保存したがクラウドへは未反映の変更がある状態でアプリを開くと、自動読み込みで上書きされて消えていた(未保存フラグが端末に保存されていなかったため)。未保存フラグを端末にも保存し、次回起動時は先に未保存の内容をクラウドへ保存してから読み込むように変更。拠点の編集画面でも、保存せず別の拠点の「編集」を押した際に確認ダイアログを出すように(職員の編集画面と同様)' },
   { version: 'v1.20.0', date: '2026-07-24', label: '改善', text: '支配人・計画作成も保有資格(介護福祉士など)を編集画面で入力できるように追加。介護福祉士の勤務時間割合の集計にも支配人・計画作成を含めるように対象を拡大(半日勤務は4時間として計算)。介護福祉士とその他の介護資格を両方チェックしている場合は、資格バッジの表示は介護福祉士を優先(看護側の資格表示は対象外)' },
@@ -1984,16 +1985,20 @@ function readQualChecks(containerId){
     .filter(cb => cb.checked).map(cb => cb.value);
 }
 
-// 職員一覧の行にチェックボックスを出す職種か(介護・看護のみ。送迎・夜勤専従・支配人・計画作成は対象外)
+// 職員一覧の行にチェックボックスを出す職種か(介護・看護に加え、支配人・計画作成は送迎チェックのみ対象)
 function hasInlineChk(role){
-  return ['kaigo_full','kaigo_part','ns_full','ns_part'].includes(role);
+  return ['kaigo_full','kaigo_part','ns_full','ns_part','shihainin','keikaku'].includes(role);
 }
 // 職員一覧の行内チェックボックスHTML(早番可・遅番可・送迎・夜勤代わり・オンコール・リーダー)。
-// 送迎・夜勤代わりは介護のみ、オンコールは看護師のみ(既存の入力欄と同じ条件)
+// 送迎・夜勤代わりは介護のみ、オンコールは看護師のみ(既存の入力欄と同じ条件)。
+// 支配人・計画作成は日勤固定のため送迎チェックのみ表示する
 function inlineChkHtml(s){
   if(!hasInlineChk(s.role)) return '';
   const chk = (field, label, title, checked) =>
     `<label class="inline-chk" title="${title}"><input type="checkbox" data-field="${field}" ${checked ? 'checked' : ''}> ${label}</label>`;
+  if(s.role === 'shihainin' || s.role === 'keikaku'){
+    return `<div class="inline-chk-row">${chk('canDrive', '送', '送迎ルートに入れる(運転できる)', !!s.canDrive)}</div>`;
+  }
   let html = '<div class="inline-chk-row">';
   html += chk('canEarly', '早', '早番に入れる', s.canEarly !== false);
   html += chk('canLate', '遅', '遅番に入れる', s.canLate !== false);
@@ -3118,6 +3123,7 @@ function bindEvents(){
       toast('夜勤者は夜勤の固定曜日を選んでください'); return;
     }
     if(data.role === 'yakin' && data.workDays.length === 0) data.workDays = [0,1,2,3,4,5,6];
+    const isNewStaff = !editingStaffId;
     if(editingStaffId){
       Object.assign(state.staff.find(s => s.id === editingStaffId), data);
       editingStaffId = null;
@@ -3132,6 +3138,8 @@ function bindEvents(){
     fillStaffForm(null);
     renderStaffView();
     toast('職員を保存しました');
+    // 新規登録した職員がすぐ休み希望システム(kibou)で選べるよう、登録時点でクラウドに同期する
+    if(isNewStaff && state.gasUrl) gasSave();
   });
   document.getElementById('btnStaffCancel').addEventListener('click', () => {
     editingStaffId = null;
@@ -3211,6 +3219,7 @@ function bindEvents(){
     if(data.type === 'houkan' && data.openDays.length === 0){
       toast('営業曜日を選んでください'); return;
     }
+    const isNewFac = !editingFacId;
     if(editingFacId){
       Object.assign(state.facilities.find(f => f.id === editingFacId), data);
       editingFacId = null;
@@ -3224,6 +3233,8 @@ function bindEvents(){
     renderFacSelect();
     renderFacView();
     toast('拠点を保存しました');
+    // 新規登録した拠点がすぐ休み希望システム(kibou)で選べるよう、登録時点でクラウドに同期する
+    if(isNewFac && state.gasUrl) gasSave();
   });
   document.getElementById('btnFacCancel').addEventListener('click', () => {
     editingFacId = null;
