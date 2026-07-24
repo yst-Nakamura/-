@@ -129,6 +129,7 @@ section.view.active{display:block;}
 table.shift{
   border-collapse:collapse;
   min-width:100%;
+  table-layout:fixed; /* 内容の長さ(訪看・希休など2文字コードや名前)で日付ごとの列幅がバラつかないよう固定する */
 }
 table.shift th,table.shift td{
   border:1px solid var(--mist);
@@ -140,6 +141,7 @@ table.shift thead th{
   background:var(--ocean);
   color:var(--ink);
   padding:4px 2px;
+  width:34px;
   min-width:34px;
   font-weight:500;
   position:sticky;
@@ -152,6 +154,7 @@ table.shift th.name-col{
   left:0;
   z-index:10;
   background:var(--mint);
+  width:120px;
   min-width:110px;
   max-width:140px;
   overflow:hidden;
@@ -162,14 +165,17 @@ table.shift th.name-col{
 }
 table.shift thead th.name-col{z-index:15;background:var(--ocean);}
 table.shift td.cell{
+  width:34px;
   min-width:34px;
   height:40px;
   cursor:pointer;
   font-weight:700;
   user-select:none;
+  overflow:hidden;
 }
 table.shift td.total-col,table.shift th.total-col{
   background:var(--mist);
+  width:44px;
   min-width:44px;
   font-weight:700;
 }
@@ -213,7 +219,7 @@ tr.oncall-row th.name-col{font-size:0.72rem;font-weight:500;color:var(--gray);ba
 td.c-夜{background:var(--ink);color:var(--white);}
 td.c-明{background:var(--mist);color:var(--gray);}
 td.c-休{background:var(--white);color:var(--gray);font-weight:400;}
-td.c-希休{background:var(--mist);color:var(--sand);font-weight:700;}
+td.c-希休{background:var(--mist);color:var(--sand);font-weight:700;font-size:0.66rem !important;letter-spacing:-0.06em;}
 td.c-有{background:#DCEBE9;color:var(--green);}
 
 /* チェック行 */
@@ -842,6 +848,7 @@ tr.summary-row:first-of-type td{border-top:2px solid var(--ocean);}
 /* ================= 修正ログ =================
    コードを変更したら必ずここに1行追加すること */
 const CHANGELOG_DATA = [
+  { version: 'v1.26.0', date: '2026-07-24', label: 'バグ修正', text: 'シフト表で、日によってマスの幅が小さくなる(列によって太さがバラつく)不具合を修正。訪看・希休のような2文字コードや氏名の長さによって、その列を含む日付だけ表の列幅が自動計算で変わってしまっていたのが原因。表の列幅を固定するように変更し、どの日も同じ幅で揃うようにした' },
   { version: 'v1.25.0', date: '2026-07-24', label: 'バグ修正', text: '職員編集フォームで資格をチェックした後、一覧側の「保存」ボタン(早番可・遅番可等のチェック用)を押すと資格の変更が保存されずに消えてしまう不具合を修正。編集フォームを開いたまま一覧側の保存ボタンを押した場合も、フォームの資格チェックを一緒に保存するように変更。あわせて、組織図からの拠点・職員の一括取り込み時にも、取り込んだ職員がすぐ休み希望入力システム(kibou)で選べるよう、取り込み時点でクラウドへ自動保存するように変更(従来は新規登録フォームからの追加のみ自動保存対象だった)' },
   { version: 'v1.24.0', date: '2026-07-24', label: '改善', text: 'シフト表でその日の送迎担当が一目でわかるように、担当者のマスに「送」マークを表示し、【送迎担当】の一覧行を追加(拠点のルート数ぶん、送迎可の職員から自動で算出。手入力でシフトを変えても常に現在の状態と一致)。希望休(kibou)を通常の「休」と区別できるよう、専用コード「希休」で表示するように変更(自動作成でも希望休だけを保持、通常の休みと見分けがつくように)。手動でマスを直接「休」に変えた場合は希望休として記録されなくなり、「希休」を選んだ場合のみ希望休として記録される' },
   { version: 'v1.23.0', date: '2026-07-24', label: '新機能', text: '支配人・計画作成も職員一覧のチェックで「送迎ルートに入れる(運転可)」を設定できるように追加(自動作成で送迎ルートの候補にも含まれる)。拠点・職員を新規登録した時点で自動的にクラウドへ保存するように変更し、休み希望入力システム(kibou)にすぐ反映されるようにした(既存の拠点・職員の編集時は従来どおり手動保存のまま)' },
