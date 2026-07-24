@@ -512,6 +512,7 @@ tr.summary-row:first-of-type td{border-top:2px solid var(--ocean);}
     <button class="btn btn-secondary" id="btnCsv">CSV</button>
     <button class="btn btn-secondary" id="btnPrint">印刷</button>
     <button class="btn btn-warn" id="btnCloudSave">クラウド保存<span id="dirtyDot"></span></button>
+    <button class="btn btn-secondary" id="btnKinmuKeitai">勤務形態一覧表</button>
   </div>
 
   <div class="print-title" id="printTitle"></div>
@@ -835,6 +836,7 @@ tr.summary-row:first-of-type td{border-top:2px solid var(--ocean);}
 /* ================= 修正ログ =================
    コードを変更したら必ずここに1行追加すること */
 const CHANGELOG_DATA = [
+  { version: 'v1.22.0', date: '2026-07-24', label: '新機能', text: 'シフト表に「勤務形態一覧表」出力ボタンを追加。行政提出様式(標準様式1「従業者の勤務の体制及び勤務形態一覧表」看護小規模多機能型居宅介護)にそのまま使えるxlsxファイルを、拠点名・職員の職種/勤務形態/資格/氏名・日々のシフト記号ごと自動生成する(看多機の拠点のみ、暦月集計)。シフト記号表(勤務時間帯)は時刻・休憩時間の入力が不要な「勤務時間数を直接入力する」方式で自動作成するため、始業・終業時刻の入力は一切不要。管理者の資格欄と兼務状況欄のみ、出力後にExcelで手入力が必要' },
   { version: 'v1.21.0', date: '2026-07-24', label: 'バグ修正', text: '入力した資格情報・拠点情報などが消えてしまう不具合を修正。この端末に保存したがクラウドへは未反映の変更がある状態でアプリを開くと、自動読み込みで上書きされて消えていた(未保存フラグが端末に保存されていなかったため)。未保存フラグを端末にも保存し、次回起動時は先に未保存の内容をクラウドへ保存してから読み込むように変更。拠点の編集画面でも、保存せず別の拠点の「編集」を押した際に確認ダイアログを出すように(職員の編集画面と同様)' },
   { version: 'v1.20.0', date: '2026-07-24', label: '改善', text: '支配人・計画作成も保有資格(介護福祉士など)を編集画面で入力できるように追加。介護福祉士の勤務時間割合の集計にも支配人・計画作成を含めるように対象を拡大(半日勤務は4時間として計算)。介護福祉士とその他の介護資格を両方チェックしている場合は、資格バッジの表示は介護福祉士を優先(看護側の資格表示は対象外)' },
   { version: 'v1.19.0', date: '2026-07-24', label: '新機能', text: '職員の編集画面で保有資格をチェックできるように(介護福祉士・実務経験・初任者・認知症初期研修・無資格・准看護師/看護師は専門管理・精神訪問看護)。シフト表の職員名欄にチェック済み資格を略称バッジで表示。シフト表の最下部にサービス提供体制強化加算の判定用【介護士総時間数】【介護福祉士時間数】【介護福祉士の割合】を追加(対象: 介護正社員・非常勤・夜勤専従・送迎ドライバー。夜勤は18時間固定で計算)' },
@@ -2525,6 +2527,359 @@ function exportCsv(){
   URL.revokeObjectURL(a.href);
 }
 
+/* ================= 勤務形態一覧表(行政提出様式)出力 =================
+ * 「2-3_標準様式1_08_勤務表_看護小規模多機能型居宅介護.xlsx」の公式テンプレートに
+ * シフトデータを流し込んで出力する。テンプレートはkinmukeitai_template.xlsxとして
+ * 同じフォルダに配置し、外部ライブラリを使わずブラウザ標準API(CompressionStream/
+ * DecompressionStream・DOMParser)だけでzip(xlsx)を読み書きする。
+ * ・「看多機(50人)」シート: 定員50名分(row21〜168、3行1ブロック)
+ * ・「シフト記号表（勤務時間帯）」シート: 時刻ではなく勤務時間数を直接入力する方式
+ *   (No18〜33 / row23〜38)を使うことで、始業・終業・休憩時刻の入力を不要にしている
+ */
+const KINMU_LEGEND_ROWS = [23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38]; // 最大16種類の(日中,夜間)時間の組み合わせ
+const KINMU_STAFF_BLOCK_COUNT = 50; // 「看多機(50人)」の定員
+const KINMU_STAFF_FIRST_ROW = 21;
+const KINMU_NIGHT_DAY_HOURS = 7;   // 夜勤(16時〜翌10時)のうち日中(7〜20時)にあたる時間
+const KINMU_NIGHT_NIGHT_HOURS = 11; // 夜勤のうち夜間・深夜(20〜7時)にあたる時間
+const KINMU_FULLTIME_THRESHOLD = 160; // 常勤の従業者が勤務すべき時間数(様式(3)の既定値、時間/月)
+const OOXML_NS = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main';
+
+function kinmuColLetter(n){ // 1始まりの列番号 → Excel列名(21→U, 51→AY)
+  let s = '';
+  while(n > 0){
+    const rem = (n - 1) % 26;
+    s = String.fromCharCode(65 + rem) + s;
+    n = Math.floor((n - 1) / 26);
+  }
+  return s;
+}
+function kinmuJobType(s){
+  if(s.role === 'shihainin') return '管理者';
+  if(s.role === 'keikaku') return '介護支援専門員'; // サテライト型でない前提
+  if(isNurse(s)) return '看護職員';
+  return '介護従業者'; // kaigo_full, kaigo_part, yakin(夜勤専従), driver(送迎)
+}
+function kinmuQualification(s){
+  if(s.role === 'keikaku') return '介護支援専門員';
+  if(isNurse(s)) return (s.quals || []).includes('junkangoshi') ? '准看護師' : '看護師';
+  if(s.role === 'shihainin') return ''; // 研修修了名等はこの様式では自動判定できないため空欄(手入力が必要)
+  return (s.quals || []).includes('kaigofukushi') ? '介護福祉士' : '';
+}
+// そのコードの1日あたりの(日中の時間, 夜間・深夜の時間)。勤務がない日はnull
+function kinmuHoursSplit(s, code){
+  if(code === '夜') return [KINMU_NIGHT_DAY_HOURS, KINMU_NIGHT_NIGHT_HOURS];
+  if(code === '訪看') return [dayHoursFor(s), 0];
+  const h = hoursForCode(s, code); // 早/日/遅/半/リ/訪介はここで判定(休/明/有等は0)
+  return h > 0 ? [h, 0] : null;
+}
+
+/* ---- ZIP(xlsx)読み書き用の最小実装。外部ライブラリは使わない ---- */
+function kinmuReadU16(buf, off){ return buf[off] | (buf[off+1] << 8); }
+function kinmuReadU32(buf, off){ return (buf[off] | (buf[off+1] << 8) | (buf[off+2] << 16) | (buf[off+3] << 24)) >>> 0; }
+function kinmuWriteU16(arr, off, val){ arr[off] = val & 0xff; arr[off+1] = (val >>> 8) & 0xff; }
+function kinmuWriteU32(arr, off, val){
+  arr[off] = val & 0xff; arr[off+1] = (val >>> 8) & 0xff;
+  arr[off+2] = (val >>> 16) & 0xff; arr[off+3] = (val >>> 24) & 0xff;
+}
+function kinmuFindEocd(buf){
+  const minLen = 22, maxCommentLen = 65535;
+  const start = Math.max(0, buf.length - minLen - maxCommentLen);
+  for(let i = buf.length - minLen; i >= start; i--){
+    if(kinmuReadU32(buf, i) === 0x06054b50) return i;
+  }
+  throw new Error('zipの終端レコードが見つかりません');
+}
+function kinmuParseZip(buf){
+  const eocdOff = kinmuFindEocd(buf);
+  const cdOffset = kinmuReadU32(buf, eocdOff + 16);
+  const cdCount = kinmuReadU16(buf, eocdOff + 10);
+  const entries = [];
+  let off = cdOffset;
+  const decoder = new TextDecoder('utf-8');
+  for(let i = 0; i < cdCount; i++){
+    if(kinmuReadU32(buf, off) !== 0x02014b50) throw new Error('中央ディレクトリの解析に失敗しました');
+    const method = kinmuReadU16(buf, off + 10);
+    const crc = kinmuReadU32(buf, off + 16);
+    const compSize = kinmuReadU32(buf, off + 20);
+    const uncompSize = kinmuReadU32(buf, off + 24);
+    const fnLen = kinmuReadU16(buf, off + 28);
+    const extraLen = kinmuReadU16(buf, off + 30);
+    const commentLen = kinmuReadU16(buf, off + 32);
+    const localHeaderOffset = kinmuReadU32(buf, off + 42);
+    const name = decoder.decode(buf.subarray(off + 46, off + 46 + fnLen));
+    entries.push({ name, method, crc, compSize, uncompSize, localHeaderOffset });
+    off += 46 + fnLen + extraLen + commentLen;
+  }
+  entries.forEach(e => {
+    const lo = e.localHeaderOffset;
+    if(kinmuReadU32(buf, lo) !== 0x04034b50) throw new Error('ローカルヘッダーの解析に失敗しました: ' + e.name);
+    const lfnLen = kinmuReadU16(buf, lo + 26);
+    const lextraLen = kinmuReadU16(buf, lo + 28);
+    const dataOffset = lo + 30 + lfnLen + lextraLen;
+    e.data = buf.subarray(dataOffset, dataOffset + e.compSize);
+  });
+  return entries;
+}
+async function kinmuInflate(bytes){
+  const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
+  return new Uint8Array(await new Response(stream).arrayBuffer());
+}
+async function kinmuDeflate(bytes){
+  const stream = new Blob([bytes]).stream().pipeThrough(new CompressionStream('deflate-raw'));
+  return new Uint8Array(await new Response(stream).arrayBuffer());
+}
+async function kinmuGetUncompressed(entry){
+  if(entry.method === 0) return entry.data.slice();
+  if(entry.method === 8) return await kinmuInflate(entry.data);
+  throw new Error('未対応の圧縮方式です: ' + entry.name);
+}
+const KINMU_CRC32_TABLE = (() => {
+  const t = new Uint32Array(256);
+  for(let n = 0; n < 256; n++){
+    let c = n;
+    for(let k = 0; k < 8; k++){ c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1); }
+    t[n] = c >>> 0;
+  }
+  return t;
+})();
+function kinmuCrc32(bytes){
+  let c = 0xFFFFFFFF;
+  for(let i = 0; i < bytes.length; i++) c = KINMU_CRC32_TABLE[(c ^ bytes[i]) & 0xFF] ^ (c >>> 8);
+  return (c ^ 0xFFFFFFFF) >>> 0;
+}
+function kinmuBuildZip(entries){
+  const localParts = [], centralParts = [];
+  const encoder = new TextEncoder();
+  let offset = 0;
+  entries.forEach(e => {
+    const nameBytes = encoder.encode(e.name);
+    const local = new Uint8Array(30 + nameBytes.length);
+    kinmuWriteU32(local, 0, 0x04034b50);
+    kinmuWriteU16(local, 4, 20);
+    kinmuWriteU16(local, 6, 0);
+    kinmuWriteU16(local, 8, e.method);
+    kinmuWriteU16(local, 10, 0);
+    kinmuWriteU16(local, 12, 0x21);
+    kinmuWriteU32(local, 14, e.crc);
+    kinmuWriteU32(local, 18, e.data.length);
+    kinmuWriteU32(local, 22, e.uncompSize);
+    kinmuWriteU16(local, 26, nameBytes.length);
+    kinmuWriteU16(local, 28, 0);
+    local.set(nameBytes, 30);
+    localParts.push(local, e.data);
+
+    const central = new Uint8Array(46 + nameBytes.length);
+    kinmuWriteU32(central, 0, 0x02014b50);
+    kinmuWriteU16(central, 4, 20);
+    kinmuWriteU16(central, 6, 20);
+    kinmuWriteU16(central, 8, 0);
+    kinmuWriteU16(central, 10, e.method);
+    kinmuWriteU16(central, 12, 0);
+    kinmuWriteU16(central, 14, 0x21);
+    kinmuWriteU32(central, 16, e.crc);
+    kinmuWriteU32(central, 20, e.data.length);
+    kinmuWriteU32(central, 24, e.uncompSize);
+    kinmuWriteU16(central, 28, nameBytes.length);
+    kinmuWriteU16(central, 30, 0);
+    kinmuWriteU16(central, 32, 0);
+    kinmuWriteU16(central, 34, 0);
+    kinmuWriteU16(central, 36, 0);
+    kinmuWriteU32(central, 38, 0);
+    kinmuWriteU32(central, 42, offset);
+    central.set(nameBytes, 46);
+    centralParts.push(central);
+
+    offset += local.length + e.data.length;
+  });
+  const cdStart = offset;
+  let cdSize = 0;
+  centralParts.forEach(c => { cdSize += c.length; });
+  const eocd = new Uint8Array(22);
+  kinmuWriteU32(eocd, 0, 0x06054b50);
+  kinmuWriteU16(eocd, 8, entries.length);
+  kinmuWriteU16(eocd, 10, entries.length);
+  kinmuWriteU32(eocd, 12, cdSize);
+  kinmuWriteU32(eocd, 16, cdStart);
+  const allParts = [...localParts, ...centralParts, eocd];
+  const total = allParts.reduce((s, p) => s + p.length, 0);
+  const out = new Uint8Array(total);
+  let p = 0;
+  allParts.forEach(part => { out.set(part, p); p += part.length; });
+  return out;
+}
+
+/* ---- シートXML(セル単位)の読み書き ---- */
+function kinmuParseSheetXml(bytes){
+  const text = new TextDecoder('utf-8').decode(bytes);
+  const doc = new DOMParser().parseFromString(text, 'application/xml');
+  if(doc.querySelector('parsererror')) throw new Error('シートXMLの解析に失敗しました');
+  return doc;
+}
+function kinmuSerializeXml(doc){
+  const body = new XMLSerializer().serializeToString(doc);
+  // ブラウザによってはXMLSerializerが<?xml ...?>宣言を既に含めるため、重複させない
+  const text = body.startsWith('<?xml') ? body : '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\r\n' + body;
+  return new TextEncoder().encode(text);
+}
+function kinmuSetNumber(doc, ref, value){
+  const el = doc.querySelector(`c[r="${ref}"]`);
+  if(!el) throw new Error('セルが見つかりません: ' + ref);
+  el.removeAttribute('t');
+  while(el.firstChild) el.removeChild(el.firstChild);
+  const v = doc.createElementNS(OOXML_NS, 'v');
+  v.textContent = String(value);
+  el.appendChild(v);
+}
+function kinmuSetText(doc, ref, text){
+  const el = doc.querySelector(`c[r="${ref}"]`);
+  if(!el) throw new Error('セルが見つかりません: ' + ref);
+  el.setAttribute('t', 'inlineStr');
+  while(el.firstChild) el.removeChild(el.firstChild);
+  const is = doc.createElementNS(OOXML_NS, 'is');
+  const t = doc.createElementNS(OOXML_NS, 't');
+  t.textContent = text == null ? '' : String(text);
+  is.appendChild(t);
+  el.appendChild(is);
+}
+
+async function exportKinmuKeitai(){
+  const fac = currentFacility();
+  if(!fac){ toast('拠点がありません'); return; }
+  if(fac.type !== 'kantaki'){ toast('勤務形態一覧表は看護小規模多機能型居宅介護(看多機)の拠点のみ出力できます'); return; }
+  if(typeof DecompressionStream === 'undefined' || typeof CompressionStream === 'undefined'){
+    toast('お使いのブラウザは非対応です(最新のChromeまたはEdgeでお試しください)');
+    return;
+  }
+
+  toast('勤務形態一覧表を作成中…');
+  try{
+    const res = await fetch('./kinmukeitai_template.xlsx');
+    if(!res.ok) throw new Error('テンプレートファイル(kinmukeitai_template.xlsx)を取得できませんでした');
+    const buf = new Uint8Array(await res.arrayBuffer());
+    const entries = kinmuParseZip(buf);
+    const byName = {};
+    entries.forEach(e => { byName[e.name] = e; });
+
+    const dim = daysInMonth(currentYm);
+    const g = grid();
+    const rosterAll = facStaff();
+    if(rosterAll.length > KINMU_STAFF_BLOCK_COUNT){
+      toast(`職員数が定員(${KINMU_STAFF_BLOCK_COUNT}名)を超えるため、先頭${KINMU_STAFF_BLOCK_COUNT}名のみ出力します`);
+    }
+
+    function monthlyHours(s){
+      let total = 0;
+      for(let d = 1; d <= dim; d++){
+        const split = kinmuHoursSplit(s, getCode(g, s.id, d));
+        if(split) total += split[0] + split[1];
+      }
+      return total;
+    }
+    function workPattern(hours){ return hours >= KINMU_FULLTIME_THRESHOLD ? 'A' : 'C'; }
+
+    const roster = rosterAll.slice(0, KINMU_STAFF_BLOCK_COUNT)
+      .map(s => ({ s, hours: monthlyHours(s) }))
+      .sort((a, b) => {
+        const ra = ROLE_ORDER[a.s.role] ?? 9, rb = ROLE_ORDER[b.s.role] ?? 9;
+        if(ra !== rb) return ra - rb;
+        const pa = workPattern(a.hours), pb = workPattern(b.hours);
+        return pa === pb ? 0 : (pa === 'A' ? -1 : 1);
+      });
+
+    // 使われている(日中時間,夜間時間)の組み合わせをシフト記号表の空き行に割り当てる(最大16種類)
+    const comboKey = (d, n) => `${d}_${n}`;
+    const comboMap = new Map();
+    let overflow = false;
+    function assignSymbol(dayH, nightH){
+      const key = comboKey(dayH, nightH);
+      if(comboMap.has(key)) return comboMap.get(key).symbol;
+      if(comboMap.size >= KINMU_LEGEND_ROWS.length){ overflow = true; return null; }
+      const row = KINMU_LEGEND_ROWS[comboMap.size];
+      const symbol = 'p' + (comboMap.size + 1);
+      comboMap.set(key, { day: dayH, night: nightH, row, symbol });
+      return symbol;
+    }
+    roster.forEach(({ s }) => {
+      for(let d = 1; d <= dim; d++){
+        const split = kinmuHoursSplit(s, getCode(g, s.id, d));
+        if(split) assignSymbol(split[0], split[1]);
+      }
+    });
+    if(overflow) toast('勤務時間の組み合わせが多いため、一部の日を空欄で出力しました(様式の上限16種類)');
+
+    // --- シフト記号表（勤務時間帯） ---
+    const sheet4Bytes = await kinmuGetUncompressed(byName['xl/worksheets/sheet4.xml']);
+    const sheet4Doc = kinmuParseSheetXml(sheet4Bytes);
+    comboMap.forEach(combo => {
+      kinmuSetText(sheet4Doc, `C${combo.row}`, combo.symbol);
+      kinmuSetNumber(sheet4Doc, `L${combo.row}`, combo.day + combo.night);
+      kinmuSetNumber(sheet4Doc, `X${combo.row}`, combo.day);
+      kinmuSetNumber(sheet4Doc, `Z${combo.row}`, combo.night);
+    });
+    const sheet4Out = kinmuSerializeXml(sheet4Doc);
+
+    // --- 看多機(50人) ---
+    const sheet3Bytes = await kinmuGetUncompressed(byName['xl/worksheets/sheet3.xml']);
+    const sheet3Doc = kinmuParseSheetXml(sheet3Bytes);
+    const year = +currentYm.slice(0, 4), month = +currentYm.slice(4, 6);
+    kinmuSetNumber(sheet3Doc, 'AA2', year - 2018); // 令和年
+    kinmuSetNumber(sheet3Doc, 'AH2', month);
+    kinmuSetText(sheet3Doc, 'AR2', fac.name);
+    kinmuSetText(sheet3Doc, 'BC3', '暦月');
+    const avgUsers = Math.round((fac.usersByWd || []).reduce((a, b) => a + (+b || 0), 0) / 7);
+    kinmuSetNumber(sheet3Doc, 'BC10', avgUsers);
+    roster.forEach(({ s, hours }, i) => {
+      const row = KINMU_STAFF_FIRST_ROW + 3 * i;
+      kinmuSetText(sheet3Doc, `C${row}`, kinmuJobType(s));
+      kinmuSetText(sheet3Doc, `H${row}`, workPattern(hours));
+      const q = kinmuQualification(s);
+      if(q) kinmuSetText(sheet3Doc, `I${row}`, q);
+      kinmuSetText(sheet3Doc, `M${row}`, s.name);
+      for(let d = 1; d <= dim; d++){
+        const split = kinmuHoursSplit(s, getCode(g, s.id, d));
+        if(!split) continue;
+        const combo = comboMap.get(comboKey(split[0], split[1]));
+        if(combo) kinmuSetText(sheet3Doc, kinmuColLetter(20 + d) + row, combo.symbol);
+      }
+    });
+    const sheet3Out = kinmuSerializeXml(sheet3Doc);
+
+    // --- workbook.xml: 開いた時に全セルを再計算させる(キャッシュされた古い数式結果を残さない) ---
+    const wbBytes = await kinmuGetUncompressed(byName['xl/workbook.xml']);
+    const wbDoc = kinmuParseSheetXml(wbBytes);
+    const calcPr = wbDoc.querySelector('calcPr');
+    if(calcPr) calcPr.setAttribute('fullCalcOnLoad', '1');
+    const wbOut = kinmuSerializeXml(wbDoc);
+
+    // --- zip再構築(変更した3ファイルのみ再圧縮、それ以外は元のバイト列のまま) ---
+    const modified = {
+      'xl/worksheets/sheet3.xml': sheet3Out,
+      'xl/worksheets/sheet4.xml': sheet4Out,
+      'xl/workbook.xml': wbOut,
+    };
+    const outEntries = [];
+    for(const e of entries){
+      if(modified[e.name]){
+        const raw = modified[e.name];
+        const compressed = await kinmuDeflate(raw);
+        outEntries.push({ name: e.name, data: compressed, method: 8, crc: kinmuCrc32(raw), uncompSize: raw.length });
+      }else{
+        outEntries.push({ name: e.name, data: e.data, method: e.method, crc: e.crc, uncompSize: e.uncompSize });
+      }
+    }
+    const zipBytes = kinmuBuildZip(outEntries);
+    const blob = new Blob([zipBytes], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `勤務形態一覧表_${fac.name}_${currentYm}.xlsx`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+    toast('勤務形態一覧表を出力しました');
+  }catch(e){
+    toast('出力に失敗しました: ' + e.message);
+  }
+}
+
 /* ================= JSONバックアップ ================= */
 function exportJson(){
   const blob = new Blob([JSON.stringify({
@@ -2684,6 +3039,7 @@ function bindEvents(){
     }
   });
   document.getElementById('btnCsv').addEventListener('click', exportCsv);
+  document.getElementById('btnKinmuKeitai').addEventListener('click', exportKinmuKeitai);
   document.getElementById('btnPrint').addEventListener('click', () => window.print());
   document.getElementById('btnCloudSave').addEventListener('click', gasSave);
 
