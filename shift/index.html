@@ -202,12 +202,18 @@ table.shift td.cell{position:relative;}
   position:absolute;top:0;right:1px;
   font-size:0.55rem;font-weight:700;color:var(--danger);line-height:1.1;
 }
+/* その日の送迎担当のマーク(マスの左上に小さく「送」) */
+.drv-mark{
+  position:absolute;top:0;left:1px;
+  font-size:0.55rem;font-weight:700;color:var(--sand);line-height:1.1;
+}
 tr.oncall-row td{height:34px;font-size:0.7rem;cursor:pointer;background:var(--white);}
 tr.oncall-row td.oc-set{background:#F5E9E5;color:var(--danger);font-weight:700;}
 tr.oncall-row th.name-col{font-size:0.72rem;font-weight:500;color:var(--gray);background:var(--mist);}
 td.c-夜{background:var(--ink);color:var(--white);}
 td.c-明{background:var(--mist);color:var(--gray);}
 td.c-休{background:var(--white);color:var(--gray);font-weight:400;}
+td.c-希休{background:var(--mist);color:var(--sand);font-weight:700;}
 td.c-有{background:#DCEBE9;color:var(--green);}
 
 /* チェック行 */
@@ -382,7 +388,7 @@ tr.summary-row:first-of-type td{border-top:2px solid var(--ocean);}
 }
 .wish-days button small{display:block;font-size:0.6rem;font-weight:400;color:var(--gray);}
 .wish-days button.w-kibou{background:var(--mist);}
-.wish-days button.w-kibou::after{content:"休";display:block;font-size:0.62rem;color:var(--gray);}
+.wish-days button.w-kibou::after{content:"希休";display:block;font-size:0.62rem;color:var(--gray);}
 .wish-days button.w-yukyu{background:#DCEBE9;border-color:var(--green);color:var(--green);}
 .wish-days button.w-yukyu::after{content:"有";display:block;font-size:0.62rem;color:var(--green);}
 
@@ -836,6 +842,7 @@ tr.summary-row:first-of-type td{border-top:2px solid var(--ocean);}
 /* ================= 修正ログ =================
    コードを変更したら必ずここに1行追加すること */
 const CHANGELOG_DATA = [
+  { version: 'v1.24.0', date: '2026-07-24', label: '改善', text: 'シフト表でその日の送迎担当が一目でわかるように、担当者のマスに「送」マークを表示し、【送迎担当】の一覧行を追加(拠点のルート数ぶん、送迎可の職員から自動で算出。手入力でシフトを変えても常に現在の状態と一致)。希望休(kibou)を通常の「休」と区別できるよう、専用コード「希休」で表示するように変更(自動作成でも希望休だけを保持、通常の休みと見分けがつくように)。手動でマスを直接「休」に変えた場合は希望休として記録されなくなり、「希休」を選んだ場合のみ希望休として記録される' },
   { version: 'v1.23.0', date: '2026-07-24', label: '新機能', text: '支配人・計画作成も職員一覧のチェックで「送迎ルートに入れる(運転可)」を設定できるように追加(自動作成で送迎ルートの候補にも含まれる)。拠点・職員を新規登録した時点で自動的にクラウドへ保存するように変更し、休み希望入力システム(kibou)にすぐ反映されるようにした(既存の拠点・職員の編集時は従来どおり手動保存のまま)' },
   { version: 'v1.22.0', date: '2026-07-24', label: '新機能', text: 'シフト表に「勤務形態一覧表」出力ボタンを追加。行政提出様式(標準様式1「従業者の勤務の体制及び勤務形態一覧表」看護小規模多機能型居宅介護)にそのまま使えるxlsxファイルを、拠点名・職員の職種/勤務形態/資格/氏名・日々のシフト記号ごと自動生成する(看多機の拠点のみ、暦月集計)。シフト記号表(勤務時間帯)は時刻・休憩時間の入力が不要な「勤務時間数を直接入力する」方式で自動作成するため、始業・終業時刻の入力は一切不要。管理者の資格欄と兼務状況欄のみ、出力後にExcelで手入力が必要' },
   { version: 'v1.21.0', date: '2026-07-24', label: 'バグ修正', text: '入力した資格情報・拠点情報などが消えてしまう不具合を修正。この端末に保存したがクラウドへは未反映の変更がある状態でアプリを開くと、自動読み込みで上書きされて消えていた(未保存フラグが端末に保存されていなかったため)。未保存フラグを端末にも保存し、次回起動時は先に未保存の内容をクラウドへ保存してから読み込むように変更。拠点の編集画面でも、保存せず別の拠点の「編集」を押した際に確認ダイアログを出すように(職員の編集画面と同様)' },
@@ -866,7 +873,7 @@ const CHANGELOG_DATA = [
 
 /* ================= 定数 ================= */
 const WD_CHARS = ['日','月','火','水','木','金','土'];
-const CODES = ['早','日','遅','半','リ','訪介','訪看','夜','明','休','有'];
+const CODES = ['早','日','遅','半','リ','訪介','訪看','夜','明','休','希休','有']; // 希休=希望休(申請に基づく休み。休とは自動作成でも区別する)
 // 日中勤務として数えるコード(訪介=訪問介護担当、訪看=訪問看護ルートの看護師、半=支配人・計画作成の半日勤務)
 const DAY_CODES = ['早','日','遅','半','リ','訪介','訪看']; // リ=日勤リーダー
 // 常勤換算(FTE)に含める日中コード。訪問介護・訪問看護は別枠のため含めない
@@ -1029,7 +1036,7 @@ function countYukyu(staffId){
   const w = wishGrid()[staffId] || {};
   return Object.values(w).filter(v => v === 'yukyu').length;
 }
-function wishToCode(kind){ return kind === 'yukyu' ? '有' : (kind === 'kibou' ? '休' : ''); }
+function wishToCode(kind){ return kind === 'yukyu' ? '有' : (kind === 'kibou' ? '希休' : ''); }
 
 /* ---- 曜日別の通い利用者数 ---- */
 function usersFor(fac, wd){
@@ -1757,6 +1764,20 @@ function renderShiftTable(){
   }
   html += '<th class="total-col">勤務</th></tr></thead><tbody>';
 
+  // その日、実際に送迎ルートを担当している職員(専任ドライバーを優先し、拠点のルート数ぶん)。
+  // 保存された割当ではなく、現在の勤務コード+送迎可フラグからその都度算出するため、
+  // 手入力でシフトを変えても常に今の状態と一致する
+  function driversForDay(d){
+    const routes = routesOf(fac, weekdayOf(currentYm, d));
+    if(routes <= 0) return new Set();
+    const candidates = rosterAll
+      .filter(s => DAY_CODES.includes(getCode(g, s.id, d)) && canDoDrive(s))
+      .sort((a, b) => (a.role === 'driver' ? 0 : 1) - (b.role === 'driver' ? 0 : 1));
+    return new Set(candidates.slice(0, routes).map(s => s.id));
+  }
+  const driversByDay = {};
+  for(let d = 1; d <= dim; d++) driversByDay[d] = driversForDay(d);
+
   const roleBadge = s => {
     let b;
     if(isNurse(s)) b = '<span class="role-badge ns">看</span>';
@@ -1785,7 +1806,8 @@ function renderShiftTable(){
       const c = getCode(g, s.id, d);
       if(isWorkCode(c)) workCount += (c === '夜' ? 2 : 1); // 夜勤は2日分
       const oc = ocMap[d] === s.id ? '<span class="oc-mark">オ</span>' : '';
-      html += `<td class="cell c-${c || 'none'}" data-staff="${s.id}" data-day="${d}">${c || ''}${oc}</td>`;
+      const drv = driversByDay[d].has(s.id) ? '<span class="drv-mark" title="送迎担当">送</span>' : '';
+      html += `<td class="cell c-${c || 'none'}" data-staff="${s.id}" data-day="${d}">${c || ''}${oc}${drv}</td>`;
     }
     html += `<td class="total-col">${workCount}</td></tr>`;
   });
@@ -1807,6 +1829,17 @@ function renderShiftTable(){
       }
       html += '<td class="total-col"></td></tr>';
     });
+    // 送迎担当(誰が送迎ルートに入っているか、日ごとに氏名で一目でわかるように表示)
+    if(!nsOnly){
+      html += '<tr class="summary-row"><th class="name-col">【送迎担当】</th>';
+      for(let d = 1; d <= dim; d++){
+        const names = [...driversByDay[d]]
+          .map(id => { const s = rosterAll.find(x => x.id === id); return s ? escapeHtml(s.name.slice(0, 2)) : ''; })
+          .join('・');
+        html += `<td>${names}</td>`;
+      }
+      html += '<td class="total-col"></td></tr>';
+    }
     // 常勤換算数(訪問介護・訪問看護は含めない。訪看担当以外の看護師は含めてよい)
     if(!nsOnly){
       html += '<tr class="summary-row"><th class="name-col">【常勤換算】</th>';
@@ -3007,9 +3040,9 @@ function openOncallPicker(day){
 function applyPick(code){
   if(!pickerTarget) return;
   setCode(grid(), pickerTarget.staffId, pickerTarget.day, code);
-  // 「休」「有」は希望休・有給として記録し、自動作成でも保持する
+  // 「希休」「有」は希望休・有給として記録し、自動作成でも保持する(「休」は通常の休みとして扱う)
   setWish(pickerTarget.staffId, pickerTarget.day,
-    code === '休' ? 'kibou' : (code === '有' ? 'yukyu' : ''));
+    code === '希休' ? 'kibou' : (code === '有' ? 'yukyu' : ''));
   markDirty();
   closePicker();
   renderShiftTable();
