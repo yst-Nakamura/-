@@ -835,6 +835,7 @@ tr.summary-row:first-of-type td{border-top:2px solid var(--ocean);}
 /* ================= 修正ログ =================
    コードを変更したら必ずここに1行追加すること */
 const CHANGELOG_DATA = [
+  { version: 'v1.21.0', date: '2026-07-24', label: 'バグ修正', text: '入力した資格情報・拠点情報などが消えてしまう不具合を修正。この端末に保存したがクラウドへは未反映の変更がある状態でアプリを開くと、自動読み込みで上書きされて消えていた(未保存フラグが端末に保存されていなかったため)。未保存フラグを端末にも保存し、次回起動時は先に未保存の内容をクラウドへ保存してから読み込むように変更。拠点の編集画面でも、保存せず別の拠点の「編集」を押した際に確認ダイアログを出すように(職員の編集画面と同様)' },
   { version: 'v1.20.0', date: '2026-07-24', label: '改善', text: '支配人・計画作成も保有資格(介護福祉士など)を編集画面で入力できるように追加。介護福祉士の勤務時間割合の集計にも支配人・計画作成を含めるように対象を拡大(半日勤務は4時間として計算)。介護福祉士とその他の介護資格を両方チェックしている場合は、資格バッジの表示は介護福祉士を優先(看護側の資格表示は対象外)' },
   { version: 'v1.19.0', date: '2026-07-24', label: '新機能', text: '職員の編集画面で保有資格をチェックできるように(介護福祉士・実務経験・初任者・認知症初期研修・無資格・准看護師/看護師は専門管理・精神訪問看護)。シフト表の職員名欄にチェック済み資格を略称バッジで表示。シフト表の最下部にサービス提供体制強化加算の判定用【介護士総時間数】【介護福祉士時間数】【介護福祉士の割合】を追加(対象: 介護正社員・非常勤・夜勤専従・送迎ドライバー。夜勤は18時間固定で計算)' },
   { version: 'v1.18.0', date: '2026-07-15', label: '改善', text: '夜勤明けの翌日を必ず休みにするように修正(夜勤入り→夜勤明け→休みの3日並びを自動生成)。固定夜勤者・代替夜勤の両方に適用(次の夜勤予定日と重なる場合は休みにしない)' },
@@ -1139,6 +1140,7 @@ function saveLocal(){
       facilities: state.facilities, staff: state.staff,
       shifts: state.shifts, wishes: state.wishes, oncalls: state.oncalls, gasUrl: state.gasUrl,
       currentFacId, currentYm,
+      dirty, // 未保存(クラウド未反映)かどうかを端末をまたいでも判定できるよう保存する
     }));
   }catch(e){ /* 容量超過など */ }
 }
@@ -1155,6 +1157,7 @@ function loadLocal(){
     state.gasUrl = d.gasUrl || '';
     currentFacId = d.currentFacId || null;
     if(d.currentYm) currentYm = d.currentYm;
+    dirty = !!d.dirty;
     normalizeData();
   }catch(e){ /* 壊れたデータは無視 */ }
 }
@@ -2301,6 +2304,7 @@ async function gasSave(){
     const data = await res.json();
     if(data.error) throw new Error(data.error);
     dirty = false;
+    saveLocal(); // 未保存フラグが端末に残らないよう、保存成功をローカルにも反映しておく
     updateDirtyDot();
     toast('クラウドに保存しました');
   }catch(e){
@@ -2873,6 +2877,11 @@ function bindEvents(){
     const editId = e.target.dataset.editfac;
     const delId = e.target.dataset.delfac;
     if(editId){
+      // 編集中に保存せず別の拠点の「編集」を押すと入力内容が消えるため、切り替え前に確認する
+      if(editingFacId && editingFacId !== editId){
+        const cur = state.facilities.find(f => f.id === editingFacId);
+        if(!confirm(`「${cur ? cur.name : ''}」の編集内容を保存せずに離れます。よろしいですか?`)) return;
+      }
       editingFacId = editId;
       fillFacForm(state.facilities.find(f => f.id === editId));
       window.scrollTo({ top:0, behavior:'smooth' });
@@ -2928,7 +2937,16 @@ fillStaffForm(null);
 fillFacForm(null);
 bindEvents();
 renderAll();
-if(state.gasUrl){ gasLoad(); }
+if(state.gasUrl){
+  if(dirty){
+    // 前回、この端末で保存(クラウド保存)しないまま終了していた場合。
+    // そのままクラウドから読み込むと未保存の変更が消えてしまうため、
+    // 先にこの端末の内容をクラウドへ保存してから読み込む(保存に失敗した場合は読み込みを行わない)
+    gasSave().then(() => { if(!dirty) gasLoad(); });
+  }else{
+    gasLoad();
+  }
+}
 </script>
 </body>
 </html>
