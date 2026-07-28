@@ -856,6 +856,7 @@ tr.summary-row:first-of-type td{border-top:2px solid var(--ocean);}
 /* ================= 修正ログ =================
    コードを変更したら必ずここに1行追加すること */
 const CHANGELOG_DATA = [
+  { version: 'v1.31.0', date: '2026-07-24', label: 'バグ修正', text: '送迎の割り当てが意図と逆になっていた不具合を修正。計画作成を月初1〜6日に送迎から外す処理で、除外を表す値が「最優先」と誤って解釈され、1〜6日にこそ計画作成が送迎に入ってしまっていた。①送迎ドライバー②送迎対応可能な介護職員③計画作成(月初1〜6日は対象外)④支配人、の順で正しく割り当てるように修正(勤務が「リ」「訪介」の職員も送迎の対象に含む)。あわせて職員一覧に「訪介除外」(介護: 訪問介護に割り当てない)「訪看除外」(看護: 訪問看護ルートに割り当てない)「訪問のみ」(看護: 訪問看護のみ対応、通い側の人員に数えない)のチェックを追加。※この修正を反映するにはGAS(コード.gs)の再デプロイが必要です' },
   { version: 'v1.30.0', date: '2026-07-24', label: 'バグ修正', text: '「資格情報が保存されない」の本当の原因が判明。GAS側(コード.gs)の職員シートに資格(quals)を保存する列がそもそも存在せず、クラウド保存・読み込みのたびに資格情報が黙って消えていた(v1.19.0で資格機能を追加した際、コード.gs側の対応が漏れていた)。コード.gsの職員シートに「資格」列を追加し、保存・読み込みの両方に対応。※この修正を反映するにはGAS(コード.gs)の再デプロイが必要です(v1.27.0のシフト確定機能の再デプロイがまだの場合は同時に反映できます)' },
   { version: 'v1.29.0', date: '2026-07-24', label: '改善', text: '送迎担当を割り当てる優先順位を変更。①送迎ドライバー②送迎対応可能な介護職員③計画作成④支配人、の順に優先し、支配人・計画作成は他に候補がいない場合の最後の手段としてのみ割り当てる(積極的には割り当てない)。計画作成は月初1〜6日は計画作成業務を優先するため送迎の対象から外す。シフト表の「送」マーク・【送迎担当】表示も同じ優先順位で表示するように統一' },
   { version: 'v1.28.0', date: '2026-07-24', label: 'バグ修正', text: '職員編集フォームで資格や非常勤の勤務時間帯(何時から何時)を入力した後、一覧側の「保存」ボタン(早番可・遅番可等のチェック用)を押すと、資格以外の変更(勤務時間帯・契約タイプ・勤務曜日など)が保存されずに消えてしまう不具合を修正。v1.25.0では資格チェックのみ対応していたが、フォームの入力内容すべて(氏名・職種・勤務時間帯・資格など)を一覧側の保存でも一緒に保存するように修正' },
@@ -1069,21 +1070,23 @@ function isParttime(s){ return s.role === 'kaigo_part' || s.role === 'ns_part'; 
 function isFixedPart(s){ return isParttime(s) && s.contractType === 'fixed'; }
 // 送迎に出られる職員(専任ドライバー or 運転可チェックあり)
 function canDoDrive(s){ return s.role === 'driver' || !!s.canDrive; }
-// 介護職員に加えて送迎ルートに入れる場合の優先順位(数値が小さいほど優先)。
-// 支配人・計画作成は積極的には割り当てず、他に運転可の候補がいない場合の最後の手段として使う。
-// 計画作成は月初1〜6日は計画作成業務を優先するため送迎の対象から外す(-1で除外)
-function driveFillRank(s, day){
-  if(!s.canDrive) return -1;
-  if(s.role === 'kaigo_full' || s.role === 'kaigo_part') return 0;
-  if(s.role === 'keikaku') return (day >= 1 && day <= 6) ? -1 : 1;
-  if(s.role === 'shihainin') return 2;
-  return 3; // 想定外だがcanDriveが付いている場合の保険
+// 送迎ルートに入れる場合の優先順位(数値が小さいほど優先。-1は送迎に組み込まない)。
+// ①送迎ドライバー ②送迎対応可能な介護職員 ③計画作成 ④支配人 の順。
+// 支配人・計画作成は積極的には割り当てず、他に候補がいない場合の最後の手段として使う。
+// 計画作成は月初1〜6日は計画作成業務を優先するため送迎の対象から完全に外す
+function driveRank(s, day){
+  if(!canDoDrive(s)) return -1;
+  if(s.role === 'driver') return 0;
+  if(s.role === 'kaigo_full' || s.role === 'kaigo_part') return 1;
+  if(s.role === 'keikaku') return (day >= 1 && day <= 6) ? -1 : 2;
+  if(s.role === 'shihainin') return 3;
+  return 4; // 想定外だがcanDriveが付いている場合の保険
 }
 // 送迎の穴埋めが必要な時、poolの中から上記優先順位で最良の候補のindexを返す(いなければ-1)
 function bestDriveIndex(poolArr, day){
   let bestIdx = -1, bestRank = Infinity;
   poolArr.forEach((s, i) => {
-    const rank = driveFillRank(s, day);
+    const rank = driveRank(s, day);
     if(rank >= 0 && rank < bestRank){ bestRank = rank; bestIdx = i; }
   });
   return bestIdx;
@@ -1161,6 +1164,10 @@ function normalizeData(){
     if(s.canLate == null) s.canLate = true;
     if(s.canLeader == null) s.canLeader = false;
     if(s.canOncall == null) s.canOncall = false;
+    // 訪問業務の除外設定(既定はすべて false = 制限なし)
+    if(s.noHomon == null) s.noHomon = false;       // 介護: 訪問介護に割り当てない
+    if(s.noHoukan == null) s.noHoukan = false;     // 看護: 訪問看護ルートに割り当てない
+    if(s.houkanOnly == null) s.houkanOnly = false; // 看護: 訪問看護のみ対応(通い側には入れない)
     if(!Array.isArray(s.quals)) s.quals = [];
   });
   if(!state.oncalls) state.oncalls = {};
@@ -1245,14 +1252,18 @@ function checkDay(day){
     const nurseNeedDay = 1 + houkanRoutes; // 通い側1名+訪問看護ルートぶん
     // 訪問看護ルートの看護師は3対1側に含めない。
     // 「訪看」マークがあればその人たち、なければ換算値の小さい方からルート数ぶんを除外(3対1側に大きい方を残す)
-    const routeMarked = nurses.filter(r => r.c === '訪看');
-    let routeUnit;
+    // 「訪問のみ対応」の看護師は通い側に一切数えない(訪看マークの有無によらず常に除外)
+    const onlyNurses = nurses.filter(r => r.s.houkanOnly);
+    const routeMarked = nurses.filter(r => r.c === '訪看' && !r.s.houkanOnly);
+    let routeUnit = onlyNurses.reduce((t, r) => t + unitOfOn(r.s, r.c), 0);
+    const remainRoutes = Math.max(0, houkanRoutes - onlyNurses.length);
+    const restNurses = nurses.filter(r => !r.s.houkanOnly);
     if(routeMarked.length > 0){
-      routeUnit = routeMarked.reduce((t, r) => t + unitOfOn(r.s, r.c), 0);
+      routeUnit += routeMarked.reduce((t, r) => t + unitOfOn(r.s, r.c), 0);
     }else{
-      const nsUnitsAsc = nurses.map(r => unitOfOn(r.s, r.c)).sort((a, b) => a - b);
-      const excludeCount = Math.max(0, Math.min(houkanRoutes, nurses.length - 1));
-      routeUnit = nsUnitsAsc.slice(0, excludeCount).reduce((t, u) => t + u, 0);
+      const nsUnitsAsc = restNurses.map(r => unitOfOn(r.s, r.c)).sort((a, b) => a - b);
+      const excludeCount = Math.max(0, Math.min(remainRoutes, restNurses.length - 1));
+      routeUnit += nsUnitsAsc.slice(0, excludeCount).reduce((t, u) => t + u, 0);
     }
     const units = dayCare.reduce((t, r) => t + unitOfOn(r.s, r.c), 0) - routeUnit;
     const kasanNote = fac.kasanHoumon ? '・訪問体制強化加算あり' : '';
@@ -1482,12 +1493,16 @@ function generateShifts(){
     const nurseNeed = fac.type === 'kantaki' ? 1 + houkanRoutes : 1;
     // 固定曜日の非常勤などで既に埋まっている分を考慮する
     const placed = roster.filter(s => isCareWorker(s) && DAY_CODES.includes(getCode(g, s.id, d)));
-    // 3対1側の常勤換算(訪問看護ルートぶん、換算値の小さい看護師から除外)
+    // 3対1側の常勤換算(訪問看護ルートぶん、換算値の小さい看護師から除外)。
+    // 「訪問のみ対応」の看護師は通い側に一切数えず、その人数ぶんルートは埋まったものとして扱う
     const units3 = list => {
-      const ns = list.filter(isNurse).map(unitOf).sort((a, b) => a - b);
-      const excludeCount = Math.max(0, Math.min(houkanRoutes, ns.length - 1));
+      const onlyNs = list.filter(s => isNurse(s) && s.houkanOnly);
+      const rest = list.filter(s => !(isNurse(s) && s.houkanOnly));
+      const remainRoutes = Math.max(0, houkanRoutes - onlyNs.length);
+      const ns = rest.filter(isNurse).map(unitOf).sort((a, b) => a - b);
+      const excludeCount = Math.max(0, Math.min(remainRoutes, ns.length - 1));
       const routeUnit = ns.slice(0, excludeCount).reduce((t, u) => t + u, 0);
-      return list.reduce((t, s) => t + unitOf(s), 0) - routeUnit;
+      return rest.reduce((t, s) => t + unitOf(s), 0) - routeUnit;
     };
 
     const pool = dayWorkers.filter(s =>
@@ -1528,14 +1543,21 @@ function generateShifts(){
     while(pool.length > 0){
       const cur = placed.concat(picks);
       const nsCount = cur.filter(isNurse).length;
-      const nurseShort = nsCount < nurseNeed && pool.some(isNurse);
+      // 通い側にも最低1名の看護師が必要(訪問のみ対応の看護師は通い側に数えない)
+      const kayoiNsCount = cur.filter(s => isNurse(s) && !s.houkanOnly).length;
+      const kayoiNurseShort = fac.type === 'kantaki' && kayoiNsCount < 1
+        && pool.some(s => isNurse(s) && !s.houkanOnly);
+      const nurseShort = (nsCount < nurseNeed && pool.some(isNurse)) || kayoiNurseShort;
       const careShort = fac.type === 'kantaki'
         ? (units3(cur) < needCare || cur.length < routeHeadNeed)
         : cur.length < (fac.dayNeed || 2);
       if(!nurseShort && !careShort) break;
       let idx = 0;
       if(nurseShort){
-        idx = pool.findIndex(isNurse);
+        // 通い側の看護師が足りない時は、訪問のみ対応でない看護師を優先して選ぶ
+        idx = kayoiNurseShort
+          ? pool.findIndex(s => isNurse(s) && !s.houkanOnly)
+          : pool.findIndex(isNurse);
       }else if(needDriveFromCare() > 0){
         const i = bestDriveIndex(pool, d);
         if(i >= 0) idx = i;
@@ -1681,23 +1703,30 @@ function generateShifts(){
       const wdH = weekdayOf(currentYm, d);
       const houkanRoutesD = houkanRoutesFor(fac, wdH);
       const dayNurses = roster.filter(s => isNurse(s) && DAY_CODES.includes(getCode(g, s.id, d)));
-      const maxRoutable = Math.max(0, dayNurses.length - 1);
+      // 「訪問のみ対応」の看護師は通い側に数えないので、3対1側に残す1名の対象からも外す
+      const kayoiNurses = dayNurses.filter(s => !s.houkanOnly);
+      const maxRoutable = Math.max(0, dayNurses.length - (kayoiNurses.length > 0 ? 1 : 0));
       let routeNeed = Math.min(houkanRoutesD, maxRoutable)
         - dayNurses.filter(s => getCode(g, s.id, d) === '訪看').length;
       while(routeNeed > 0){
-        const candidates = dayNurses.filter(s => getCode(g, s.id, d) !== '訪看');
+        // 訪看除外の看護師は割り当てない。訪問のみ対応の看護師を最優先で訪看に入れる
+        const candidates = dayNurses.filter(s =>
+          getCode(g, s.id, d) !== '訪看' && !s.noHoukan);
         if(candidates.length === 0) break;
-        const prefer = candidates.filter(s => getCode(g, s.id, d) === '日');
-        const chosen = pickRandom(prefer.length ? prefer : candidates);
+        const onlyPool = candidates.filter(s => s.houkanOnly);
+        const pickFrom = onlyPool.length ? onlyPool : candidates;
+        const prefer = pickFrom.filter(s => getCode(g, s.id, d) === '日');
+        const chosen = pickRandom(prefer.length ? prefer : pickFrom);
         setCode(g, chosen.id, d, '訪看');
         routeNeed--;
       }
-      // 訪介: 出勤中の介護職員から1名(訪問体制強化加算ありは2名)
+      // 訪介: 出勤中の介護職員から1名(訪問体制強化加算ありは2名)。訪介除外の職員は割り当てない
       let need = homonKaigoNeed(fac);
       need -= roster.filter(s => getCode(g, s.id, d) === '訪介').length;
       while(need > 0){
         const kaigoOn = roster.filter(s =>
           (s.role === 'kaigo_full' || s.role === 'kaigo_part') &&
+          !s.noHomon &&
           ['早','日','遅'].includes(getCode(g, s.id, d)));
         if(kaigoOn.length === 0) break;
         const prefer = kaigoOn.filter(s => getCode(g, s.id, d) === '日');
@@ -1829,11 +1858,11 @@ function renderShiftTable(){
   function driversForDay(d){
     const routes = routesOf(fac, weekdayOf(currentYm, d));
     if(routes <= 0) return new Set();
-    // 専任ドライバー→運転可の介護職員→計画作成(月初1〜6日は除く)→支配人、の優先順位で表示する
-    const rankFor = s => s.role === 'driver' ? -1 : driveFillRank(s, d);
+    // 専任ドライバー→運転可の介護職員→計画作成(月初1〜6日は除く)→支配人、の優先順位で表示する。
+    // 勤務コードは日中扱いのもの(早・日・遅・半・リ・訪介・訪看)ならどれでも送迎に入れる
     const candidates = rosterAll
-      .filter(s => DAY_CODES.includes(getCode(g, s.id, d)) && canDoDrive(s))
-      .sort((a, b) => rankFor(a) - rankFor(b));
+      .filter(s => DAY_CODES.includes(getCode(g, s.id, d)) && driveRank(s, d) >= 0)
+      .sort((a, b) => driveRank(a, d) - driveRank(b, d));
     return new Set(candidates.slice(0, routes).map(s => s.id));
   }
   const driversByDay = {};
@@ -2130,9 +2159,12 @@ function inlineChkHtml(s){
   if(s.role === 'kaigo_full' || s.role === 'kaigo_part'){
     html += chk('canDrive', '送', '車の運転ができる(送迎対応可)', !!s.canDrive);
     html += chk('canNight', '夜', '夜勤に入れる(夜勤者が休みの日の代わり)', !!s.canNight);
+    html += chk('noHomon', '訪介除外', '訪問介護には割り当てない', !!s.noHomon);
   }
   if(s.role === 'ns_full' || s.role === 'ns_part'){
     html += chk('canOncall', 'オ', 'オンコールに入れる(勤務日のみ・翌日も勤務の日のみ・連続2日まで)', !!s.canOncall);
+    html += chk('noHoukan', '訪看除外', '訪問看護ルートには割り当てない', !!s.noHoukan);
+    html += chk('houkanOnly', '訪問のみ', '訪問看護のみ対応(通い側の人員には数えない)', !!s.houkanOnly);
   }
   html += chk('canLeader', 'リ', '日勤リーダーができる', !!s.canLeader);
   html += '</div>';
