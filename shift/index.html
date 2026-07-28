@@ -296,6 +296,7 @@ tr.summary-row:first-of-type td{border-top:2px solid var(--ocean);}
 .list-item:last-child{border-bottom:none;}
 .list-item .li-main{flex:1;min-width:150px;}
 .list-item .li-sub{font-size:0.78rem;color:var(--gray);}
+.list-item .li-qual{font-size:0.78rem;color:var(--green);font-weight:700;}
 .list-item button{
   min-height:44px;min-width:60px;
   border-radius:8px;border:1px solid var(--ocean);
@@ -856,6 +857,7 @@ tr.summary-row:first-of-type td{border-top:2px solid var(--ocean);}
 /* ================= 修正ログ =================
    コードを変更したら必ずここに1行追加すること */
 const CHANGELOG_DATA = [
+  { version: 'v1.32.0', date: '2026-07-24', label: 'バグ修正', text: '入力した資格情報が消える原因が判明。「組織図から事業所を取り込む」で登録済みの拠点を再取り込みすると、その拠点の職員がいったん全員削除されて組織図から作り直されるため、資格・送迎・夜勤などのチェックがすべて初期値に戻っていた。再取り込みでも同じ職員(社員番号が一致する人)の資格・各種チェックは引き継ぐように修正。あわせて、編集画面を開かなくても確認できるよう、職員一覧に保有資格を表示するようにした' },
   { version: 'v1.31.0', date: '2026-07-24', label: 'バグ修正', text: '送迎の割り当てが意図と逆になっていた不具合を修正。計画作成を月初1〜6日に送迎から外す処理で、除外を表す値が「最優先」と誤って解釈され、1〜6日にこそ計画作成が送迎に入ってしまっていた。①送迎ドライバー②送迎対応可能な介護職員③計画作成(月初1〜6日は対象外)④支配人、の順で正しく割り当てるように修正(勤務が「リ」「訪介」の職員も送迎の対象に含む)。あわせて職員一覧に「訪介除外」(介護: 訪問介護に割り当てない)「訪看除外」(看護: 訪問看護ルートに割り当てない)「訪問のみ」(看護: 訪問看護のみ対応、通い側の人員に数えない)のチェックを追加。※この修正を反映するにはGAS(コード.gs)の再デプロイが必要です' },
   { version: 'v1.30.0', date: '2026-07-24', label: 'バグ修正', text: '「資格情報が保存されない」の本当の原因が判明。GAS側(コード.gs)の職員シートに資格(quals)を保存する列がそもそも存在せず、クラウド保存・読み込みのたびに資格情報が黙って消えていた(v1.19.0で資格機能を追加した際、コード.gs側の対応が漏れていた)。コード.gsの職員シートに「資格」列を追加し、保存・読み込みの両方に対応。※この修正を反映するにはGAS(コード.gs)の再デプロイが必要です(v1.27.0のシフト確定機能の再デプロイがまだの場合は同時に反映できます)' },
   { version: 'v1.29.0', date: '2026-07-24', label: '改善', text: '送迎担当を割り当てる優先順位を変更。①送迎ドライバー②送迎対応可能な介護職員③計画作成④支配人、の順に優先し、支配人・計画作成は他に候補がいない場合の最後の手段としてのみ割り当てる(積極的には割り当てない)。計画作成は月初1〜6日は計画作成業務を優先するため送迎の対象から外す。シフト表の「送」マーク・【送迎担当】表示も同じ優先順位で表示するように統一' },
@@ -2222,11 +2224,17 @@ function renderStaffView(){
       if(s.canLeader) cond += ' / リーダー可';
       if(s.canOncall) cond += ' / オンコール可';
     }
+    // 保有資格を一覧にも表示する(編集画面を開かなくても確認できるように)
+    const qualNames = (s.quals || []).map(k => QUALS_BY_KEY[k]).filter(Boolean).map(q => q.label);
+    const qualLine = qualNames.length
+      ? `<div class="li-qual">資格: ${escapeHtml(qualNames.join('・'))}</div>`
+      : '';
     div.dataset.staffid = s.id;
     div.innerHTML = `
       <div class="li-main">
         <div>${escapeHtml(s.name)}</div>
         <div class="li-sub">${ROLE_LABELS[s.role] || s.role} / ${cond}</div>
+        ${qualLine}
       </div>
       ${inlineChkHtml(s)}
       <button data-edit="${s.id}">編集</button>
@@ -2602,9 +2610,12 @@ async function orgImportOffice(){
     const subStaff = isPaired ? await fetchStaff(houkanName) : [];
     if(mainStaff.length + subStaff.length === 0){ toast('この事業所の職員が見つかりません'); return; }
 
+    // 再取り込みでも、職員ごとに設定した資格・各種チェックは消さずに引き継ぐ(職員idで対応付ける)
+    const keepById = {};
     let fac = state.facilities.find(f => f.name === mainName);
     if(fac){
-      if(!confirm(`「${mainName}」は登録済みです。職員を組織図の内容で入れ直しますか?\n(職員に設定した勤務条件はやり直しになります。シフトは残ります)`)) return;
+      if(!confirm(`「${mainName}」は登録済みです。職員を組織図の内容で入れ直しますか?\n(勤務曜日など組織図から作り直される項目は初期値に戻ります。資格・送迎・夜勤などのチェックとシフトは残ります)`)) return;
+      state.staff.filter(s => s.facilityId === fac.id).forEach(s => { keepById[s.id] = s; });
       state.staff = state.staff.filter(s => s.facilityId !== fac.id);
     }else{
       fac = {
@@ -2619,11 +2630,22 @@ async function orgImportOffice(){
       };
       state.facilities.push(fac);
     }
+    // 再取り込み前に設定されていた資格・各種チェックを、同じ職員(id一致)に戻す
+    const restoreKept = s => {
+      const prev = keepById[s.id];
+      if(!prev) return s;
+      if(Array.isArray(prev.quals)) s.quals = prev.quals;
+      ['canDrive','canNight','canEarly','canLate','canLeader','canOncall',
+       'noHomon','noHoukan','houkanOnly'].forEach(k => {
+        if(prev[k] != null) s[k] = prev[k];
+      });
+      return s;
+    };
     // 看多機側の職員(職種変換は看多機の事業所名で判定)
-    mainStaff.forEach(o => state.staff.push(buildStaffFromOrg(fac, o)));
+    mainStaff.forEach(o => state.staff.push(restoreKept(buildStaffFromOrg(fac, o))));
     // 訪問看護側の職員は同じ拠点に追加(責任者→看護師の変換が効くよう訪看の事業所名で判定)
     subStaff.forEach(o => {
-      const s = buildStaffFromOrg({ id: fac.id, name: houkanName }, o);
+      const s = restoreKept(buildStaffFromOrg({ id: fac.id, name: houkanName }, o));
       state.staff.push(s);
     });
     normalizeData();
