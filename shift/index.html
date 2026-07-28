@@ -856,6 +856,7 @@ tr.summary-row:first-of-type td{border-top:2px solid var(--ocean);}
 /* ================= 修正ログ =================
    コードを変更したら必ずここに1行追加すること */
 const CHANGELOG_DATA = [
+  { version: 'v1.29.0', date: '2026-07-24', label: '改善', text: '送迎担当を割り当てる優先順位を変更。①送迎ドライバー②送迎対応可能な介護職員③計画作成④支配人、の順に優先し、支配人・計画作成は他に候補がいない場合の最後の手段としてのみ割り当てる(積極的には割り当てない)。計画作成は月初1〜6日は計画作成業務を優先するため送迎の対象から外す。シフト表の「送」マーク・【送迎担当】表示も同じ優先順位で表示するように統一' },
   { version: 'v1.28.0', date: '2026-07-24', label: 'バグ修正', text: '職員編集フォームで資格や非常勤の勤務時間帯(何時から何時)を入力した後、一覧側の「保存」ボタン(早番可・遅番可等のチェック用)を押すと、資格以外の変更(勤務時間帯・契約タイプ・勤務曜日など)が保存されずに消えてしまう不具合を修正。v1.25.0では資格チェックのみ対応していたが、フォームの入力内容すべて(氏名・職種・勤務時間帯・資格など)を一覧側の保存でも一緒に保存するように修正' },
   { version: 'v1.27.0', date: '2026-07-24', label: '新機能', text: 'シフト表を横スライドせず1画面に収まるように変更(月の日数に応じて列幅を自動計算)。あわせて「シフト確定」「シフト修正」ボタンを追加。確定中はその拠点・月の手入力・自動作成・希望休の変更をロックする(オンコールは変更可、CSV・印刷・勤務形態一覧表の出力はロック中も利用可)。従来の「クラウド保存」は「一時保存」に名称変更。※確定状態をクラウドに保存するにはGAS(コード.gs)側の再デプロイが必要です' },
   { version: 'v1.26.0', date: '2026-07-24', label: 'バグ修正', text: 'シフト表で、日によってマスの幅が小さくなる(列によって太さがバラつく)不具合を修正。訪看・希休のような2文字コードや氏名の長さによって、その列を含む日付だけ表の列幅が自動計算で変わってしまっていたのが原因。表の列幅を固定するように変更し、どの日も同じ幅で揃うようにした' },
@@ -1067,6 +1068,25 @@ function isParttime(s){ return s.role === 'kaigo_part' || s.role === 'ns_part'; 
 function isFixedPart(s){ return isParttime(s) && s.contractType === 'fixed'; }
 // 送迎に出られる職員(専任ドライバー or 運転可チェックあり)
 function canDoDrive(s){ return s.role === 'driver' || !!s.canDrive; }
+// 介護職員に加えて送迎ルートに入れる場合の優先順位(数値が小さいほど優先)。
+// 支配人・計画作成は積極的には割り当てず、他に運転可の候補がいない場合の最後の手段として使う。
+// 計画作成は月初1〜6日は計画作成業務を優先するため送迎の対象から外す(-1で除外)
+function driveFillRank(s, day){
+  if(!s.canDrive) return -1;
+  if(s.role === 'kaigo_full' || s.role === 'kaigo_part') return 0;
+  if(s.role === 'keikaku') return (day >= 1 && day <= 6) ? -1 : 1;
+  if(s.role === 'shihainin') return 2;
+  return 3; // 想定外だがcanDriveが付いている場合の保険
+}
+// 送迎の穴埋めが必要な時、poolの中から上記優先順位で最良の候補のindexを返す(いなければ-1)
+function bestDriveIndex(poolArr, day){
+  let bestIdx = -1, bestRank = Infinity;
+  poolArr.forEach((s, i) => {
+    const rank = driveFillRank(s, day);
+    if(rank >= 0 && rank < bestRank){ bestRank = rank; bestIdx = i; }
+  });
+  return bestIdx;
+}
 // サービス提供体制強化加算用: 1日勤務あたりの契約時間(常勤は8時間、非常勤・ドライバーは設定時間)
 function dayHoursFor(s){
   if(isParttime(s) || s.role === 'driver') return Math.min(8, s.hoursPerDay || 8);
@@ -1516,7 +1536,7 @@ function generateShifts(){
       if(nurseShort){
         idx = pool.findIndex(isNurse);
       }else if(needDriveFromCare() > 0){
-        const i = pool.findIndex(s => s.canDrive);
+        const i = bestDriveIndex(pool, d);
         if(i >= 0) idx = i;
       }
       picks.push(pool.splice(idx, 1)[0]);
@@ -1559,7 +1579,7 @@ function generateShifts(){
       const driveOnDuty = () => roster.filter(s =>
         DAY_CODES.includes(getCode(g, s.id, d)) && canDoDrive(s)).length;
       while(driveOnDuty() < routes){
-        const i = pool.findIndex(s => s.canDrive);
+        const i = bestDriveIndex(pool, d);
         if(i < 0) break;
         const s = pool.splice(i, 1)[0];
         setCode(g, s.id, d, '日');
@@ -1808,9 +1828,11 @@ function renderShiftTable(){
   function driversForDay(d){
     const routes = routesOf(fac, weekdayOf(currentYm, d));
     if(routes <= 0) return new Set();
+    // 専任ドライバー→運転可の介護職員→計画作成(月初1〜6日は除く)→支配人、の優先順位で表示する
+    const rankFor = s => s.role === 'driver' ? -1 : driveFillRank(s, d);
     const candidates = rosterAll
       .filter(s => DAY_CODES.includes(getCode(g, s.id, d)) && canDoDrive(s))
-      .sort((a, b) => (a.role === 'driver' ? 0 : 1) - (b.role === 'driver' ? 0 : 1));
+      .sort((a, b) => rankFor(a) - rankFor(b));
     return new Set(candidates.slice(0, routes).map(s => s.id));
   }
   const driversByDay = {};
