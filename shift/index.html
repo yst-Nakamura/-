@@ -856,6 +856,7 @@ tr.summary-row:first-of-type td{border-top:2px solid var(--ocean);}
 /* ================= 修正ログ =================
    コードを変更したら必ずここに1行追加すること */
 const CHANGELOG_DATA = [
+  { version: 'v1.28.0', date: '2026-07-24', label: 'バグ修正', text: '職員編集フォームで資格や非常勤の勤務時間帯(何時から何時)を入力した後、一覧側の「保存」ボタン(早番可・遅番可等のチェック用)を押すと、資格以外の変更(勤務時間帯・契約タイプ・勤務曜日など)が保存されずに消えてしまう不具合を修正。v1.25.0では資格チェックのみ対応していたが、フォームの入力内容すべて(氏名・職種・勤務時間帯・資格など)を一覧側の保存でも一緒に保存するように修正' },
   { version: 'v1.27.0', date: '2026-07-24', label: '新機能', text: 'シフト表を横スライドせず1画面に収まるように変更(月の日数に応じて列幅を自動計算)。あわせて「シフト確定」「シフト修正」ボタンを追加。確定中はその拠点・月の手入力・自動作成・希望休の変更をロックする(オンコールは変更可、CSV・印刷・勤務形態一覧表の出力はロック中も利用可)。従来の「クラウド保存」は「一時保存」に名称変更。※確定状態をクラウドに保存するにはGAS(コード.gs)側の再デプロイが必要です' },
   { version: 'v1.26.0', date: '2026-07-24', label: 'バグ修正', text: 'シフト表で、日によってマスの幅が小さくなる(列によって太さがバラつく)不具合を修正。訪看・希休のような2文字コードや氏名の長さによって、その列を含む日付だけ表の列幅が自動計算で変わってしまっていたのが原因。表の列幅を固定するように変更し、どの日も同じ幅で揃うようにした' },
   { version: 'v1.25.0', date: '2026-07-24', label: 'バグ修正', text: '職員編集フォームで資格をチェックした後、一覧側の「保存」ボタン(早番可・遅番可等のチェック用)を押すと資格の変更が保存されずに消えてしまう不具合を修正。編集フォームを開いたまま一覧側の保存ボタンを押した場合も、フォームの資格チェックを一緒に保存するように変更。あわせて、組織図からの拠点・職員の一括取り込み時にも、取り込んだ職員がすぐ休み希望入力システム(kibou)で選べるよう、取り込み時点でクラウドへ自動保存するように変更(従来は新規登録フォームからの追加のみ自動保存対象だった)' },
@@ -2055,16 +2056,35 @@ function readQualChecks(containerId){
   return [...document.querySelectorAll('#' + containerId + ' input')]
     .filter(cb => cb.checked).map(cb => cb.value);
 }
-// 編集フォームを開いたまま(保存前の状態で)一覧側の「保存」ボタンを押しても、
-// フォームでチェックした資格が失われないよう、その場合はフォームの資格チェックも一緒に保存する
-function commitEditFormQuals(){
+// 職員編集フォームの現在の入力内容を読み取る(新規保存・一覧側からの保存の両方で共用)
+function collectStaffFormData(role){
+  return {
+    name: document.getElementById('stName').value.trim(),
+    role,
+    facilityId: document.getElementById('stFac').value,
+    daysPerWeek: +document.getElementById('stDays').value,
+    contractType: document.getElementById('stContract').value,
+    hoursPerDay: +document.getElementById('stHours').value || 0,
+    workStart: document.getElementById('stStart').value,
+    workEnd: document.getElementById('stEnd').value,
+    workStart2: document.getElementById('stStart2').value,
+    workEnd2: document.getElementById('stEnd2').value,
+    workDays: readWdChecks('stWd'),
+    nightDays: readWdChecks('stNightWd'),
+    quals: hasKaigoQuals(role) ? readQualChecks('stKaigoQuals')
+      : hasNurseQuals(role) ? readQualChecks('stNurseQuals')
+      : [],
+  };
+}
+// 編集フォームを開いたまま(保存前の状態で)一覧側の「保存」ボタン(早番可・遅番可等のチェック用)を
+// 押しても、フォームで入力した内容(資格・非常勤の勤務時間帯など)が失われないよう、
+// その場合はフォームの内容も一緒に保存する
+function commitEditFormChanges(){
   if(!editingStaffId) return;
   const s = state.staff.find(x => x.id === editingStaffId);
   const role = document.getElementById('stRole').value;
   if(!s || s.role !== role) return; // フォームが別の職員・職種を表示している場合は触らない
-  s.quals = hasKaigoQuals(role) ? readQualChecks('stKaigoQuals')
-    : hasNurseQuals(role) ? readQualChecks('stNurseQuals')
-    : [];
+  Object.assign(s, collectStaffFormData(role));
 }
 
 // 職員一覧の行にチェックボックスを出す職種か(介護・看護に加え、支配人・計画作成は送迎チェックのみ対象)
@@ -3202,26 +3222,9 @@ function bindEvents(){
   document.getElementById('stRole').addEventListener('change', updateStaffFormVisibility);
   document.getElementById('stContract').addEventListener('change', updateStaffFormVisibility);
   document.getElementById('btnStaffSave').addEventListener('click', () => {
-    const name = document.getElementById('stName').value.trim();
-    if(!name){ toast('氏名を入力してください'); return; }
     if(state.facilities.length === 0){ toast('先に拠点を登録してください'); return; }
-    const data = {
-      name,
-      role: document.getElementById('stRole').value,
-      facilityId: document.getElementById('stFac').value,
-      daysPerWeek: +document.getElementById('stDays').value,
-      contractType: document.getElementById('stContract').value,
-      hoursPerDay: +document.getElementById('stHours').value || 0,
-      workStart: document.getElementById('stStart').value,
-      workEnd: document.getElementById('stEnd').value,
-      workStart2: document.getElementById('stStart2').value,
-      workEnd2: document.getElementById('stEnd2').value,
-      workDays: readWdChecks('stWd'),
-      nightDays: readWdChecks('stNightWd'),
-      quals: hasKaigoQuals(document.getElementById('stRole').value) ? readQualChecks('stKaigoQuals')
-        : hasNurseQuals(document.getElementById('stRole').value) ? readQualChecks('stNurseQuals')
-        : [],
-    };
+    const data = collectStaffFormData(document.getElementById('stRole').value);
+    if(!data.name){ toast('氏名を入力してください'); return; }
     // 早番可・遅番可・送迎・夜勤(代わり)・リーダー・オンコールは職員一覧のチェックボックスで編集するため、
     // このフォームでは触らない(新規作成時のみ既定値を設定)
     if(data.role !== 'yakin' && data.workDays.length === 0){
@@ -3278,7 +3281,7 @@ function bindEvents(){
         boxes.forEach(inp => { s[inp.dataset.field] = inp.checked; });
         count++;
       });
-      commitEditFormQuals();
+      commitEditFormChanges();
       markDirty();
       renderStaffView();
       toast(`${count}名分の設定を保存しました`);
