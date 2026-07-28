@@ -117,36 +117,40 @@ section.view.active{display:block;}
 .btn-secondary{background:var(--white);color:var(--ink);border:1px solid var(--ocean);}
 .btn-warn{background:var(--sand);color:var(--white);}
 .btn:disabled{opacity:0.45;cursor:not-allowed;}
+.confirm-banner{
+  background:#F0E2CF;color:var(--sand);border:1px solid var(--sand);border-radius:10px;
+  padding:10px 14px;font-size:0.85rem;font-weight:500;margin-bottom:10px;line-height:1.5;
+}
 
 /* ===== シフト表 ===== */
+/* 横スライドせず、月の日数に応じて列幅を自動計算し1画面に収める(NAME_COL_PCT/TOTAL_COL_PCTはJSと合わせる) */
 .grid-wrap{
-  overflow-x:auto;
+  overflow-x:hidden; /* 表は常に画面幅ちょうどに収まる設計のため、横スライドを発生させない */
   background:var(--white);
   border-radius:12px;
   border:1px solid var(--mist);
-  -webkit-overflow-scrolling:touch;
 }
 table.shift{
   border-collapse:collapse;
-  min-width:100%;
-  table-layout:fixed; /* 内容の長さ(訪看・希休など2文字コードや名前)で日付ごとの列幅がバラつかないよう固定する */
+  width:100%;
+  table-layout:fixed; /* 内容の長さ(訪看・希休など2文字コードや名前)で列幅がバラつかないよう固定し、画面幅ちょうどに割り付ける */
 }
 table.shift th,table.shift td{
   border:1px solid var(--mist);
   text-align:center;
   white-space:nowrap;
-  font-size:0.82rem;
+  font-size:clamp(0.5rem, 1.8vw, 0.82rem);
 }
 table.shift thead th{
   background:var(--ocean);
   color:var(--ink);
-  padding:4px 2px;
-  width:34px;
-  min-width:34px;
+  padding:2px 1px;
   font-weight:500;
   position:sticky;
   top:0;
+  overflow:hidden;
 }
+table.shift thead th small{font-size:clamp(0.4rem, 1.3vw, 0.7rem);}
 table.shift thead th.sat{background:var(--sky);}
 table.shift thead th.sun{background:#E8D5C4;}
 table.shift th.name-col{
@@ -154,19 +158,16 @@ table.shift th.name-col{
   left:0;
   z-index:10;
   background:var(--mint);
-  width:120px;
-  min-width:110px;
-  max-width:140px;
+  width:16%;
+  min-width:36px;
   overflow:hidden;
   text-overflow:ellipsis;
   text-align:left;
-  padding:4px 8px;
+  padding:2px 4px;
   font-weight:500;
 }
 table.shift thead th.name-col{z-index:15;background:var(--ocean);}
 table.shift td.cell{
-  width:34px;
-  min-width:34px;
   height:40px;
   cursor:pointer;
   font-weight:700;
@@ -175,8 +176,8 @@ table.shift td.cell{
 }
 table.shift td.total-col,table.shift th.total-col{
   background:var(--mist);
-  width:44px;
-  min-width:44px;
+  width:6%;
+  min-width:16px;
   font-weight:700;
 }
 .role-badge{
@@ -200,10 +201,11 @@ td.c-日{background:var(--mint);}
 td.c-遅{background:#F0E2CF;}
 td.c-リ{background:var(--ocean);font-weight:700;}
 td.c-半{background:var(--mint);color:var(--sand);font-weight:700;}
-td.c-訪介{background:#E3CFA8;font-size:0.66rem !important;letter-spacing:-0.06em;}
-td.c-訪看{background:#BFD9D6;color:var(--green);font-size:0.66rem !important;letter-spacing:-0.06em;}
+td.c-訪介{background:#E3CFA8;font-size:clamp(0.4rem, 1.4vw, 0.66rem) !important;letter-spacing:-0.06em;}
+td.c-訪看{background:#BFD9D6;color:var(--green);font-size:clamp(0.4rem, 1.4vw, 0.66rem) !important;letter-spacing:-0.06em;}
 /* オンコール担当のマーク(マスの右上に小さく「オ」) */
 table.shift td.cell{position:relative;}
+table.shift.confirmed td.cell{cursor:not-allowed;}
 .oc-mark{
   position:absolute;top:0;right:1px;
   font-size:0.55rem;font-weight:700;color:var(--danger);line-height:1.1;
@@ -219,7 +221,7 @@ tr.oncall-row th.name-col{font-size:0.72rem;font-weight:500;color:var(--gray);ba
 td.c-夜{background:var(--ink);color:var(--white);}
 td.c-明{background:var(--mist);color:var(--gray);}
 td.c-休{background:var(--white);color:var(--gray);font-weight:400;}
-td.c-希休{background:var(--mist);color:var(--sand);font-weight:700;font-size:0.66rem !important;letter-spacing:-0.06em;}
+td.c-希休{background:var(--mist);color:var(--sand);font-weight:700;font-size:clamp(0.4rem, 1.4vw, 0.66rem) !important;letter-spacing:-0.06em;}
 td.c-有{background:#DCEBE9;color:var(--green);}
 
 /* チェック行 */
@@ -523,8 +525,14 @@ tr.summary-row:first-of-type td{border-top:2px solid var(--ocean);}
     </select>
     <button class="btn btn-secondary" id="btnCsv">CSV</button>
     <button class="btn btn-secondary" id="btnPrint">印刷</button>
-    <button class="btn btn-warn" id="btnCloudSave">クラウド保存<span id="dirtyDot"></span></button>
+    <button class="btn btn-warn" id="btnCloudSave">一時保存<span id="dirtyDot"></span></button>
     <button class="btn btn-secondary" id="btnKinmuKeitai">勤務形態一覧表</button>
+    <button class="btn btn-primary" id="btnShiftConfirm">シフト確定</button>
+    <button class="btn btn-secondary" id="btnShiftUnconfirm" style="display:none;">シフト修正</button>
+  </div>
+
+  <div class="confirm-banner" id="confirmBanner" style="display:none;">
+    この月は確定済みです。手入力・自動作成・希望休の変更はロックされています(オンコールは変更できます)。修正するには「シフト修正」を押してください。
   </div>
 
   <div class="print-title" id="printTitle"></div>
@@ -796,7 +804,7 @@ tr.summary-row:first-of-type td{border-top:2px solid var(--ocean);}
     </div>
     <div class="form-actions">
       <button class="btn btn-secondary" id="btnGasTest">接続テスト</button>
-      <button class="btn btn-primary" id="btnCloudSave2">クラウドに保存</button>
+      <button class="btn btn-primary" id="btnCloudSave2">一時保存</button>
       <button class="btn btn-warn" id="btnCloudLoad">クラウドから読込</button>
     </div>
     <p style="font-size:0.78rem;color:var(--gray);margin-top:8px;">
@@ -848,6 +856,7 @@ tr.summary-row:first-of-type td{border-top:2px solid var(--ocean);}
 /* ================= 修正ログ =================
    コードを変更したら必ずここに1行追加すること */
 const CHANGELOG_DATA = [
+  { version: 'v1.27.0', date: '2026-07-24', label: '新機能', text: 'シフト表を横スライドせず1画面に収まるように変更(月の日数に応じて列幅を自動計算)。あわせて「シフト確定」「シフト修正」ボタンを追加。確定中はその拠点・月の手入力・自動作成・希望休の変更をロックする(オンコールは変更可、CSV・印刷・勤務形態一覧表の出力はロック中も利用可)。従来の「クラウド保存」は「一時保存」に名称変更。※確定状態をクラウドに保存するにはGAS(コード.gs)側の再デプロイが必要です' },
   { version: 'v1.26.0', date: '2026-07-24', label: 'バグ修正', text: 'シフト表で、日によってマスの幅が小さくなる(列によって太さがバラつく)不具合を修正。訪看・希休のような2文字コードや氏名の長さによって、その列を含む日付だけ表の列幅が自動計算で変わってしまっていたのが原因。表の列幅を固定するように変更し、どの日も同じ幅で揃うようにした' },
   { version: 'v1.25.0', date: '2026-07-24', label: 'バグ修正', text: '職員編集フォームで資格をチェックした後、一覧側の「保存」ボタン(早番可・遅番可等のチェック用)を押すと資格の変更が保存されずに消えてしまう不具合を修正。編集フォームを開いたまま一覧側の保存ボタンを押した場合も、フォームの資格チェックを一緒に保存するように変更。あわせて、組織図からの拠点・職員の一括取り込み時にも、取り込んだ職員がすぐ休み希望入力システム(kibou)で選べるよう、取り込み時点でクラウドへ自動保存するように変更(従来は新規登録フォームからの追加のみ自動保存対象だった)' },
   { version: 'v1.24.0', date: '2026-07-24', label: '改善', text: 'シフト表でその日の送迎担当が一目でわかるように、担当者のマスに「送」マークを表示し、【送迎担当】の一覧行を追加(拠点のルート数ぶん、送迎可の職員から自動で算出。手入力でシフトを変えても常に現在の状態と一致)。希望休(kibou)を通常の「休」と区別できるよう、専用コード「希休」で表示するように変更(自動作成でも希望休だけを保持、通常の休みと見分けがつくように)。手動でマスを直接「休」に変えた場合は希望休として記録されなくなり、「希休」を選んだ場合のみ希望休として記録される' },
@@ -933,6 +942,7 @@ let state = {
   shifts: {},     // key 'facId_YYYYMM' -> {staffId:{day:code}}
   wishes: {},     // key 'facId_YYYYMM' -> {staffId:{day:'kibou'|'yukyu'}} 希望休・有給(自動作成でも保持)
   oncalls: {},    // key 'facId_YYYYMM' -> {day: staffId} その日のオンコール担当(看護師)
+  confirmed: {},  // key 'facId_YYYYMM' -> true(シフト確定済み。手入力・自動作成・希望休はロック、オンコールは変更可)
   gasUrl: DEFAULT_GAS_URL,
 };
 let currentFacId = null;
@@ -1133,7 +1143,10 @@ function normalizeData(){
   });
   if(!state.oncalls) state.oncalls = {};
   if(!state.wishes) state.wishes = {};
+  if(!state.confirmed) state.confirmed = {};
 }
+// 現在表示中の拠点・月がシフト確定済みかどうか
+function isConfirmed(){ return !!state.confirmed[shiftKey()]; }
 
 function toast(msg){
   const t = document.getElementById('toast');
@@ -1156,7 +1169,8 @@ function saveLocal(){
   try{
     localStorage.setItem(LS_KEY, JSON.stringify({
       facilities: state.facilities, staff: state.staff,
-      shifts: state.shifts, wishes: state.wishes, oncalls: state.oncalls, gasUrl: state.gasUrl,
+      shifts: state.shifts, wishes: state.wishes, oncalls: state.oncalls,
+      confirmed: state.confirmed, gasUrl: state.gasUrl,
       currentFacId, currentYm,
       dirty, // 未保存(クラウド未反映)かどうかを端末をまたいでも判定できるよう保存する
     }));
@@ -1172,6 +1186,7 @@ function loadLocal(){
     state.shifts = d.shifts || {};
     state.wishes = d.wishes || {};
     state.oncalls = d.oncalls || {};
+    state.confirmed = d.confirmed || {};
     state.gasUrl = d.gasUrl || '';
     currentFacId = d.currentFacId || null;
     if(d.currentYm) currentYm = d.currentYm;
@@ -1740,6 +1755,16 @@ function renderFacSelect(){
   }
 }
 
+// シフト確定/シフト修正ボタン・バナー・自動作成ボタンの状態を、現在の拠点・月に合わせて更新する
+function updateConfirmUi(fac){
+  const confirmed = fac ? isConfirmed() : false;
+  document.getElementById('btnShiftConfirm').style.display = (fac && !confirmed) ? '' : 'none';
+  document.getElementById('btnShiftUnconfirm').style.display = (fac && confirmed) ? '' : 'none';
+  document.getElementById('confirmBanner').style.display = confirmed ? '' : 'none';
+  document.getElementById('btnGenerate').disabled = confirmed;
+  document.getElementById('shiftTable').classList.toggle('confirmed', confirmed);
+}
+
 function renderShiftTable(){
   const table = document.getElementById('shiftTable');
   const fac = currentFacility();
@@ -1747,6 +1772,7 @@ function renderShiftTable(){
   document.getElementById('ymLabel').textContent = ymLabel(currentYm);
   document.getElementById('printTitle').textContent =
     (fac ? fac.name + ' ' : '') + ymLabel(currentYm) + ' 勤務表' + (nsOnly ? '(訪問看護)' : '');
+  updateConfirmUi(fac);
 
   if(!fac){
     table.innerHTML = '<tr><td style="padding:20px;">「拠点」タブから拠点を登録すると、ここにシフト表が表示されます。</td></tr>';
@@ -1764,11 +1790,14 @@ function renderShiftTable(){
   const dim = daysInMonth(currentYm);
   const g = grid();
   const ocMap = state.oncalls[shiftKey()] || {};
+  // 横スライドせず1画面に収まるよう、月の日数に応じて日付列の幅(%)を割り出す
+  // (名前列16%・勤務列6%は固定、残りを日数で均等割り。table.shift th.name-col/total-colのCSSと合わせる)
+  const dayColPct = Math.max(0, (100 - 16 - 6) / dim);
   let html = '<thead><tr><th class="name-col">職員</th>';
   for(let d = 1; d <= dim; d++){
     const wd = weekdayOf(currentYm, d);
     const cls = wd === 0 ? 'sun' : (wd === 6 ? 'sat' : '');
-    html += `<th class="${cls}">${d}<br><small>${WD_CHARS[wd]}</small></th>`;
+    html += `<th class="${cls}" style="width:${dayColPct}%;">${d}<br><small>${WD_CHARS[wd]}</small></th>`;
   }
   html += '<th class="total-col">勤務</th></tr></thead><tbody>';
 
@@ -1957,6 +1986,7 @@ function renderWishDays(){
   }
 }
 function toggleWishDay(day){
+  if(isConfirmed()){ toast('この月はシフト確定済みです。修正するには「シフト修正」を押してください'); return; }
   const staffId = document.getElementById('wishStaff').value;
   if(!staffId) return;
   const cur = getWish(staffId, day);
@@ -2320,6 +2350,7 @@ async function gasLoad(){
     if(data.shifts) state.shifts = data.shifts;
     if(data.wishes) state.wishes = data.wishes;
     if(data.oncalls) state.oncalls = data.oncalls;
+    if(data.confirmed) state.confirmed = data.confirmed;
     // 職員がスマホから出した休み希望を希望休として取り込む
     // (その職員のその月の希望休は送信内容で置き換え。有給はそのまま残す)
     if(data.kibouSubs){
@@ -2358,6 +2389,7 @@ async function gasSave(){
         shifts: state.shifts,
         wishes: state.wishes,
         oncalls: state.oncalls,
+        confirmed: state.confirmed,
       }),
     });
     const data = await res.json();
@@ -3093,6 +3125,7 @@ function bindEvents(){
 
   // シフト表操作
   document.getElementById('btnGenerate').addEventListener('click', () => {
+    if(isConfirmed()){ toast('この月はシフト確定済みです。修正するには「シフト修正」を押してください'); return; }
     if(confirm('シフトを自動作成します。希望休・有給(入力欄またはマスで入れたもの)は残し、それ以外は作り直します。よろしいですか?')){
       generateShifts();
     }
@@ -3101,10 +3134,31 @@ function bindEvents(){
   document.getElementById('btnKinmuKeitai').addEventListener('click', exportKinmuKeitai);
   document.getElementById('btnPrint').addEventListener('click', () => window.print());
   document.getElementById('btnCloudSave').addEventListener('click', gasSave);
+  document.getElementById('btnShiftConfirm').addEventListener('click', () => {
+    const fac = currentFacility();
+    if(!fac) return;
+    if(!confirm(`${fac.name} ${ymLabel(currentYm)}分のシフトを確定します。確定後は手入力・自動作成・希望休の変更ができなくなります(オンコールは変更できます)。よろしいですか?`)) return;
+    state.confirmed[shiftKey()] = true;
+    markDirty();
+    renderShiftTable();
+    toast('シフトを確定しました');
+    if(state.gasUrl) gasSave();
+  });
+  document.getElementById('btnShiftUnconfirm').addEventListener('click', () => {
+    const fac = currentFacility();
+    if(!fac) return;
+    if(!confirm(`${fac.name} ${ymLabel(currentYm)}分のシフト確定を解除し、修正できるようにします。よろしいですか?`)) return;
+    delete state.confirmed[shiftKey()];
+    markDirty();
+    renderShiftTable();
+    toast('シフトを修正できる状態にしました');
+    if(state.gasUrl) gasSave();
+  });
 
   document.getElementById('shiftTable').addEventListener('click', e => {
     const cell = e.target.closest('td.cell');
     if(cell){
+      if(isConfirmed()){ toast('この月はシフト確定済みです。修正するには「シフト修正」を押してください'); return; }
       openPicker(cell.dataset.staff, +cell.dataset.day);
       return;
     }
