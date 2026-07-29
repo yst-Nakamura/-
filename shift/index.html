@@ -330,6 +330,21 @@ tr.summary-row:first-of-type td{border-top:2px solid var(--ocean);}
   min-width:0;flex:1;
   min-height:44px;padding:6px;border:1px solid var(--mist);border-radius:8px;
 }
+/* 曜日ごとの勤務時間パネル */
+.wd-time-row{
+  display:flex;align-items:center;gap:6px;flex-wrap:wrap;
+  border:1px solid var(--mist);border-radius:8px;
+  padding:8px 10px;margin-top:6px;
+}
+.wd-time-row .wd-time-label{font-weight:700;min-width:32px;}
+.wd-time-row input[type=time]{
+  min-width:0;min-height:44px;padding:6px;border:1px solid var(--mist);border-radius:8px;
+}
+.wd-time-row .wdt-visit{
+  display:flex;align-items:center;gap:4px;font-size:0.82rem;color:var(--sand);
+  margin-left:auto;min-height:44px;
+}
+.wd-time-row .wdt-visit input{width:20px;height:20px;}
 
 /* フォーム */
 .form-grid{
@@ -632,19 +647,23 @@ tr.summary-row:first-of-type td{border-top:2px solid var(--ocean);}
         <div class="wd-checks" id="stWd"></div>
       </div>
       <div class="form-field" id="stTimeWrap" style="display:none;">
-        <label>1日の勤務時間(合計)</label>
+        <label>1日の勤務時間(合計・基本の時間帯)</label>
         <div style="display:flex;gap:6px;align-items:center;">
           <input type="number" id="stHours" min="0.5" max="12" step="0.5" value="6" style="width:80px;min-height:44px;padding:8px;border:1px solid var(--mist);border-radius:8px;">
           <span>時間/日</span>
         </div>
         <div class="time-range-box">
-          <span class="tag">勤務時間帯①</span>
+          <span class="tag">勤務時間帯①(下の「曜日ごとの時間」で個別指定がない曜日に使う基本値)</span>
           <div class="time-pair">
             <input type="time" id="stStart" value="09:00">
             <span>〜</span>
             <input type="time" id="stEnd" value="16:00">
           </div>
         </div>
+      </div>
+      <div class="form-field" id="stWdTimesWrap" style="display:none;grid-column:1/-1;">
+        <label>曜日ごとの勤務時間(曜日によって時間が違う場合はここで個別に設定。「訪問のみ」は短時間の訪問介護1件のみの日に使う)</label>
+        <div id="stWdTimes"></div>
       </div>
       <div class="form-field" id="stTime2Wrap" style="display:none;">
         <div class="time-range-box">
@@ -870,6 +889,7 @@ tr.summary-row:first-of-type td{border-top:2px solid var(--ocean);}
 /* ================= 修正ログ =================
    コードを変更したら必ずここに1行追加すること */
 const CHANGELOG_DATA = [
+  { version: 'v1.34.0', date: '2026-07-24', label: '新機能', text: '非常勤職員(介護・看護)の勤務時間を曜日ごとに設定できるように追加。編集画面で勤務曜日をチェックすると、その曜日ぶんの時間帯入力欄が個別に表示され、曜日によって勤務時間が違う働き方に対応(常勤換算・サービス提供体制強化加算・勤務形態一覧表の時間計算もすべて曜日ごとの時間を使うように変更)。介護非常勤には曜日ごとに「訪問のみ」チェックを追加し、木曜15時〜16時のみ訪問1件、のような短時間の訪問介護専従日を設定できるようにした(その曜日は自動作成で確実に訪問介護として配置される)。※この機能を使うにはGAS(コード.gs)の再デプロイが必要です' },
   { version: 'v1.33.0', date: '2026-07-24', label: '新機能', text: 'サービス種別に「小規模多機能型居宅介護(小多機)」を追加。小多機の拠点編集画面に【前年度の平均利用者数】の入力欄を新設し、その人数の3対1(常勤換算)を下回らないようにシフトを自動作成・チェックするようにした(曜日別の通い利用者数の3対1と比べて多い方を必要人数とする)。小多機には訪問看護がないため、訪問看護ルートの設定・看護師の人数チェック・シフト表の【訪問看護】行は表示しない(通い・送迎・訪問介護・夜勤は看多機と同じ)。前年度の平均利用者数は看多機・訪問看護には適用しない。※この機能を使うにはGAS(コード.gs)の再デプロイが必要です' },
   { version: 'v1.32.0', date: '2026-07-24', label: 'バグ修正', text: '入力した資格情報が消える原因が判明。「組織図から事業所を取り込む」で登録済みの拠点を再取り込みすると、その拠点の職員がいったん全員削除されて組織図から作り直されるため、資格・送迎・夜勤などのチェックがすべて初期値に戻っていた。再取り込みでも同じ職員(社員番号が一致する人)の資格・各種チェックは引き継ぐように修正。あわせて、編集画面を開かなくても確認できるよう、職員一覧に保有資格を表示するようにした' },
   { version: 'v1.31.0', date: '2026-07-24', label: 'バグ修正', text: '送迎の割り当てが意図と逆になっていた不具合を修正。計画作成を月初1〜6日に送迎から外す処理で、除外を表す値が「最優先」と誤って解釈され、1〜6日にこそ計画作成が送迎に入ってしまっていた。①送迎ドライバー②送迎対応可能な介護職員③計画作成(月初1〜6日は対象外)④支配人、の順で正しく割り当てるように修正(勤務が「リ」「訪介」の職員も送迎の対象に含む)。あわせて職員一覧に「訪介除外」(介護: 訪問介護に割り当てない)「訪看除外」(看護: 訪問看護ルートに割り当てない)「訪問のみ」(看護: 訪問看護のみ対応、通い側の人員に数えない)のチェックを追加。※この修正を反映するにはGAS(コード.gs)の再デプロイが必要です' },
@@ -1007,18 +1027,19 @@ function uid(prefix){ return prefix + Date.now().toString(36) + Math.random().to
 function isNurse(s){ return s.role === 'ns_full' || s.role === 'ns_part'; }
 function isManagement(s){ return s.role === 'shihainin' || s.role === 'keikaku'; }
 function isCareWorker(s){ return ['kaigo_full','kaigo_part','ns_full','ns_part','shihainin','keikaku'].includes(s.role); }
-// 配置カウント(常勤換算): 常勤1名=8時間=1人分。支配人・計画作成は0.5人分。非常勤は勤務時間÷8
-function unitOf(s){
+// 配置カウント(常勤換算): 常勤1名=8時間=1人分。支配人・計画作成は0.5人分。非常勤は勤務時間÷8。
+// wd(曜日0〜6)が分かる場合は、非常勤の曜日ごとの勤務時間(wdTimes)があればそちらを優先する
+function unitOf(s, wd){
   if(isManagement(s)) return 0.5;
-  if(isParttime(s)) return Math.min(1, (s.hoursPerDay || 8) / 8);
+  if(isParttime(s)) return Math.min(1, dayHoursFor(s, wd) / 8);
   return 1;
 }
 function fmtUnit(n){ return String(Math.round(n * 100) / 100); }
 // その日の実際のシフトコードに応じた常勤換算。支配人・計画作成は既定「半」(0.5)だが、
 // 手入力で通常の「日」に変えた日は1.0として数える。他職種は常にunitOf(s)と同じ
-function unitOfOn(s, code){
+function unitOfOn(s, code, wd){
   if(isManagement(s)) return code === '日' ? 1 : 0.5;
-  return unitOf(s);
+  return unitOf(s, wd);
 }
 // この職員が日中枠に入る時の既定コード。支配人・計画作成は半日(0.5)扱いの「半」
 function dayCodeFor(s){ return isManagement(s) ? '半' : '日'; }
@@ -1107,17 +1128,34 @@ function bestDriveIndex(poolArr, day){
   });
   return bestIdx;
 }
-// サービス提供体制強化加算用: 1日勤務あたりの契約時間(常勤は8時間、非常勤・ドライバーは設定時間)
-function dayHoursFor(s){
-  if(isParttime(s) || s.role === 'driver') return Math.min(8, s.hoursPerDay || 8);
+// "HH:MM"の時刻2つから時間数を計算(日をまたぐ場合も一応対応)
+function hoursFromRange(start, end){
+  if(!start || !end) return 0;
+  const [sh, sm] = start.split(':').map(Number);
+  const [eh, em] = end.split(':').map(Number);
+  if([sh,sm,eh,em].some(n => isNaN(n))) return 0;
+  let mins = (eh * 60 + em) - (sh * 60 + sm);
+  if(mins <= 0) mins += 24 * 60;
+  return mins / 60;
+}
+// サービス提供体制強化加算用: 1日勤務あたりの契約時間(常勤は8時間、非常勤・ドライバーは設定時間)。
+// 非常勤(kaigo_part/ns_part)は曜日ごとに時間が違う場合があるため、wd(0〜6)が分かれば
+// s.wdTimes[wd]の個別時間を優先し、なければ全体設定(hoursPerDay)にフォールバックする
+function dayHoursFor(s, wd){
+  if(isParttime(s)){
+    const t = (wd != null && s.wdTimes) ? s.wdTimes[wd] : null;
+    if(t && t.start && t.end) return Math.min(8, hoursFromRange(t.start, t.end) || s.hoursPerDay || 8);
+    return Math.min(8, s.hoursPerDay || 8);
+  }
+  if(s.role === 'driver') return Math.min(8, s.hoursPerDay || 8);
   return 8;
 }
 const NIGHT_SHIFT_HOURS = 18; // 夜勤(16時〜翌10時)の実働時間として固定
 // そのコードの勤務時間(時間)。明け・休み・有給・訪看(看護師専用)などは0時間
-function hoursForCode(s, code){
+function hoursForCode(s, code, wd){
   if(code === '夜') return NIGHT_SHIFT_HOURS;
   if(code === '半') return 4; // 支配人・計画作成の半日勤務(0.5人換算と同じ考え方)
-  if(['早','日','遅','リ','訪介'].includes(code)) return dayHoursFor(s);
+  if(['早','日','遅','リ','訪介'].includes(code)) return dayHoursFor(s, wd);
   return 0;
 }
 // 通い・泊まり・訪問介護をまとめて行う多機能型(看多機・小多機)か。
@@ -1202,6 +1240,15 @@ function normalizeData(){
     if(s.noHoukan == null) s.noHoukan = false;     // 看護: 訪問看護ルートに割り当てない
     if(s.houkanOnly == null) s.houkanOnly = false; // 看護: 訪問看護のみ対応(通い側には入れない)
     if(!Array.isArray(s.quals)) s.quals = [];
+    // 曜日ごとの勤務時間(非常勤のみ)。設定がない曜日は全体設定(workStart/workEnd)で補う
+    if(isParttime(s)){
+      if(!s.wdTimes || typeof s.wdTimes !== 'object') s.wdTimes = {};
+      (s.workDays || []).forEach(wd => {
+        if(!s.wdTimes[wd]){
+          s.wdTimes[wd] = { start: s.workStart || '09:00', end: s.workEnd || '16:00', visitOnly: false };
+        }
+      });
+    }
   });
   if(!state.oncalls) state.oncalls = {};
   if(!state.wishes) state.wishes = {};
@@ -1293,17 +1340,17 @@ function checkDay(day){
     // 「訪問のみ対応」の看護師は通い側に一切数えない(訪看マークの有無によらず常に除外)
     const onlyNurses = nurses.filter(r => r.s.houkanOnly);
     const routeMarked = nurses.filter(r => r.c === '訪看' && !r.s.houkanOnly);
-    let routeUnit = onlyNurses.reduce((t, r) => t + unitOfOn(r.s, r.c), 0);
+    let routeUnit = onlyNurses.reduce((t, r) => t + unitOfOn(r.s, r.c, wd), 0);
     const remainRoutes = Math.max(0, houkanRoutes - onlyNurses.length);
     const restNurses = nurses.filter(r => !r.s.houkanOnly);
     if(routeMarked.length > 0){
-      routeUnit += routeMarked.reduce((t, r) => t + unitOfOn(r.s, r.c), 0);
+      routeUnit += routeMarked.reduce((t, r) => t + unitOfOn(r.s, r.c, wd), 0);
     }else{
-      const nsUnitsAsc = restNurses.map(r => unitOfOn(r.s, r.c)).sort((a, b) => a - b);
+      const nsUnitsAsc = restNurses.map(r => unitOfOn(r.s, r.c, wd)).sort((a, b) => a - b);
       const excludeCount = Math.max(0, Math.min(remainRoutes, restNurses.length - 1));
       routeUnit += nsUnitsAsc.slice(0, excludeCount).reduce((t, u) => t + u, 0);
     }
-    const units = dayCare.reduce((t, r) => t + unitOfOn(r.s, r.c), 0) - routeUnit;
+    const units = dayCare.reduce((t, r) => t + unitOfOn(r.s, r.c, wd), 0) - routeUnit;
     const kasanNote = fac.kasanHoumon ? '・訪問体制強化加算あり' : '';
     const routeNote = isShou ? '' : '。訪看ルートの看護師は除く';
     if(units < needCare){
@@ -1509,15 +1556,19 @@ function generateShifts(){
     }
   }
 
-  // ---- 1.5 固定曜日契約の非常勤を先に配置 ----
-  roster.filter(isFixedPart).forEach(s => {
+  // ---- 1.5 固定曜日契約の非常勤、および非常勤の「訪問のみ」曜日を先に配置 ----
+  // 固定曜日契約(isFixedPart)は全ワーク日を直接配置。週◯回契約でも、その曜日が
+  // 「訪問のみ」(短時間の訪問介護1件など)に設定されていれば、競合の少ない直接配置で確保する
+  roster.filter(isParttime).forEach(s => {
     for(let d = 1; d <= dim; d++){
       if(!isOpenDay(fac, currentYm, d)) continue;
       const wd = weekdayOf(currentYm, d);
-      if((s.workDays || []).includes(wd) && cellEmpty(s, d)){
-        setCode(g, s.id, d, '日');
-        assigned[s.id]++;
-      }
+      if(!(s.workDays || []).includes(wd) || !cellEmpty(s, d)) continue;
+      const wdt = s.wdTimes && s.wdTimes[wd];
+      const visitOnly = !!(wdt && wdt.visitOnly);
+      if(!isFixedPart(s) && !visitOnly) continue; // 週◯回契約の通常日は後続の競合プールに任せる
+      setCode(g, s.id, d, visitOnly ? '訪介' : '日');
+      assigned[s.id]++;
     }
   });
 
@@ -1540,10 +1591,10 @@ function generateShifts(){
       const onlyNs = list.filter(s => isNurse(s) && s.houkanOnly);
       const rest = list.filter(s => !(isNurse(s) && s.houkanOnly));
       const remainRoutes = Math.max(0, houkanRoutes - onlyNs.length);
-      const ns = rest.filter(isNurse).map(unitOf).sort((a, b) => a - b);
+      const ns = rest.filter(isNurse).map(s => unitOf(s, wd)).sort((a, b) => a - b);
       const excludeCount = Math.max(0, Math.min(remainRoutes, ns.length - 1));
       const routeUnit = ns.slice(0, excludeCount).reduce((t, u) => t + u, 0);
-      return rest.reduce((t, s) => t + unitOf(s), 0) - routeUnit;
+      return rest.reduce((t, s) => t + unitOf(s, wd), 0) - routeUnit;
     };
 
     const pool = dayWorkers.filter(s =>
@@ -1688,10 +1739,10 @@ function generateShifts(){
     let careShort;
     if(isTaki(fac)){
       const need = kayoiNeedFor(fac, wd) + homonKaigoNeed(fac);
-      const nsUnitsAsc = ns.map(unitOf).sort((a, b) => a - b);
+      const nsUnitsAsc = ns.map(s => unitOf(s, wd)).sort((a, b) => a - b);
       const excludeCount = Math.max(0, Math.min(houkanRoutes2, ns.length - 1));
       const routeUnit = nsUnitsAsc.slice(0, excludeCount).reduce((t, u) => t + u, 0);
-      careShort = need - (dayStaff.reduce((t, s) => t + unitOf(s), 0) - routeUnit);
+      careShort = need - (dayStaff.reduce((t, s) => t + unitOf(s, wd), 0) - routeUnit);
     }else{
       careShort = (fac.dayNeed || 2) - dayStaff.length;
     }
@@ -1978,9 +2029,10 @@ function renderShiftTable(){
     if(!nsOnly){
       html += '<tr class="summary-row"><th class="name-col">【常勤換算】</th>';
       for(let d = 1; d <= dim; d++){
+        const wdSum = weekdayOf(currentYm, d);
         const sum = rosterAll.reduce((t, s) => {
           const c = getCode(g, s.id, d);
-          return FTE_CODES.includes(c) ? t + unitOfOn(s, c) : t;
+          return FTE_CODES.includes(c) ? t + unitOfOn(s, c, wdSum) : t;
         }, 0);
         html += `<td>${fmtUnit(sum)}</td>`;
       }
@@ -1996,7 +2048,7 @@ function renderShiftTable(){
     kaigoHourStaff.forEach(s => {
       const hasFukushi = (s.quals || []).includes('kaigofukushi');
       for(let d = 1; d <= dim; d++){
-        const h = hoursForCode(s, getCode(g, s.id, d));
+        const h = hoursForCode(s, getCode(g, s.id, d), weekdayOf(currentYm, d));
         totalHours += h;
         if(hasFukushi) fukushiHours += h;
       }
@@ -2106,7 +2158,7 @@ function escapeHtml(s){
 }
 
 /* ---- 職員画面 ---- */
-function renderWdChecks(containerId, values){
+function renderWdChecks(containerId, values, onChange){
   const box = document.getElementById(containerId);
   box.innerHTML = '';
   // 月曜始まりで表示
@@ -2121,6 +2173,7 @@ function renderWdChecks(containerId, values){
       e.preventDefault();
       cb.checked = !cb.checked;
       lb.classList.toggle('on', cb.checked);
+      if(onChange) onChange();
     });
     box.appendChild(lb);
   });
@@ -2128,6 +2181,52 @@ function renderWdChecks(containerId, values){
 function readWdChecks(containerId){
   return [...document.querySelectorAll('#' + containerId + ' input')]
     .filter(cb => cb.checked).map(cb => +cb.value);
+}
+// 非常勤の「曜日ごとの勤務時間」パネルを、現在フォームでチェックされている曜日ぶんだけ描画する。
+// 曜日ごとの個別設定(wdTimes)があればそれを、なければ全体設定(stStart/stEnd)を初期値にする。
+// 「訪問のみ」チェックは介護非常勤(kaigo_part)のみ表示(訪問介護1件のみの短時間勤務を表す)
+function renderStWdTimes(wdTimes){
+  const role = document.getElementById('stRole').value;
+  const wrap = document.getElementById('stWdTimesWrap');
+  const box = document.getElementById('stWdTimes');
+  if(role !== 'kaigo_part' && role !== 'ns_part'){
+    wrap.style.display = 'none';
+    box.innerHTML = '';
+    return;
+  }
+  wrap.style.display = '';
+  const showVisitOnly = role === 'kaigo_part';
+  const checkedDays = readWdChecks('stWd');
+  const defStart = document.getElementById('stStart').value || '09:00';
+  const defEnd = document.getElementById('stEnd').value || '16:00';
+  box.innerHTML = '';
+  [1,2,3,4,5,6,0].filter(wd => checkedDays.includes(wd)).forEach(wd => {
+    const t = (wdTimes && wdTimes[wd]) || { start: defStart, end: defEnd, visitOnly: false };
+    const row = document.createElement('div');
+    row.className = 'wd-time-row';
+    row.dataset.wd = wd;
+    row.innerHTML = `
+      <span class="wd-time-label">${WD_CHARS[wd]}曜</span>
+      <input type="time" class="wdt-start" value="${t.start || defStart}">
+      <span>〜</span>
+      <input type="time" class="wdt-end" value="${t.end || defEnd}">
+      ${showVisitOnly ? `<label class="wdt-visit"><input type="checkbox" class="wdt-visitonly" ${t.visitOnly ? 'checked' : ''}> 訪問のみ(1件程度の短時間)</label>` : ''}
+    `;
+    box.appendChild(row);
+  });
+}
+function readStWdTimes(){
+  const out = {};
+  document.querySelectorAll('#stWdTimes .wd-time-row').forEach(row => {
+    const wd = +row.dataset.wd;
+    const visitEl = row.querySelector('.wdt-visitonly');
+    out[wd] = {
+      start: row.querySelector('.wdt-start').value,
+      end: row.querySelector('.wdt-end').value,
+      visitOnly: visitEl ? visitEl.checked : false,
+    };
+  });
+  return out;
 }
 // 資格チェック欄の描画・読み取り(quals配列のキーで管理)
 function renderQualChecks(containerId, quals, values){
@@ -2170,6 +2269,7 @@ function collectStaffFormData(role){
     quals: hasKaigoQuals(role) ? readQualChecks('stKaigoQuals')
       : hasNurseQuals(role) ? readQualChecks('stNurseQuals')
       : [],
+    wdTimes: (role === 'kaigo_part' || role === 'ns_part') ? readStWdTimes() : {},
   };
 }
 // 編集フォームを開いたまま(保存前の状態で)一覧側の「保存」ボタン(早番可・遅番可等のチェック用)を
@@ -2286,6 +2386,7 @@ function renderStaffView(){
   });
 }
 
+let currentStWdTimes = {}; // 編集中の職員の曜日ごとの勤務時間(fillStaffFormでセットし、曜日チェックのトグルや職種切り替え時に参照する)
 function fillStaffForm(s){
   document.getElementById('stName').value = s ? s.name : '';
   document.getElementById('stRole').value = s ? s.role : 'kaigo_full';
@@ -2298,7 +2399,8 @@ function fillStaffForm(s){
   document.getElementById('stStart2').value = s && s.workStart2 ? s.workStart2 : '';
   document.getElementById('stEnd2').value = s && s.workEnd2 ? s.workEnd2 : '';
   if(s) document.getElementById('stFac').value = s.facilityId;
-  renderWdChecks('stWd', s ? (s.workDays || []) : [1,2,3,4,5]);
+  currentStWdTimes = s ? (s.wdTimes || {}) : {};
+  renderWdChecks('stWd', s ? (s.workDays || []) : [1,2,3,4,5], () => renderStWdTimes(currentStWdTimes));
   renderWdChecks('stNightWd', s ? (s.nightDays || []) : []);
   renderQualChecks('stKaigoQuals', KAIGO_QUALS, s ? (s.quals || []) : []);
   renderQualChecks('stNurseQuals', NURSE_QUALS, s ? (s.quals || []) : []);
@@ -2326,6 +2428,7 @@ function updateStaffFormVisibility(){
   // ドライバーは中抜けがあるため時間帯を2枠入力できる
   document.getElementById('stTime2Wrap').style.display = driver ? '' : 'none';
   document.getElementById('stNightWrap').style.display = yakin ? '' : 'none';
+  renderStWdTimes(currentStWdTimes);
   document.getElementById('stKaigoQualWrap').style.display = hasKaigoQuals(role) ? '' : 'none';
   document.getElementById('stNurseQualWrap').style.display = hasNurseQuals(role) ? '' : 'none';
   // 早番可・遅番可・送迎・夜勤(代わり)・リーダー・オンコールは職員一覧のチェックボックスで編集する(このフォームでは扱わない)
@@ -2692,9 +2795,12 @@ async function orgImportOffice(){
       if(!prev) return s;
       if(Array.isArray(prev.quals)) s.quals = prev.quals;
       ['canDrive','canNight','canEarly','canLate','canLeader','canOncall',
-       'noHomon','noHoukan','houkanOnly'].forEach(k => {
+       'noHomon','noHoukan','houkanOnly',
+       'hoursPerDay','workStart','workEnd'].forEach(k => {
         if(prev[k] != null) s[k] = prev[k];
       });
+      // 曜日ごとの勤務時間(訪問のみの設定を含む)も引き継ぐ
+      if(prev.wdTimes && typeof prev.wdTimes === 'object') s.wdTimes = { ...prev.wdTimes };
       return s;
     };
     // 看多機側の職員(職種変換は看多機の事業所名で判定)
@@ -2810,10 +2916,10 @@ function kinmuQualification(s){
   return (s.quals || []).includes('kaigofukushi') ? '介護福祉士' : '';
 }
 // そのコードの1日あたりの(日中の時間, 夜間・深夜の時間)。勤務がない日はnull
-function kinmuHoursSplit(s, code){
+function kinmuHoursSplit(s, code, wd){
   if(code === '夜') return [KINMU_NIGHT_DAY_HOURS, KINMU_NIGHT_NIGHT_HOURS];
-  if(code === '訪看') return [dayHoursFor(s), 0];
-  const h = hoursForCode(s, code); // 早/日/遅/半/リ/訪介はここで判定(休/明/有等は0)
+  if(code === '訪看') return [dayHoursFor(s, wd), 0];
+  const h = hoursForCode(s, code, wd); // 早/日/遅/半/リ/訪介はここで判定(休/明/有等は0)
   return h > 0 ? [h, 0] : null;
 }
 
@@ -3014,7 +3120,7 @@ async function exportKinmuKeitai(){
     function monthlyHours(s){
       let total = 0;
       for(let d = 1; d <= dim; d++){
-        const split = kinmuHoursSplit(s, getCode(g, s.id, d));
+        const split = kinmuHoursSplit(s, getCode(g, s.id, d), weekdayOf(currentYm, d));
         if(split) total += split[0] + split[1];
       }
       return total;
@@ -3045,7 +3151,7 @@ async function exportKinmuKeitai(){
     }
     roster.forEach(({ s }) => {
       for(let d = 1; d <= dim; d++){
-        const split = kinmuHoursSplit(s, getCode(g, s.id, d));
+        const split = kinmuHoursSplit(s, getCode(g, s.id, d), weekdayOf(currentYm, d));
         if(split) assignSymbol(split[0], split[1]);
       }
     });
@@ -3080,7 +3186,7 @@ async function exportKinmuKeitai(){
       if(q) kinmuSetText(sheet3Doc, `I${row}`, q);
       kinmuSetText(sheet3Doc, `M${row}`, s.name);
       for(let d = 1; d <= dim; d++){
-        const split = kinmuHoursSplit(s, getCode(g, s.id, d));
+        const split = kinmuHoursSplit(s, getCode(g, s.id, d), weekdayOf(currentYm, d));
         if(!split) continue;
         const combo = comboMap.get(comboKey(split[0], split[1]));
         if(combo) kinmuSetText(sheet3Doc, kinmuColLetter(20 + d) + row, combo.symbol);
