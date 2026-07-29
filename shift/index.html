@@ -721,6 +721,7 @@ tr.summary-row:first-of-type td{border-top:2px solid var(--ocean);}
         <label>サービス種別</label>
         <select id="fcType">
           <option value="kantaki">看護小規模多機能型居宅介護(看多機)</option>
+          <option value="shoutaki">小規模多機能型居宅介護(小多機)</option>
           <option value="houkan">訪問看護</option>
         </select>
       </div>
@@ -734,6 +735,18 @@ tr.summary-row:first-of-type td{border-top:2px solid var(--ocean);}
       <div class="form-field" id="fcUsersWrap" style="grid-column:1/-1;">
         <label>曜日別の通い利用者数(3対1計算に使用)</label>
         <div class="users-by-wd" id="fcUsersByWd"></div>
+      </div>
+      <div class="form-field" id="fcAvgPrevWrap" style="display:none;">
+        <label>前年度の平均利用者数(小多機の員数算定に使用)</label>
+        <div style="display:flex;gap:6px;align-items:center;">
+          <input type="number" id="fcAvgUsersPrevYear" min="0" max="99" step="0.1" value="0"
+                 style="width:100px;min-height:44px;padding:8px;border:1px solid var(--mist);border-radius:8px;">
+          <span>名</span>
+        </div>
+        <p style="font-size:0.75rem;color:var(--gray);margin-top:4px;">
+          前年度(4月〜翌3月)の全利用者の延数 ÷ 前年度の日数。小数点第2位以下は切り上げ。
+          この人数の3対1と、上の曜日別利用者数の3対1を比べて、多い方を必要人数とします。
+        </p>
       </div>
       <div class="form-field" id="fcRoutesWrap" style="grid-column:1/-1;">
         <label>曜日別の送迎ルート数(1日に必要な運転者の人数。送迎がない曜日は0)</label>
@@ -857,6 +870,7 @@ tr.summary-row:first-of-type td{border-top:2px solid var(--ocean);}
 /* ================= 修正ログ =================
    コードを変更したら必ずここに1行追加すること */
 const CHANGELOG_DATA = [
+  { version: 'v1.33.0', date: '2026-07-24', label: '新機能', text: 'サービス種別に「小規模多機能型居宅介護(小多機)」を追加。小多機の拠点編集画面に【前年度の平均利用者数】の入力欄を新設し、その人数の3対1(常勤換算)を下回らないようにシフトを自動作成・チェックするようにした(曜日別の通い利用者数の3対1と比べて多い方を必要人数とする)。小多機には訪問看護がないため、訪問看護ルートの設定・看護師の人数チェック・シフト表の【訪問看護】行は表示しない(通い・送迎・訪問介護・夜勤は看多機と同じ)。前年度の平均利用者数は看多機・訪問看護には適用しない。※この機能を使うにはGAS(コード.gs)の再デプロイが必要です' },
   { version: 'v1.32.0', date: '2026-07-24', label: 'バグ修正', text: '入力した資格情報が消える原因が判明。「組織図から事業所を取り込む」で登録済みの拠点を再取り込みすると、その拠点の職員がいったん全員削除されて組織図から作り直されるため、資格・送迎・夜勤などのチェックがすべて初期値に戻っていた。再取り込みでも同じ職員(社員番号が一致する人)の資格・各種チェックは引き継ぐように修正。あわせて、編集画面を開かなくても確認できるよう、職員一覧に保有資格を表示するようにした' },
   { version: 'v1.31.0', date: '2026-07-24', label: 'バグ修正', text: '送迎の割り当てが意図と逆になっていた不具合を修正。計画作成を月初1〜6日に送迎から外す処理で、除外を表す値が「最優先」と誤って解釈され、1〜6日にこそ計画作成が送迎に入ってしまっていた。①送迎ドライバー②送迎対応可能な介護職員③計画作成(月初1〜6日は対象外)④支配人、の順で正しく割り当てるように修正(勤務が「リ」「訪介」の職員も送迎の対象に含む)。あわせて職員一覧に「訪介除外」(介護: 訪問介護に割り当てない)「訪看除外」(看護: 訪問看護ルートに割り当てない)「訪問のみ」(看護: 訪問看護のみ対応、通い側の人員に数えない)のチェックを追加。※この修正を反映するにはGAS(コード.gs)の再デプロイが必要です' },
   { version: 'v1.30.0', date: '2026-07-24', label: 'バグ修正', text: '「資格情報が保存されない」の本当の原因が判明。GAS側(コード.gs)の職員シートに資格(quals)を保存する列がそもそも存在せず、クラウド保存・読み込みのたびに資格情報が黙って消えていた(v1.19.0で資格機能を追加した際、コード.gs側の対応が漏れていた)。コード.gsの職員シートに「資格」列を追加し、保存・読み込みの両方に対応。※この修正を反映するにはGAS(コード.gs)の再デプロイが必要です(v1.27.0のシフト確定機能の再デプロイがまだの場合は同時に反映できます)' },
@@ -1019,9 +1033,9 @@ function crossMonthCode(staffId, baseYm, day){
   return (g2[staffId] && g2[staffId][d]) || '';
 }
 function currentFacility(){ return state.facilities.find(f => f.id === currentFacId) || null; }
-// 営業日か? 看多機は365日運営。訪問看護は営業曜日設定に従う(未設定なら月〜金)
+// 営業日か? 看多機・小多機は365日運営。訪問看護は営業曜日設定に従う(未設定なら月〜金)
 function isOpenDay(fac, ym, day){
-  if(!fac || fac.type === 'kantaki') return true;
+  if(!fac || isTaki(fac)) return true;
   const open = (fac.openDays && fac.openDays.length) ? fac.openDays : [1,2,3,4,5];
   return open.includes(weekdayOf(ym, day));
 }
@@ -1106,9 +1120,12 @@ function hoursForCode(s, code){
   if(['早','日','遅','リ','訪介'].includes(code)) return dayHoursFor(s);
   return 0;
 }
+// 通い・泊まり・訪問介護をまとめて行う多機能型(看多機・小多機)か。
+// 3対1・送迎・訪問介護の考え方はこの2種別で共通。訪問看護は看多機のみ
+function isTaki(fac){ return !!fac && (fac.type === 'kantaki' || fac.type === 'shoutaki'); }
 // その曜日の送迎ルート数
 function routesOf(fac, wd){
-  if(!fac || fac.type !== 'kantaki') return 0;
+  if(!isTaki(fac)) return 0;
   if(fac.routesByWd && fac.routesByWd.length === 7) return +fac.routesByWd[wd] || 0;
   return fac.routes != null ? +fac.routes : 1; // 旧データ互換
 }
@@ -1119,6 +1136,18 @@ function houkanRoutesFor(fac, wd){
   if(!fac || fac.type !== 'kantaki') return 0;
   if(fac.houkanRoutesByWd && fac.houkanRoutesByWd.length === 7) return +fac.houkanRoutesByWd[wd] || 0;
   return 1; // 旧データ互換(これまでは常に1ルート相当だった)
+}
+// 通い側の3対1に必要な常勤換算人数。
+// 小多機は「前年度の平均利用者数」(運営基準で員数算定に使う値)でも3対1を満たす必要があるため、
+// 曜日別の通い利用者数からの計算と比べて多い方を採用する
+function kayoiNeedFor(fac, wd){
+  if(!isTaki(fac)) return 0;
+  let need = Math.ceil(usersFor(fac, wd) / 3);
+  if(fac.type === 'shoutaki'){
+    const avg = +fac.avgUsersPrevYear || 0;
+    if(avg > 0) need = Math.max(need, Math.ceil(avg / 3));
+  }
+  return need;
 }
 
 // 正社員・支配人・計画作成の月の休み日数(拠点の年間設定から、指定月(YYYYMM)分を取り出す。全員共通)
@@ -1137,13 +1166,15 @@ function normalizeData(){
       const v = +f.avgUsers || 0;
       f.usersByWd = [v, v, v, v, v, v, v];
     }
-    if(f.routes == null) f.routes = f.type === 'kantaki' ? 1 : 0;
+    if(f.routes == null) f.routes = isTaki(f) ? 1 : 0;
     if(!f.routesByWd || f.routesByWd.length !== 7){
       const v = +f.routes || 0;
       f.routesByWd = [v, v, v, v, v, v, v];
     }
     if(!f.houkanRoutesByWd || f.houkanRoutesByWd.length !== 7) f.houkanRoutesByWd = new Array(7).fill(1);
     if(f.kasanHoumon == null) f.kasanHoumon = false;
+    // 前年度の平均利用者数(小多機の員数算定に使用。他の種別では0のまま)
+    if(f.avgUsersPrevYear == null) f.avgUsersPrevYear = 0;
     if(!f.annualOff || f.annualOff.length !== 12) f.annualOff = new Array(12).fill(9);
     if(f.earlyRoutes == null) f.earlyRoutes = 1;
     if(f.dayRoutes == null) f.dayRoutes = 1;
@@ -1244,12 +1275,17 @@ function checkDay(day){
 
   const issues = [];
 
-  if(fac && fac.type === 'kantaki'){
+  if(isTaki(fac)){
+    const isShou = fac.type === 'shoutaki'; // 小多機は訪問看護なし・看護師の人数チェックなし
     const wd = weekdayOf(currentYm, day);
     const users = usersFor(fac, wd);
-    const kayoiNeed = Math.ceil(users / 3); // 利用者3人に職員1人(常勤換算)
+    const kayoiNeed = kayoiNeedFor(fac, wd); // 利用者3人に職員1人(小多機は前年度平均とも比較)
     const homonNeed = homonKaigoNeed(fac);  // 訪問介護1名(訪問体制強化加算ありなら2名)
     const needCare = kayoiNeed + homonNeed;
+    // 小多機で前年度平均のほうが多い場合は、その旨を計算根拠に添える
+    const avgPrev = +fac.avgUsersPrevYear || 0;
+    const usersNote = (isShou && avgPrev > 0 && Math.ceil(avgPrev / 3) >= Math.ceil(users / 3))
+      ? `前年度平均${avgPrev}名` : `通い${users}名`;
     const houkanRoutes = houkanRoutesFor(fac, wd); // 曜日別の訪問看護ルート数
     const nurseNeedDay = 1 + houkanRoutes; // 通い側1名+訪問看護ルートぶん
     // 訪問看護ルートの看護師は3対1側に含めない。
@@ -1269,19 +1305,23 @@ function checkDay(day){
     }
     const units = dayCare.reduce((t, r) => t + unitOfOn(r.s, r.c), 0) - routeUnit;
     const kasanNote = fac.kasanHoumon ? '・訪問体制強化加算あり' : '';
+    const routeNote = isShou ? '' : '。訪看ルートの看護師は除く';
     if(units < needCare){
-      issues.push({ level:'bad', text:`日中の人員が不足(常勤換算${fmtUnit(units)}人分/${needCare}人分必要 = 通い${users}名の3対1で${kayoiNeed}人分+訪問介護${homonNeed}名${kasanNote}。訪看ルートの看護師は除く)` });
+      issues.push({ level:'bad', text:`日中の人員が不足(常勤換算${fmtUnit(units)}人分/${needCare}人分必要 = ${usersNote}の3対1で${kayoiNeed}人分+訪問介護${homonNeed}名${kasanNote}${routeNote})` });
     }else{
-      issues.push({ level:'ok', text:`日中の人員 常勤換算${fmtUnit(units)}人分(必要${needCare}人分: 通い${users}名の3対1で${kayoiNeed}人分+訪問介護${homonNeed}名${kasanNote}。訪看ルートの看護師は除く)` });
+      issues.push({ level:'ok', text:`日中の人員 常勤換算${fmtUnit(units)}人分(必要${needCare}人分: ${usersNote}の3対1で${kayoiNeed}人分+訪問介護${homonNeed}名${kasanNote}${routeNote})` });
     }
-    if(nurses.length < nurseNeedDay){
-      issues.push({ level:'bad', text:`日中の看護師が${nurses.length}名(${nurseNeedDay}名必要: 通い側1名+訪問看護${houkanRoutes}ルート)` });
-    }else if(houkanRoutes > 0 && routeMarked.length < houkanRoutes){
-      issues.push({ level:'warn', text:`看護師 ${nurses.length}名。訪問看護ルート担当(訪看)が${routeMarked.length}/${houkanRoutes}名しか指定されていません(マスをタップして指定)` });
-    }else if(houkanRoutes > 0){
-      issues.push({ level:'ok', text:`看護師 ${nurses.length}名(訪看ルート${houkanRoutes}: ${routeMarked.map(r=>r.s.name).join('、')})` });
-    }else{
-      issues.push({ level:'ok', text:`看護師 ${nurses.length}名(この曜日は訪問看護ルートなし)` });
+    // 看護師の人数チェックは看多機のみ(小多機は訪問看護がないため対象外)
+    if(!isShou){
+      if(nurses.length < nurseNeedDay){
+        issues.push({ level:'bad', text:`日中の看護師が${nurses.length}名(${nurseNeedDay}名必要: 通い側1名+訪問看護${houkanRoutes}ルート)` });
+      }else if(houkanRoutes > 0 && routeMarked.length < houkanRoutes){
+        issues.push({ level:'warn', text:`看護師 ${nurses.length}名。訪問看護ルート担当(訪看)が${routeMarked.length}/${houkanRoutes}名しか指定されていません(マスをタップして指定)` });
+      }else if(houkanRoutes > 0){
+        issues.push({ level:'ok', text:`看護師 ${nurses.length}名(訪看ルート${houkanRoutes}: ${routeMarked.map(r=>r.s.name).join('、')})` });
+      }else{
+        issues.push({ level:'ok', text:`看護師 ${nurses.length}名(この曜日は訪問看護ルートなし)` });
+      }
     }
     const homonMarked = dayCare.filter(r => r.c === '訪介');
     if(dayCare.length > 0){
@@ -1444,7 +1484,7 @@ function generateShifts(){
 
   // ---- 1.2 夜勤の穴埋め: 夜勤者が休みの日は夜勤可能な介護職員を代わりに配置 ----
   // 夜勤は2日分の勤務としてカウントする(翌日は明け、その次の日は休み)
-  if(fac.type === 'kantaki'){
+  if(isTaki(fac)){
     for(let d = 1; d <= dim; d++){
       if(roster.some(s => getCode(g, s.id, d) === '夜')) continue; // その日の夜勤は確保済み
       const wd = weekdayOf(currentYm, d);
@@ -1486,13 +1526,12 @@ function generateShifts(){
   const dayWorkers = roster.filter(s => isCareWorker(s) && !isFixedPart(s));
   for(const d of dayOrder){
     const wd = weekdayOf(currentYm, d);
-    // 看多機: 3対1(常勤換算・うち1名看護師) + 訪問介護1名(加算ありは2名)
-    // + 訪問看護ルートの看護師(曜日別ルート数ぶん・3対1に含めない)
+    // 看多機・小多機: 3対1(常勤換算) + 訪問介護1名(加算ありは2名)
+    // 看多機はさらに 3対1のうち1名看護師 + 訪問看護ルートの看護師(曜日別ルート数ぶん・3対1に含めない)
+    // 小多機は訪問看護がないため看護師の人数条件は課さない(kayoiNeedForが前年度平均も加味する)
     const houkanRoutes = houkanRoutesFor(fac, wd);
-    const needCare = fac.type === 'kantaki'
-      ? Math.ceil(usersFor(fac, wd) / 3) + homonKaigoNeed(fac)
-      : 0;
-    const nurseNeed = fac.type === 'kantaki' ? 1 + houkanRoutes : 1;
+    const needCare = isTaki(fac) ? kayoiNeedFor(fac, wd) + homonKaigoNeed(fac) : 0;
+    const nurseNeed = fac.type === 'kantaki' ? 1 + houkanRoutes : (fac.type === 'shoutaki' ? 0 : 1);
     // 固定曜日の非常勤などで既に埋まっている分を考慮する
     const placed = roster.filter(s => isCareWorker(s) && DAY_CODES.includes(getCode(g, s.id, d)));
     // 3対1側の常勤換算(訪問看護ルートぶん、換算値の小さい看護師から除外)。
@@ -1536,11 +1575,12 @@ function generateShifts(){
     // 看護師を必要人数(看多機2名: 通い側1+訪看ルート1)まで先に入れ、
     // 3対1側の常勤換算が必要量に達するまで職員を追加する
     // 早番・日勤・遅番のルート数も必要人数として扱う(3対1+訪問介護+訪問看護は下回らない)
-    const routeHeadNeed = (fac.type === 'kantaki' && fac.pattern === 'three')
+    const routeHeadNeed = (isTaki(fac) && fac.pattern === 'three')
       ? (fac.earlyRoutes != null ? fac.earlyRoutes : 1)
         + (fac.dayRoutes != null ? fac.dayRoutes : 1)
         + (fac.lateRoutes != null ? fac.lateRoutes : 1)
-        + homonKaigoNeed(fac) + 1 // +訪問介護担当+訪看ルート看護師のぶん
+        + homonKaigoNeed(fac)
+        + (fac.type === 'kantaki' ? 1 : 0) // +訪問介護担当(+看多機は訪看ルート看護師のぶん)
       : 0;
     while(pool.length > 0){
       const cur = placed.concat(picks);
@@ -1550,7 +1590,7 @@ function generateShifts(){
       const kayoiNurseShort = fac.type === 'kantaki' && kayoiNsCount < 1
         && pool.some(s => isNurse(s) && !s.houkanOnly);
       const nurseShort = (nsCount < nurseNeed && pool.some(isNurse)) || kayoiNurseShort;
-      const careShort = fac.type === 'kantaki'
+      const careShort = isTaki(fac)
         ? (units3(cur) < needCare || cur.length < routeHeadNeed)
         : cur.length < (fac.dayNeed || 2);
       if(!nurseShort && !careShort) break;
@@ -1644,10 +1684,10 @@ function generateShifts(){
     const dayStaff = roster.filter(s => isCareWorker(s) && DAY_CODES.includes(getCode(g, s.id, d)));
     const ns = dayStaff.filter(isNurse);
     const houkanRoutes2 = houkanRoutesFor(fac, wd);
-    const nurseNeed2 = fac.type === 'kantaki' ? 1 + houkanRoutes2 : 1;
+    const nurseNeed2 = fac.type === 'kantaki' ? 1 + houkanRoutes2 : (fac.type === 'shoutaki' ? 0 : 1);
     let careShort;
-    if(fac.type === 'kantaki'){
-      const need = Math.ceil(usersFor(fac, wd) / 3) + homonKaigoNeed(fac);
+    if(isTaki(fac)){
+      const need = kayoiNeedFor(fac, wd) + homonKaigoNeed(fac);
       const nsUnitsAsc = ns.map(unitOf).sort((a, b) => a - b);
       const excludeCount = Math.max(0, Math.min(houkanRoutes2, ns.length - 1));
       const routeUnit = nsUnitsAsc.slice(0, excludeCount).reduce((t, u) => t + u, 0);
@@ -1695,7 +1735,8 @@ function generateShifts(){
   }
 
   // ---- 3.8 訪問担当の指定: 訪看(訪問看護ルートの看護師)と訪介(訪問介護担当)をランダムに選ぶ ----
-  if(fac.type === 'kantaki'){
+  // 小多機は訪問看護がないため houkanRoutesFor が常に0を返し、訪看の割り当ては行われない
+  if(isTaki(fac)){
     const pickRandom = arr => arr[Math.floor(Math.random() * arr.length)];
     for(let d = 1; d <= dim; d++){
       if(!isOpenDay(fac, currentYm, d)) continue;
@@ -1905,14 +1946,15 @@ function renderShiftTable(){
   });
 
   // 人員配置の人数サマリー(看多機のみ: 通い・訪問介護・訪問看護。人数は全職員から数える)
-  if(fac.type === 'kantaki'){
+  if(isTaki(fac)){
     const countCode = (d, pred) => rosterAll.filter(s => pred(getCode(g, s.id, d))).length;
     const summaryRows = nsOnly
       ? [{ label: '訪問看護', pred: c => c === '訪看' }]
       : [
           { label: '通い',     pred: c => ['早','日','遅','半','リ'].includes(c) },
           { label: '訪問介護', pred: c => c === '訪介' },
-          { label: '訪問看護', pred: c => c === '訪看' },
+          // 訪問看護は看多機のみ(小多機にはない)
+          ...(fac.type === 'kantaki' ? [{ label: '訪問看護', pred: c => c === '訪看' }] : []),
         ];
     summaryRows.forEach(row => {
       html += `<tr class="summary-row"><th class="name-col">【${row.label}】</th>`;
@@ -2300,24 +2342,31 @@ function renderFacView(){
   state.facilities.forEach(f => {
     const div = document.createElement('div');
     div.className = 'list-item';
-    const typeLabel = f.type === 'kantaki' ? '看多機' : '訪問看護';
+    const typeLabel = f.type === 'kantaki' ? '看多機' : (f.type === 'shoutaki' ? '小多機' : '訪問看護');
     const patLabel = f.pattern === 'three' ? '早番・日勤・遅番' : '日勤のみ';
-    const openLabel = f.type === 'kantaki' ? ''
+    const openLabel = isTaki(f) ? ''
       : ' / 営業日: ' + [1,2,3,4,5,6,0]
           .filter(w => ((f.openDays && f.openDays.length) ? f.openDays : [1,2,3,4,5]).includes(w))
           .map(w => WD_CHARS[w]).join('');
     let numLabel;
-    if(f.type === 'kantaki'){
-      const needs = [0,1,2,3,4,5,6].map(wd => Math.ceil(usersFor(f, wd) / 3) + homonKaigoNeed(f));
+    if(isTaki(f)){
+      const needs = [0,1,2,3,4,5,6].map(wd => kayoiNeedFor(f, wd) + homonKaigoNeed(f));
       const mn = Math.min(...needs), mx = Math.max(...needs);
       const rts = [0,1,2,3,4,5,6].map(wd => routesOf(f, wd));
       const rmn = Math.min(...rts), rmx = Math.max(...rts);
-      const hrts = [0,1,2,3,4,5,6].map(wd => houkanRoutesFor(f, wd));
-      const hrmn = Math.min(...hrts), hrmx = Math.max(...hrts);
       const shiftRouteLabel = f.pattern === 'three'
         ? ` / 早番${f.earlyRoutes != null ? f.earlyRoutes : 1}・日勤${f.dayRoutes != null ? f.dayRoutes : 1}・遅番${f.lateRoutes != null ? f.lateRoutes : 1}ルート`
         : '';
-      numLabel = `日中 常勤換算${mn === mx ? mn : mn + '〜' + mx}人分(3対1+訪問介護${homonKaigoNeed(f)}名)+看護師(通い側1名+訪問看護${hrmn === hrmx ? hrmn : hrmn + '〜' + hrmx}ルート) / 送迎${rmn === rmx ? rmn : rmn + '〜' + rmx}ルート${shiftRouteLabel}${f.kasanHoumon ? ' / 訪問体制強化加算' : ''}`;
+      let nurseLabel = '';
+      if(f.type === 'kantaki'){
+        const hrts = [0,1,2,3,4,5,6].map(wd => houkanRoutesFor(f, wd));
+        const hrmn = Math.min(...hrts), hrmx = Math.max(...hrts);
+        nurseLabel = `+看護師(通い側1名+訪問看護${hrmn === hrmx ? hrmn : hrmn + '〜' + hrmx}ルート)`;
+      }
+      // 小多機は前年度の平均利用者数も員数算定に使う
+      const avgLabel = (f.type === 'shoutaki' && +f.avgUsersPrevYear > 0)
+        ? ` / 前年度平均${f.avgUsersPrevYear}名` : '';
+      numLabel = `日中 常勤換算${mn === mx ? mn : mn + '〜' + mx}人分(3対1+訪問介護${homonKaigoNeed(f)}名)${nurseLabel} / 送迎${rmn === rmx ? rmn : rmn + '〜' + rmx}ルート${shiftRouteLabel}${avgLabel}${f.kasanHoumon ? ' / 訪問体制強化加算' : ''}`;
     }else{
       numLabel = `日勤${f.dayNeed}名必要`;
     }
@@ -2391,6 +2440,7 @@ function fillFacForm(f){
   document.getElementById('fcLateRoutes').value = f && f.lateRoutes != null ? f.lateRoutes : 1;
   document.getElementById('fcKibouDays').value = f && f.kibouDays != null ? f.kibouDays : 3;
   document.getElementById('fcKasanHoumon').checked = f ? !!f.kasanHoumon : false;
+  document.getElementById('fcAvgUsersPrevYear').value = f && f.avgUsersPrevYear != null ? f.avgUsersPrevYear : 0;
   renderNumsByMonth('fcAnnualOff', f ? f.annualOff : null, 9);
   document.getElementById('fcNeed').value = f ? (f.dayNeed || 2) : 2;
   renderWdChecks('fcOpen', f && f.openDays && f.openDays.length ? f.openDays : [1,2,3,4,5]);
@@ -2399,17 +2449,23 @@ function fillFacForm(f){
   document.getElementById('btnFacCancel').style.display = f ? '' : 'none';
 }
 function updateFacFormVisibility(){
-  const isKantaki = document.getElementById('fcType').value === 'kantaki';
+  const type = document.getElementById('fcType').value;
+  const isKantaki = type === 'kantaki';
+  const isShoutaki = type === 'shoutaki';
+  const taki = isKantaki || isShoutaki; // 看多機・小多機で共通の設定項目
   const isThree = document.getElementById('fcPattern').value === 'three';
-  document.getElementById('fcUsersWrap').style.display = isKantaki ? '' : 'none';
-  document.getElementById('fcRoutesWrap').style.display = isKantaki ? '' : 'none';
+  document.getElementById('fcUsersWrap').style.display = taki ? '' : 'none';
+  document.getElementById('fcRoutesWrap').style.display = taki ? '' : 'none';
+  document.getElementById('fcKasanWrap').style.display = taki ? '' : 'none';
+  // 訪問看護ルートは看多機のみ(小多機には訪問看護がない)
   document.getElementById('fcHoukanRoutesWrap').style.display = isKantaki ? '' : 'none';
-  document.getElementById('fcKasanWrap').style.display = isKantaki ? '' : 'none';
-  document.getElementById('fcNeedWrap').style.display = isKantaki ? 'none' : '';
+  // 前年度の平均利用者数は小多機のみ(看多機・訪問看護には適用しない)
+  document.getElementById('fcAvgPrevWrap').style.display = isShoutaki ? '' : 'none';
+  document.getElementById('fcNeedWrap').style.display = taki ? 'none' : '';
   // 早番・遅番のルート数は3交代パターンの拠点のみ
   document.getElementById('fcShiftRoutesWrap').style.display = isThree ? '' : 'none';
-  // 看多機は365日運営なので営業曜日の設定は訪問看護のみ
-  document.getElementById('fcOpenWrap').style.display = isKantaki ? 'none' : '';
+  // 看多機・小多機は365日運営なので営業曜日の設定は訪問看護のみ
+  document.getElementById('fcOpenWrap').style.display = taki ? 'none' : '';
 }
 
 /* ---- 設定画面 ---- */
@@ -3401,6 +3457,7 @@ function bindEvents(){
       lateRoutes: Math.max(0, +document.getElementById('fcLateRoutes').value || 0),
       kibouDays: Math.max(0, +document.getElementById('fcKibouDays').value || 0),
       kasanHoumon: document.getElementById('fcKasanHoumon').checked,
+      avgUsersPrevYear: Math.max(0, +document.getElementById('fcAvgUsersPrevYear').value || 0),
       annualOff: readNumsByMonth('fcAnnualOff'),
       dayNeed: +document.getElementById('fcNeed').value || 2,
       openDays: readWdChecks('fcOpen'),
