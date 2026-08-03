@@ -710,12 +710,8 @@ async function sha256(str) {
   return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2,'0')).join('');
 }
 async function initAuth() {
-  if (sessionStorage.getItem(SESSION_KEY) === '1') {
-    document.getElementById('auth-overlay').style.display = 'none';
-    onAuthed();
-    return;
-  }
-  setTimeout(() => document.getElementById('inp-pw-login').focus(), 100);
+  document.getElementById('auth-overlay').style.display = 'none';
+  onAuthed();
 }
 async function authSubmit() {
   const errEl = document.getElementById('auth-error');
@@ -3449,6 +3445,13 @@ function renderAddonChecklist(users) {
 // 修正ログモーダル
 // ============================================================
 const CHANGELOG_DATA = [
+  {
+    version: 'v1.6.11', date: '2026-08-03', label: '改善',
+    labelColor: '#276749', labelBg: '#c6f6d5',
+    items: [
+      { tag: '改善', tagColor: '#276749', tagBg: '#c6f6d5', text: 'パスワード認証を廃止。URLにアクセスするだけで即時利用可能に変更' },
+    ]
+  },
   {
     version: 'v1.6.10', date: '2026-07-17', label: '改善',
     labelColor: '#2c5282', labelBg: '#bee3f8',
