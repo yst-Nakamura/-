@@ -595,6 +595,10 @@ const SESSION_KEY  = 'kango_authed';
 // ★ GASデプロイ後にここを書き換える
 const GAS_URL_DEFAULT = 'https://script.google.com/macros/s/AKfycbw5vg_DYk2oMifFJmkPng6ms8-9BbN-JykrVbqYGu9MBJsDU73c58cNVX8Q3Gfb0no6/exec';
 
+// D1バックアップ設定
+const KANGO_WORKER_URL = 'https://shift-app-worker.tetsuya-nakamura-y.workers.dev';
+const KANGO_D1_KEY = 'f7c1128a02cc5027d369a76cf2e1060a991e88bb17f77196';
+
 const AREA_DEFS = [
   { area: '第１エリア', color: '#2b6cb0', bg: '#ebf8ff', keys: ['長野', '北青木', '長岡'] },
   { area: '第２エリア', color: '#276749', bg: '#f0fff4', keys: ['大橋', '用賀', '成城', '給田', '上北沢'] },
@@ -767,7 +771,53 @@ async function gasPost(payload) {
   const formData = new FormData();
   formData.append('data', JSON.stringify(payload));
   const res = await fetch(getGasUrl(), { method: 'POST', body: formData });
-  return res.json();
+  const result = await res.json();
+  // D1へ非同期バックアップ（失敗しても無視）
+  d1KangoSync(payload).catch(() => {});
+  return result;
+}
+
+async function d1KangoSync(payload) {
+  const { action } = payload;
+  let endpoint, body;
+  switch (action) {
+    case 'createFacility':
+    case 'renameFacility':
+      endpoint = '/api/kango/facility';
+      body = { id: String(payload.facilityId || payload.id), name: payload.name };
+      break;
+    case 'saveMonthlyData':
+      endpoint = '/api/kango/monthly';
+      body = { facilityId: payload.facilityId, ym: payload.ym, users: payload.users };
+      break;
+    case 'deleteMonth':
+      endpoint = '/api/kango/monthly/delete';
+      body = { facilityId: payload.facilityId, ym: payload.ym };
+      break;
+    case 'saveTerminalEntry':
+      endpoint = '/api/kango/terminal';
+      body = { facilityId: payload.facilityId, ym: payload.ym, label: payload.label };
+      break;
+    case 'deleteTerminalEntry':
+      endpoint = '/api/kango/terminal/delete';
+      body = { facilityId: payload.facilityId, ym: payload.ym };
+      break;
+    case 'saveIshaValue':
+      endpoint = '/api/kango/isha';
+      body = { facilityId: payload.facilityId, ym: payload.ym, value: payload.value };
+      break;
+    case 'saveKatsudan':
+      endpoint = '/api/kango/katsudan';
+      body = { facilityId: payload.facilityId, registered: payload.registered, staff: payload.staff };
+      break;
+    default:
+      return; // 読み取り系はスキップ
+  }
+  await fetch(KANGO_WORKER_URL + endpoint, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-API-Key': KANGO_D1_KEY },
+    body: JSON.stringify(body),
+  });
 }
 
 // ============================================================
@@ -3445,6 +3495,13 @@ function renderAddonChecklist(users) {
 // 修正ログモーダル
 // ============================================================
 const CHANGELOG_DATA = [
+  {
+    version: 'v1.6.12', date: '2026-08-04', label: '新機能',
+    labelColor: '#2b6cb0', labelBg: '#bee3f8',
+    items: [
+      { tag: '新機能', tagColor: '#2b6cb0', tagBg: '#bee3f8', text: 'Cloudflare D1へのデータ自動バックアップ機能を追加。CSV取込・手動入力・事業所作成などの書き込み操作がGASと同時にD1にも保存される' },
+    ]
+  },
   {
     version: 'v1.6.11', date: '2026-08-03', label: '改善',
     labelColor: '#276749', labelBg: '#c6f6d5',
