@@ -607,6 +607,10 @@ tr.summary-row:first-of-type td{border-top:2px solid var(--ocean);}
         <input type="text" id="stName" placeholder="例: 山田 花子">
       </div>
       <div class="form-field">
+        <label>社員番号(組織図の従業員ID。ポータル連携で使用。未確定なら空欄でOK)</label>
+        <input type="text" id="stEmpId" placeholder="例: 024886" inputmode="numeric">
+      </div>
+      <div class="form-field">
         <label>職種</label>
         <select id="stRole">
           <option value="kaigo_full">介護 正社員</option>
@@ -889,6 +893,9 @@ tr.summary-row:first-of-type td{border-top:2px solid var(--ocean);}
 /* ================= 修正ログ =================
    コードを変更したら必ずここに1行追加すること */
 const CHANGELOG_DATA = [
+  { version: 'v1.37.0', date: '2026-08-04', label: '新機能', text: '「シフト確定」時にD1へ送信するデータに、日ごとのオンコール担当(看護師)も含めるようにした。これまではシフトコード(早/日/遅/夜など)のみを送信しており、オンコール担当は送っていなかった。かえりえポータル向けのAPI(?month=...)では、オンコール担当のシフトに備考として「オンコール」を付け、onCallフラグも別途返すようにした' },
+  { version: 'v1.36.0', date: '2026-08-04', label: 'バグ修正・新機能', text: '職員編集画面に「社員番号」の入力欄を追加。ポータル連携(D1)で使う従業員IDを、内部管理用のIDとは別に直接編集・修正できるようにした。きっかけは、組織図取り込みの内部IDから社員番号を推測していたことで、たまたま別人の本当の社員番号と一致してしまい、ポータル上で氏名が入れ替わって表示される不具合が発生したこと(看多機かえりえ上北沢の支配人枠で発生、D1側のデータは是正済み)。社員番号を明示的に入力した職員はその値を優先し、未入力の職員は従来どおり内部IDから自動判定する(既存の動作に影響なし)。組織図の再取り込みでも社員番号は引き継がれる。※GAS(コード.gs)側でも、社員番号がスプレッドシートに数値として自動解釈され先頭ゼロが消える不具合が見つかり修正済み(列をプレーンテキスト形式に固定)。この機能を使うにはGAS(コード.gs)の再デプロイが必要です' },
+  { version: 'v1.35.0', date: '2026-07-31', label: '新機能', text: '「シフト確定」ボタンを押すと、その拠点・月の確定シフトをCloudflare D1(社内の「かえりえポータル」等で今後シフトを参照するためのデータベース)へ自動送信するようにした。送信されるのは職員ID・氏名・職種・日ごとのシフトコードのみで、要介護度など利用者情報は一切含まない。現時点ではデータを送るのみで、ポータル側の閲覧画面はまだ未実装(今後かえりえポータル側の仕様が固まり次第、対応予定)' },
   { version: 'v1.34.0', date: '2026-07-24', label: '新機能', text: '非常勤職員(介護・看護)の勤務時間を曜日ごとに設定できるように追加。編集画面で勤務曜日をチェックすると、その曜日ぶんの時間帯入力欄が個別に表示され、曜日によって勤務時間が違う働き方に対応(常勤換算・サービス提供体制強化加算・勤務形態一覧表の時間計算もすべて曜日ごとの時間を使うように変更)。介護非常勤には曜日ごとに「訪問のみ」チェックを追加し、木曜15時〜16時のみ訪問1件、のような短時間の訪問介護専従日を設定できるようにした(その曜日は自動作成で確実に訪問介護として配置される)。※この機能を使うにはGAS(コード.gs)の再デプロイが必要です' },
   { version: 'v1.33.0', date: '2026-07-24', label: '新機能', text: 'サービス種別に「小規模多機能型居宅介護(小多機)」を追加。小多機の拠点編集画面に【前年度の平均利用者数】の入力欄を新設し、その人数の3対1(常勤換算)を下回らないようにシフトを自動作成・チェックするようにした(曜日別の通い利用者数の3対1と比べて多い方を必要人数とする)。小多機には訪問看護がないため、訪問看護ルートの設定・看護師の人数チェック・シフト表の【訪問看護】行は表示しない(通い・送迎・訪問介護・夜勤は看多機と同じ)。前年度の平均利用者数は看多機・訪問看護には適用しない。※この機能を使うにはGAS(コード.gs)の再デプロイが必要です' },
   { version: 'v1.32.0', date: '2026-07-24', label: 'バグ修正', text: '入力した資格情報が消える原因が判明。「組織図から事業所を取り込む」で登録済みの拠点を再取り込みすると、その拠点の職員がいったん全員削除されて組織図から作り直されるため、資格・送迎・夜勤などのチェックがすべて初期値に戻っていた。再取り込みでも同じ職員(社員番号が一致する人)の資格・各種チェックは引き継ぐように修正。あわせて、編集画面を開かなくても確認できるよう、職員一覧に保有資格を表示するようにした' },
@@ -973,11 +980,18 @@ function hasNurseQuals(role){ return role === 'ns_full' || role === 'ns_part'; }
 const LS_KEY = 'kaerie_shift_app_v1';
 // このアプリ専用のGASウェブアプリURL(初回起動時の初期値として使う)
 const DEFAULT_GAS_URL = 'https://script.google.com/macros/s/AKfycbxkzwV0TQx0zvJxhwtM8NIVxX_xW1qSOCN6x8mpJjMzWMAzZhQBFavTyFlORn3xi_u7/exec';
+// 確定シフトをかえりえポータル等から参照できるようにするD1連携用Worker
+const D1_WORKER_URL = 'https://shift-app-worker.tetsuya-nakamura-y.workers.dev/api/shifts';
+// 社員番号欄を意図的に空欄で保存した(=内部IDからの推測を使わないと確認済み)ことを表す印。
+// 単なる空文字だとGAS/スプレッドシートを経由した際に「未入力」と区別できなくなるため、
+// 空文字ではなくこの印を保存する
+const EMPID_BLANK = '-';
+const D1_API_KEY = 'f7c1128a02cc5027d369a76cf2e1060a991e88bb17f77196';
 
 /* ================= 状態 ================= */
 let state = {
   facilities: [], // {id,name,type:'kantaki'|'houkan',pattern:'three'|'day',usersByWd:[日〜土],dayNeed,openDays,annualOff:[1月〜12月]}
-  staff: [],      // {id,facilityId,name,role,contractType:'fixed'|'weekly',daysPerWeek,workDays:[0-6],nightDays:[0-6],hoursPerDay,workStart,workEnd}
+  staff: [],      // {id,facilityId,name,empId(社員番号。D1連携用。未入力=undefined),role,contractType:'fixed'|'weekly',daysPerWeek,workDays:[0-6],nightDays:[0-6],hoursPerDay,workStart,workEnd}
   // 正社員・支配人・計画作成の月の休み日数は拠点ごとに annualOff で一括管理(職員個別には持たない)
   shifts: {},     // key 'facId_YYYYMM' -> {staffId:{day:code}}
   wishes: {},     // key 'facId_YYYYMM' -> {staffId:{day:'kibou'|'yukyu'}} 希望休・有給(自動作成でも保持)
@@ -2255,6 +2269,7 @@ function readQualChecks(containerId){
 function collectStaffFormData(role){
   return {
     name: document.getElementById('stName').value.trim(),
+    empId: document.getElementById('stEmpId').value.trim() || EMPID_BLANK,
     role,
     facilityId: document.getElementById('stFac').value,
     daysPerWeek: +document.getElementById('stDays').value,
@@ -2386,9 +2401,20 @@ function renderStaffView(){
   });
 }
 
+// 社員番号が未確定(s.empId===undefined、まだこのフォームで一度も保存されていない)の場合の初期表示値。
+// 組織図取り込み職員(id='e'+数字)は、これまでポータル連携で使ってきた推測値をそのまま初期値として見せる
+// (保存し直しても値が変わらないように)。手動追加職員(id='s'+ランダム)は空欄。
+function defaultEmpIdFor(s){
+  if(!s) return '';
+  if(s.empId !== undefined) return s.empId === EMPID_BLANK ? '' : s.empId;
+  const m = /^e(\d+)$/.exec(s.id || '');
+  if(!m) return '';
+  return m[1].length < 6 ? m[1].padStart(6, '0') : m[1];
+}
 let currentStWdTimes = {}; // 編集中の職員の曜日ごとの勤務時間(fillStaffFormでセットし、曜日チェックのトグルや職種切り替え時に参照する)
 function fillStaffForm(s){
   document.getElementById('stName').value = s ? s.name : '';
+  document.getElementById('stEmpId').value = defaultEmpIdFor(s);
   document.getElementById('stRole').value = s ? s.role : 'kaigo_full';
   document.getElementById('stDays').value = s ? (s.daysPerWeek || 5) : 5;
   document.getElementById('stMonthlyOffInfo').textContent = annualOffFor(currentFacility(), currentYm);
@@ -2644,6 +2670,46 @@ async function gasSave(){
     toast('保存に失敗しました: ' + e.message);
   }
 }
+// 確定した拠点・月のシフトをD1(かえりえポータル等の参照用)へ送信する
+async function sendShiftsToD1(){
+  const fac = currentFacility();
+  if(!fac) return;
+  const g = grid();
+  // empIdは、このフォームで一度も保存されていない(undefined)職員については送らない
+  // (Worker側はempIdキーが無ければD1の既存値=内部IDからの推測フォールバックを維持する)
+  const staffList = facStaff().map(s => {
+    const o = { id: s.id, name: s.name, role: s.role };
+    if(s.empId !== undefined) o.empId = s.empId;
+    return o;
+  });
+  const shiftsArr = [];
+  Object.keys(g).forEach(staffId => {
+    Object.entries(g[staffId]).forEach(([day, code]) => {
+      if(code) shiftsArr.push({ staffId, day: +day, code });
+    });
+  });
+  const ocMap = state.oncalls[shiftKey()] || {};
+  const oncallsArr = Object.entries(ocMap).map(([day, staffId]) => ({ day: +day, staffId }));
+  try{
+    const res = await fetch(D1_WORKER_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-API-Key': D1_API_KEY },
+      body: JSON.stringify({
+        facilityId: fac.id,
+        facilityName: fac.name,
+        yearMonth: currentYm,
+        confirmedAt: new Date().toISOString(),
+        staff: staffList,
+        shifts: shiftsArr,
+        oncalls: oncallsArr,
+      }),
+    });
+    if(!res.ok) throw new Error('HTTP ' + res.status);
+  }catch(e){
+    console.error('D1送信エラー', e);
+    toast('クラウド共有(D1)への送信に失敗しました');
+  }
+}
 async function gasTest(){
   const url = document.getElementById('gasUrl').value.trim();
   if(!url){ toast('URLを入力してください'); return; }
@@ -2796,7 +2862,7 @@ async function orgImportOffice(){
       if(Array.isArray(prev.quals)) s.quals = prev.quals;
       ['canDrive','canNight','canEarly','canLate','canLeader','canOncall',
        'noHomon','noHoukan','houkanOnly',
-       'hoursPerDay','workStart','workEnd'].forEach(k => {
+       'hoursPerDay','workStart','workEnd','empId'].forEach(k => {
         if(prev[k] != null) s[k] = prev[k];
       });
       // 曜日ごとの勤務時間(訪問のみの設定を含む)も引き継ぐ
@@ -3402,6 +3468,7 @@ function bindEvents(){
     renderShiftTable();
     toast('シフトを確定しました');
     if(state.gasUrl) gasSave();
+    sendShiftsToD1();
   });
   document.getElementById('btnShiftUnconfirm').addEventListener('click', () => {
     const fac = currentFacility();
