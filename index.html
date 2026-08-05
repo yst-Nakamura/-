@@ -823,68 +823,131 @@ async function d1KangoSync(payload) {
 // ============================================================
 // データ読込・変換
 // ============================================================
+
+// GASから返ってきた raw データを facilityData / allFacilities に反映する共通処理
+function _applyRawData(raw) {
+  const newFacilities = (raw.facilities || []).map(f => ({
+    id: String(f.id), name: String(f.name), createdAt: f.createdAt,
+    serviceType: ['kango','shotaki','houmon'].includes(String(f.serviceType)) ? String(f.serviceType) : null
+  }));
+  newFacilities.forEach(f => {
+    if (f.serviceType === 'shotaki' || f.serviceType === 'houmon') {
+      setFacServiceType(f.id, f.serviceType, true);
+    } else {
+      f.serviceType = getFacServiceType(f.id);
+    }
+  });
+  const newData = {};
+  newFacilities.forEach(f => {
+    newData[f.id] = { monthData: {}, terminalEntries: [], manualIsha: {}, katsudan: { registered: null, staff: [] }, iryoMonthData: {} };
+  });
+  (raw.monthlyData || []).forEach(row => {
+    const facId = String(row.facilityId);
+    if (!newData[facId]) newData[facId] = { monthData: {}, terminalEntries: [], manualIsha: {}, katsudan: { registered: null, staff: [] }, iryoMonthData: {} };
+    const ym = String(row.ym || '').replace(/[^0-9]/g, '').slice(0, 6);
+    if (ym.length !== 6) return;
+    let users = {};
+    try { const arr = JSON.parse(row.usersJson || '[]'); arr.forEach(u => { users[u.userId] = u; }); } catch(e) {}
+    const label = (row.label && String(row.label).includes('年')) ? String(row.label) : ymLabel(ym);
+    newData[facId].monthData[ym] = { ym, label, users };
+  });
+  (raw.terminalEntries || []).forEach(row => {
+    const facId = String(row.facilityId);
+    if (!newData[facId]) newData[facId] = { monthData: {}, terminalEntries: [], manualIsha: {}, katsudan: { registered: null, staff: [] }, iryoMonthData: {} };
+    newData[facId].terminalEntries.push({ ym: String(row.ym), label: String(row.label) });
+  });
+  (raw.ishaValues || []).forEach(row => {
+    const facId = String(row.facilityId);
+    if (!newData[facId]) newData[facId] = { monthData: {}, terminalEntries: [], manualIsha: {}, katsudan: { registered: null, staff: [] }, iryoMonthData: {} };
+    const _parsed = parseFloat(row.value);
+    newData[facId].manualIsha[String(row.ym)] = isNaN(_parsed) ? '' : _parsed;
+  });
+  (raw.katsudanData || []).forEach(row => {
+    const facId = String(row.facilityId);
+    if (!newData[facId]) newData[facId] = { monthData: {}, terminalEntries: [], manualIsha: {}, katsudan: { registered: null, staff: [] }, iryoMonthData: {} };
+    const reg = row.registered;
+    newData[facId].katsudan = {
+      registered: reg === true || reg === 'true' ? true : reg === false || reg === 'false' ? false : null,
+      staff: (() => { try { return JSON.parse(row.staffJson || '[]'); } catch(e) { return []; } })()
+    };
+  });
+  newFacilities.forEach(f => {
+    if (newData[f.id]) newData[f.id].terminalEntries.sort((a,b) => a.ym.localeCompare(b.ym));
+  });
+  // 成功時のみ反映（エラー時は既存データを保持）
+  allFacilities = newFacilities;
+  facilityData = newData;
+}
+
+// D1から高速ロード（初期表示用）
+async function loadFromD1() {
+  try {
+    const res = await fetch(KANGO_WORKER_URL + '/api/kango/all', {
+      headers: { 'X-API-Key': KANGO_D1_KEY }
+    });
+    if (!res.ok) return false;
+    const d = await res.json();
+    if (!d.ok || !d.facilities || d.facilities.length === 0) return false;
+    // D1データをGAS形式に変換して _applyRawData に渡す
+    const raw = {
+      facilities: d.facilities.map(f => ({ id: f.id, name: f.name, serviceType: null })),
+      monthlyData: d.monthlyUsers.map(u => ({
+        facilityId: u.facility_id, ym: u.ym,
+        usersJson: JSON.stringify([{ userId: u.user_id, name: u.user_name, baseCode: u.base_code, items: (() => { try { return JSON.parse(u.items_json || '[]'); } catch(e) { return []; } })() }]),
+        label: ymLabel(u.ym)
+      })).reduce((acc, cur) => {
+        // 同じfacilityId+ymをまとめる
+        const key = cur.facilityId + '_' + cur.ym;
+        if (!acc._map) acc._map = {};
+        if (!acc._map[key]) {
+          const entry = { facilityId: cur.facilityId, ym: cur.ym, label: cur.label, usersJson: null, _users: [] };
+          acc._map[key] = entry;
+          acc.push(entry);
+        }
+        try { const u = JSON.parse(cur.usersJson)[0]; if (u) acc._map[key]._users.push(u); } catch(e) {}
+        return acc;
+      }, []),
+      terminalEntries: d.terminalEntries.map(t => ({ facilityId: t.facility_id, ym: t.ym, label: t.label || '' })),
+      ishaValues: d.ishaValues.map(v => ({ facilityId: v.facility_id, ym: v.ym, value: v.value })),
+      katsudanData: d.katsudan.map(k => ({ facilityId: k.facility_id, registered: k.registered === 1 ? true : k.registered === 0 ? false : null, staffJson: k.staff_json })),
+    };
+    // monthlyDataのusersJsonを最終生成
+    raw.monthlyData.forEach(row => {
+      row.usersJson = JSON.stringify(row._users || []);
+      delete row._users;
+    });
+    delete raw.monthlyData._map;
+    _applyRawData(raw);
+    return true;
+  } catch(e) {
+    console.warn('D1ロードエラー（無視）:', e);
+    return false;
+  }
+}
+
 async function loadAllData() {
   if (!hasGasUrl()) return;
   showLoading('データを読み込み中...');
+  // まずD1から高速ロード（成功すればすぐ表示）
+  const d1ok = await loadFromD1();
+  if (d1ok) {
+    hideLoading();
+    renderDashboard();
+    showLoading('最新データを確認中...');
+  }
+  // GASから最新データを取得して上書き
   try {
     const raw = await gasGet();
-    allFacilities = (raw.facilities || []).map(f => ({
-      id: String(f.id), name: String(f.name), createdAt: f.createdAt,
-      serviceType: ['kango','shotaki','houmon'].includes(String(f.serviceType)) ? String(f.serviceType) : null
-    }));
-    // GASにshotaki/houmonが明示的に設定されている場合のみlocalStorageを更新
-    // kango（デフォルト埋め）の場合はlocalStorage既存値を優先する
-    allFacilities.forEach(f => {
-      if (f.serviceType === 'shotaki' || f.serviceType === 'houmon') {
-        setFacServiceType(f.id, f.serviceType, true);
-      } else {
-        f.serviceType = getFacServiceType(f.id); // localStorageの既存値を使う
-      }
-    });
-    facilityData = {};
-    allFacilities.forEach(f => {
-      facilityData[f.id] = { monthData: {}, terminalEntries: [], manualIsha: {}, katsudan: { registered: null, staff: [] } };
-    });
-    (raw.monthlyData || []).forEach(row => {
-      const facId = String(row.facilityId);
-      if (!facilityData[facId]) facilityData[facId] = { monthData: {}, terminalEntries: [], manualIsha: {}, katsudan: { registered: null, staff: [] }, iryoMonthData: {} };
-      // ym を確実に6桁文字列に正規化（数値・ISO日付など対応）
-      const ym = String(row.ym || '').replace(/[^0-9]/g, '').slice(0, 6);
-      if (ym.length !== 6) return;
-      let users = {};
-      try { const arr = JSON.parse(row.usersJson || '[]'); arr.forEach(u => { users[u.userId] = u; }); } catch(e) {}
-      // label が日本語形式でなければ再生成
-      const label = (row.label && String(row.label).includes('年'))
-        ? String(row.label) : ymLabel(ym);
-      facilityData[facId].monthData[ym] = { ym, label, users };
-    });
-    (raw.terminalEntries || []).forEach(row => {
-      const facId = String(row.facilityId);
-      if (!facilityData[facId]) facilityData[facId] = { monthData: {}, terminalEntries: [], manualIsha: {}, katsudan: { registered: null, staff: [] }, iryoMonthData: {} };
-      facilityData[facId].terminalEntries.push({ ym: String(row.ym), label: String(row.label) });
-    });
-    (raw.ishaValues || []).forEach(row => {
-      const facId = String(row.facilityId);
-      if (!facilityData[facId]) facilityData[facId] = { monthData: {}, terminalEntries: [], manualIsha: {}, katsudan: { registered: null, staff: [] }, iryoMonthData: {} };
-      const _parsed = parseFloat(row.value);
-      facilityData[facId].manualIsha[String(row.ym)] = isNaN(_parsed) ? '' : _parsed;
-    });
-    (raw.katsudanData || []).forEach(row => {
-      const facId = String(row.facilityId);
-      if (!facilityData[facId]) facilityData[facId] = { monthData: {}, terminalEntries: [], manualIsha: {}, katsudan: { registered: null, staff: [] }, iryoMonthData: {} };
-      const reg = row.registered;
-      facilityData[facId].katsudan = {
-        registered: reg === true || reg === 'true' ? true : reg === false || reg === 'false' ? false : null,
-        staff: (() => { try { return JSON.parse(row.staffJson || '[]'); } catch(e) { return []; } })()
-      };
-    });
-    allFacilities.forEach(f => {
-      facilityData[f.id].terminalEntries.sort((a,b) => a.ym.localeCompare(b.ym));
-    });
+    _applyRawData(raw);
   } catch(e) {
     console.error('GAS通信エラー:', e);
+    if (!d1ok) {
+      // D1もGASも失敗した場合のみエラー表示
+      alert('データの読み込みに失敗しました。ページを再読み込みしてください。');
+    }
   }
   hideLoading();
+  renderDashboard();
 }
 
 // ============================================================
@@ -3495,6 +3558,14 @@ function renderAddonChecklist(users) {
 // 修正ログモーダル
 // ============================================================
 const CHANGELOG_DATA = [
+  {
+    version: 'v1.6.13', date: '2026-08-05', label: 'バグ修正',
+    labelColor: '#c05621', labelBg: '#feebc8',
+    items: [
+      { tag: 'バグ修正', tagColor: '#c05621', tagBg: '#feebc8', text: 'GAS通信エラー時にデータが消える問題を修正。エラー発生時は既存データを保持するよう変更' },
+      { tag: '改善', tagColor: '#276749', tagBg: '#c6f6d5', text: 'D1からの高速初期ロードを実装。D1から先に表示してGAS応答を待たずに使い始められるよう改善' },
+    ]
+  },
   {
     version: 'v1.6.12', date: '2026-08-04', label: '新機能',
     labelColor: '#2b6cb0', labelBg: '#bee3f8',
