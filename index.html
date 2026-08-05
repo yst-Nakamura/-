@@ -928,21 +928,15 @@ async function loadFromD1() {
 async function loadAllData() {
   if (!hasGasUrl()) return;
   showLoading('データを読み込み中...');
-  // まずD1から高速ロード（成功すればすぐ表示）
-  const d1ok = await loadFromD1();
-  if (d1ok) {
-    hideLoading();
-    renderDashboard();
-    showLoading('最新データを確認中...');
-  }
-  // GASから最新データを取得して上書き
+  // GASから最新データを取得（成功時のみ反映）
   try {
     const raw = await gasGet();
     _applyRawData(raw);
   } catch(e) {
     console.error('GAS通信エラー:', e);
+    // GAS失敗時はD1フォールバック
+    const d1ok = await loadFromD1();
     if (!d1ok) {
-      // D1もGASも失敗した場合のみエラー表示
       alert('データの読み込みに失敗しました。ページを再読み込みしてください。');
     }
   }
@@ -3558,6 +3552,13 @@ function renderAddonChecklist(users) {
 // 修正ログモーダル
 // ============================================================
 const CHANGELOG_DATA = [
+  {
+    version: 'v1.6.14', date: '2026-08-05', label: 'バグ修正',
+    labelColor: '#c05621', labelBg: '#feebc8',
+    items: [
+      { tag: 'バグ修正', tagColor: '#c05621', tagBg: '#feebc8', text: '更新時にD1未登録事業所（東灘など）だけが表示される問題を修正。D1はGAS失敗時のフォールバックのみに使用する設計に変更' },
+    ]
+  },
   {
     version: 'v1.6.13', date: '2026-08-05', label: 'バグ修正',
     labelColor: '#c05621', labelBg: '#feebc8',
