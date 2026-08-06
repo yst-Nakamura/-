@@ -640,16 +640,36 @@ function getTaiseiAlerts(usersObj) {
   return alerts;
 }
 
-// 体制加算アラートがある場合の事業所名セル HTML
-function _facNameCell(facId, facName, alerts) {
+// 処遇改善加算の重複算定チェック（同月・同事業所に複数種は請求ミスの可能性）
+function getChuiyoKaizenDupes(usersObj) {
+  const found = new Set();
+  Object.values(usersObj || {}).forEach(u => {
+    (u.items || []).forEach(i => {
+      if (i.name && i.name.includes('処遇改善加算')) found.add(normalizeAddonName(i.name));
+    });
+  });
+  return found.size >= 2 ? [...found].sort() : [];
+}
+
+// 事業所名セル HTML（体制加算不一致・処遇改善重複の両アラート対応）
+function _facNameCell(facId, facName, taiseiAlerts, chuiyoAlerts) {
   const link = `<a class="fac-name-link" onclick="showFacility('${facId}')">${esc(facName)}</a>`;
-  if (!alerts || alerts.length === 0) return `<td class="fac-name">${link}</td>`;
-  const detail = alerts.map(a => `<div style="font-size:10px;line-height:1.4">${a}</div>`).join('');
-  return `<td class="fac-name" style="border:2px solid #e53e3e;border-radius:6px;background:#fff5f5;padding:6px 8px">
-    ${link}
-    <div style="color:#c53030;font-size:11px;font-weight:bold;margin-top:4px">⚠ 体制加算 算定不一致</div>
-    <div style="color:#c53030;margin-top:2px">${detail}</div>
-  </td>`;
+  const hasChuiyo = chuiyoAlerts && chuiyoAlerts.length > 0;
+  const hasTaisei = taiseiAlerts && taiseiAlerts.length > 0;
+  if (!hasTaisei && !hasChuiyo) return `<td class="fac-name">${link}</td>`;
+  let inner = link;
+  if (hasChuiyo) {
+    inner += `<div style="margin-top:5px;padding:5px 8px;background:#fed7d7;border:1.5px solid #c53030;border-radius:5px">
+      <div style="color:#c53030;font-size:12px;font-weight:bold;letter-spacing:0.02em">🚨 処遇改善加算 重複請求の疑い</div>
+      <div style="color:#742a2a;font-size:10px;margin-top:2px;line-height:1.5">${chuiyoAlerts.join('・')}</div>
+    </div>`;
+  }
+  if (hasTaisei) {
+    const detail = taiseiAlerts.map(a => `<div style="font-size:10px;line-height:1.4">${a}</div>`).join('');
+    inner += `<div style="color:#c53030;font-size:11px;font-weight:bold;margin-top:4px">⚠ 体制加算 算定不一致</div>
+    <div style="color:#c53030;margin-top:2px">${detail}</div>`;
+  }
+  return `<td class="fac-name" style="border:2px solid #e53e3e;border-radius:6px;background:#fff5f5;padding:6px 8px">${inner}</td>`;
 }
 
 function getAreaDef(facName) {
@@ -1047,8 +1067,9 @@ function renderShotakiDashboard() {
       ? `<td style="font-size:12px;font-weight:bold;color:#c53030;background:#fff5f5;border-left:3px solid #fc8181;padding-left:8px" title="前月データ未連携">⚠ ${ymLabel(latestYm)}</td>`
       : `<td style="font-size:12px;color:#718096">${ymLabel(latestYm)}</td>`;
     const taiseiAlertsS = getTaiseiAlerts(ctx.monthData[latestYm].users);
+    const chuiyoAlertsS = getChuiyoKaizenDupes(ctx.monthData[latestYm].users);
     return `<tr${isStaleS ? ' style="background:#fffafa"' : ''}>
-      ${_facNameCell(f.id, f.name, taiseiAlertsS)}
+      ${_facNameCell(f.id, f.name, taiseiAlertsS, chuiyoAlertsS)}
       <td>${_svcTypeBadge(f.id)}</td>
       ${ymCellS}
       <td style="text-align:center">${avgLevel
@@ -1156,8 +1177,9 @@ function renderHoumonDashboard() {
       ...((iryoLatestYm && ctx.iryoMonthData[iryoLatestYm]) ? ctx.iryoMonthData[iryoLatestYm].users : {}),
     };
     const taiseiAlertsH = getTaiseiAlerts(allHoumonUsers);
+    const chuiyoAlertsH = getChuiyoKaizenDupes(allHoumonUsers);
     return `<tr${isStaleH ? ' style="background:#fffafa"' : ''}>
-      ${_facNameCell(f.id, f.name, taiseiAlertsH)}
+      ${_facNameCell(f.id, f.name, taiseiAlertsH, chuiyoAlertsH)}
       <td>${_svcTypeBadge(f.id)}</td>
       <td style="text-align:center">${kaigoCell}</td>
       <td style="text-align:center">${iryoCell}</td>
@@ -1297,8 +1319,9 @@ function renderDashboard() {
       ? `<td style="font-size:12px;font-weight:bold;color:#c53030;background:#fff5f5;border-left:3px solid #fc8181;padding-left:8px" title="前月データ未連携">⚠ ${ymLabel(latestYm)}</td>`
       : `<td style="font-size:12px;color:#718096">${ymLabel(latestYm)}</td>`;
     const taiseiAlerts = getTaiseiAlerts(ctx.monthData[latestYm].users);
+    const chuiyoAlerts = getChuiyoKaizenDupes(ctx.monthData[latestYm].users);
     return { f, row: `<tr${isStaleKango ? ' style="background:#fffafa"' : ''}>
-      ${_facNameCell(f.id, f.name, taiseiAlerts)}
+      ${_facNameCell(f.id, f.name, taiseiAlerts, chuiyoAlerts)}
       <td>${_svcTypeBadge(f.id)}</td>
       ${ymCellKango}
       <td style="text-align:center">${avgCell}</td>
@@ -2336,12 +2359,15 @@ function renderFacilityAll() {
 function setActiveTab(ym) { activeTab = ym; renderFacilityAll(); }
 
 function renderTabs(keys) {
-  document.getElementById('nav-tabs').innerHTML = [...keys].reverse().map(ym => `
-    <div class="nav-tab ${ym === activeTab ? 'active' : ''}" onclick="setActiveTab('${ym}')">
+  const ctx = getFacCtx(currentFacilityId);
+  document.getElementById('nav-tabs').innerHTML = [...keys].reverse().map(ym => {
+    const dupes = getChuiyoKaizenDupes(ctx.monthData[ym].users);
+    const badge = dupes.length >= 2 ? ' <span style="color:#c53030;font-weight:bold;font-size:12px" title="処遇改善加算 重複算定の疑い">🚨</span>' : '';
+    return `<div class="nav-tab ${ym === activeTab ? 'active' : ''}" onclick="setActiveTab('${ym}')">
       <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${monthColor(ym)};margin-right:5px"></span>
-      ${getFacCtx(currentFacilityId).monthData[ym].label}
-    </div>
-  `).join('');
+      ${ctx.monthData[ym].label}${badge}
+    </div>`;
+  }).join('');
 }
 
 function renderFacilitySidebar() {
@@ -2471,6 +2497,19 @@ function _renderTabContent(ym) {
   const isKango = getFacServiceType(currentFacilityId) === 'kango';
   const isHoumon = getFacServiceType(currentFacilityId) === 'houmon';
 
+  // 処遇改善加算重複バナー
+  const chuiyoDupes = getChuiyoKaizenDupes(data.users);
+  const chuiyoBanner = chuiyoDupes.length >= 2
+    ? `<div style="margin:0 0 16px;padding:12px 16px;background:#fed7d7;border:2px solid #c53030;border-radius:8px;display:flex;align-items:flex-start;gap:12px">
+        <div style="font-size:22px;line-height:1">🚨</div>
+        <div>
+          <div style="color:#c53030;font-size:14px;font-weight:bold;margin-bottom:4px">処遇改善加算 重複請求の疑いがあります</div>
+          <div style="color:#742a2a;font-size:12px;line-height:1.6">同月に複数種の処遇改善加算が算定されています。請求ミスの可能性があります。<br>
+          算定されている加算: <strong>${chuiyoDupes.join('・')}</strong></div>
+        </div>
+      </div>`
+    : '';
+
   // 看多機用の集計
   const kinkyuUsers    = isKango ? users.filter(u => u.items.some(i => i.name && i.name.includes('緊急時対応加算'))) : [];
   const tokubetsuUsers = isKango ? users.filter(u => u.items.some(i => i.name && i.name.includes('特別管理加算'))) : [];
@@ -2558,6 +2597,7 @@ function _renderTabContent(ym) {
 
   document.getElementById('tab-contents').innerHTML = `
     <div>
+      ${chuiyoBanner}
       <div class="cards">
         ${isKango ? kangoCards : isHoumon ? houmonCards : shotakiCards}
       </div>
@@ -3552,6 +3592,13 @@ function renderAddonChecklist(users) {
 // 修正ログモーダル
 // ============================================================
 const CHANGELOG_DATA = [
+  {
+    version: 'v1.6.15', date: '2026-08-06', label: '新機能',
+    labelColor: '#276749', labelBg: '#c6f6d5',
+    items: [
+      { tag: '新機能', tagColor: '#276749', tagBg: '#c6f6d5', text: '処遇改善加算 重複請求アラートを追加。同月・同事業所に複数種（Ⅰ１・Ⅰ２・Ⅱ１・Ⅱ２）が算定されている場合、ダッシュボード一覧・月タブ・タブ内容の3か所に🚨表示' },
+    ]
+  },
   {
     version: 'v1.6.14', date: '2026-08-05', label: 'バグ修正',
     labelColor: '#c05621', labelBg: '#feebc8',
