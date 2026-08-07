@@ -651,36 +651,72 @@ function getChuiyoKaizenDupes(usersObj) {
   return found.size >= 2 ? [...found].sort() : [];
 }
 
-// 事業所名セル HTML（3種アラート対応 — 処遇改善重複🚨 / 看護体制強化未算定🔶 / 体制加算不一致⚠）
-function _facNameCell(facId, facName, taiseiAlerts, chuiyoAlerts, missedKyouka) {
+// ============================================================
+// アラート一元管理
+// level: 'error'(赤🚨) / 'warn'(橙🔶) / 'caution'(黄⚠)
+// ============================================================
+const ALERT_STYLES = {
+  error:   { border:'#c53030', bg:'#fff5f5', chipBg:'#fed7d7', chipBorder:'#c53030', titleColor:'#c53030', detailColor:'#742a2a' },
+  warn:    { border:'#c05621', bg:'#fffaf0', chipBg:'#feebc8', chipBorder:'#c05621', titleColor:'#c05621', detailColor:'#7b341e' },
+  caution: { border:'#d69e2e', bg:'#fffff0', chipBg:'#fefcbf', chipBorder:'#d69e2e', titleColor:'#744210', detailColor:'#744210' },
+};
+
+// すべてのアラートを構造化して返す
+// opts.cur1ok / opts.cur2ok / opts.isStale が渡された場合はkango固有チェックも行う
+function buildFacAlerts(usersObj, opts) {
+  const alerts = [];
+  opts = opts || {};
+
+  // [error] 処遇改善加算 重複請求
+  const chuiyoDupes = getChuiyoKaizenDupes(usersObj);
+  if (chuiyoDupes.length >= 2) {
+    alerts.push({ level:'error', icon:'🚨', title:'処遇改善加算 重複請求の疑い', detail: chuiyoDupes.join('・') });
+  }
+
+  // kango固有チェック（cur1ok/cur2ok が渡された場合のみ）
+  if (opts.cur1ok !== undefined && !opts.isStale) {
+    const arr = Object.values(usersObj);
+    const isI  = arr.some(u => (u.items||[]).some(i => i.name && i.name.includes('看護体制強化加算Ⅰ')));
+    const isII = arr.some(u => (u.items||[]).some(i => i.name && i.name.includes('看護体制強化加算Ⅱ')));
+
+    // [error] 要件未達なのに算定
+    if (isI && opts.cur1ok !== true) {
+      alerts.push({ level:'error', icon:'🚨', title:'看護体制強化加算Ⅰ 要件未達の疑い', detail:'算定中ですが要件を満たしていない可能性があります' });
+    } else if (isII && !isI && opts.cur2ok !== true) {
+      alerts.push({ level:'error', icon:'🚨', title:'看護体制強化加算Ⅱ 要件未達の疑い', detail:'算定中ですが要件を満たしていない可能性があります' });
+    }
+
+    // [warn] 未算定 or アップグレード可能
+    if (!isI && !isII) {
+      if (opts.cur1ok === true)      alerts.push({ level:'warn', icon:'🔶', title:'看護体制強化加算 未算定', detail:'加算Ⅰ（Ⅱ含む）が算定可能な状態です' });
+      else if (opts.cur2ok === true) alerts.push({ level:'warn', icon:'🔶', title:'看護体制強化加算 未算定', detail:'加算Ⅱが算定可能な状態です' });
+    } else if (isII && !isI && opts.cur1ok === true) {
+      alerts.push({ level:'warn', icon:'🔶', title:'看護体制強化加算 アップグレード可能', detail:'加算ⅡをⅠにアップグレード可能です' });
+    }
+  }
+
+  // [caution] 体制加算 算定不一致
+  const taiseiList = getTaiseiAlerts(usersObj);
+  if (taiseiList.length > 0) {
+    alerts.push({ level:'caution', icon:'⚠', title:'体制加算 算定不一致', detail: taiseiList.join(' / ') });
+  }
+
+  return alerts;
+}
+
+// 事業所名セル HTML（buildFacAlerts の結果を受け取る）
+function _facNameCell(facId, facName, alerts) {
   const link = `<a class="fac-name-link" onclick="showFacility('${facId}')">${esc(facName)}</a>`;
-  const hasChuiyo = chuiyoAlerts && chuiyoAlerts.length > 0;
-  const hasMissed = !!missedKyouka;
-  const hasTaisei = taiseiAlerts && taiseiAlerts.length > 0;
-  if (!hasTaisei && !hasChuiyo && !hasMissed) return `<td class="fac-name">${link}</td>`;
-  // セル枠色は最も重大なアラートに合わせる
-  const borderColor = hasChuiyo ? '#c53030' : hasMissed ? '#c05621' : '#d69e2e';
-  const bgColor     = hasChuiyo ? '#fff5f5' : hasMissed ? '#fffaf0' : '#fffff0';
-  let chips = '';
-  if (hasChuiyo) {
-    chips += `<div style="margin-top:4px;padding:4px 7px;background:#fed7d7;border-left:3px solid #c53030;border-radius:3px">
-      <div style="color:#c53030;font-size:11px;font-weight:bold">🚨 処遇改善加算 重複請求の疑い</div>
-      <div style="color:#742a2a;font-size:10px;margin-top:1px">${chuiyoAlerts.join('・')}</div>
+  if (!alerts || alerts.length === 0) return `<td class="fac-name">${link}</td>`;
+  const topStyle = ALERT_STYLES[alerts[0].level] || ALERT_STYLES.caution;
+  const chips = alerts.map(a => {
+    const s = ALERT_STYLES[a.level] || ALERT_STYLES.caution;
+    return `<div style="margin-top:4px;padding:4px 7px;background:${s.chipBg};border-left:3px solid ${s.chipBorder};border-radius:3px">
+      <div style="color:${s.titleColor};font-size:11px;font-weight:bold">${a.icon} ${a.title}</div>
+      ${a.detail ? `<div style="color:${s.detailColor};font-size:10px;margin-top:1px">${a.detail}</div>` : ''}
     </div>`;
-  }
-  if (hasMissed) {
-    chips += `<div style="margin-top:4px;padding:4px 7px;background:#feebc8;border-left:3px solid #c05621;border-radius:3px">
-      <div style="color:#c05621;font-size:11px;font-weight:bold">🔶 看護体制強化加算 未算定</div>
-      <div style="color:#7b341e;font-size:10px;margin-top:1px">${missedKyouka}が算定可能な状態です</div>
-    </div>`;
-  }
-  if (hasTaisei) {
-    chips += `<div style="margin-top:4px;padding:4px 7px;background:#fefcbf;border-left:3px solid #d69e2e;border-radius:3px">
-      <div style="color:#744210;font-size:11px;font-weight:bold">⚠ 体制加算 算定不一致</div>
-      <div style="color:#744210;font-size:10px;margin-top:1px">${taiseiAlerts.join(' / ')}</div>
-    </div>`;
-  }
-  return `<td class="fac-name" style="border:2px solid ${borderColor};border-radius:6px;background:${bgColor};padding:6px 8px">
+  }).join('');
+  return `<td class="fac-name" style="border:2px solid ${topStyle.border};border-radius:6px;background:${topStyle.bg};padding:6px 8px">
     ${link}${chips}
   </td>`;
 }
@@ -1079,10 +1115,9 @@ function renderShotakiDashboard() {
     const ymCellS = isStaleS
       ? `<td style="font-size:12px;font-weight:bold;color:#c53030;background:#fff5f5;border-left:3px solid #fc8181;padding-left:8px" title="前月データ未連携">⚠ ${ymLabel(latestYm)}</td>`
       : `<td style="font-size:12px;color:#718096">${ymLabel(latestYm)}</td>`;
-    const taiseiAlertsS = getTaiseiAlerts(ctx.monthData[latestYm].users);
-    const chuiyoAlertsS = getChuiyoKaizenDupes(ctx.monthData[latestYm].users);
+    const facAlertsS = buildFacAlerts(ctx.monthData[latestYm].users);
     return `<tr${isStaleS ? ' style="background:#fffafa"' : ''}>
-      ${_facNameCell(f.id, f.name, taiseiAlertsS, chuiyoAlertsS)}
+      ${_facNameCell(f.id, f.name, facAlertsS)}
       <td>${_svcTypeBadge(f.id)}</td>
       ${ymCellS}
       <td style="text-align:center">${avgLevel
@@ -1189,10 +1224,9 @@ function renderHoumonDashboard() {
       ...((kaigoLatestYm && ctx.monthData[kaigoLatestYm]) ? ctx.monthData[kaigoLatestYm].users : {}),
       ...((iryoLatestYm && ctx.iryoMonthData[iryoLatestYm]) ? ctx.iryoMonthData[iryoLatestYm].users : {}),
     };
-    const taiseiAlertsH = getTaiseiAlerts(allHoumonUsers);
-    const chuiyoAlertsH = getChuiyoKaizenDupes(allHoumonUsers);
+    const facAlertsH = buildFacAlerts(allHoumonUsers);
     return `<tr${isStaleH ? ' style="background:#fffafa"' : ''}>
-      ${_facNameCell(f.id, f.name, taiseiAlertsH, chuiyoAlertsH)}
+      ${_facNameCell(f.id, f.name, facAlertsH)}
       <td>${_svcTypeBadge(f.id)}</td>
       <td style="text-align:center">${kaigoCell}</td>
       <td style="text-align:center">${iryoCell}</td>
@@ -1331,26 +1365,9 @@ function renderDashboard() {
     const ymCellKango = isStaleKango
       ? `<td style="font-size:12px;font-weight:bold;color:#c53030;background:#fff5f5;border-left:3px solid #fc8181;padding-left:8px" title="前月データ未連携">⚠ ${ymLabel(latestYm)}</td>`
       : `<td style="font-size:12px;color:#718096">${ymLabel(latestYm)}</td>`;
-    const taiseiAlerts = getTaiseiAlerts(ctx.monthData[latestYm].users);
-    const chuiyoAlerts = getChuiyoKaizenDupes(ctx.monthData[latestYm].users);
-    // 看護体制強化加算: 未算定 or ⅡのみでⅠに昇格可能チェック
-    const usersArr = Object.values(ctx.monthData[latestYm].users);
-    const isKyoukaIBilling  = usersArr.some(u => (u.items || []).some(i => i.name && i.name.includes('看護体制強化加算Ⅰ')));
-    const isKyoukaIIBilling = usersArr.some(u => (u.items || []).some(i => i.name && i.name.includes('看護体制強化加算Ⅱ')));
-    const isKyoukaBilling   = isKyoukaIBilling || isKyoukaIIBilling;
-    let missedKyouka = null;
-    if (!isStaleKango) {
-      if (!isKyoukaBilling) {
-        // 全く算定していない
-        if (cur1ok === true) missedKyouka = '加算Ⅰ（Ⅱ含む）が未算定';
-        else if (cur2ok === true) missedKyouka = '加算Ⅱが未算定';
-      } else if (isKyoukaIIBilling && !isKyoukaIBilling && cur1ok === true) {
-        // ⅡのみでⅠの要件も満たしている → アップグレード可能
-        missedKyouka = '加算ⅡをⅠにアップグレード可能';
-      }
-    }
+    const facAlerts = buildFacAlerts(ctx.monthData[latestYm].users, { cur1ok, cur2ok, isStale: isStaleKango });
     return { f, row: `<tr${isStaleKango ? ' style="background:#fffafa"' : ''}>
-      ${_facNameCell(f.id, f.name, taiseiAlerts, chuiyoAlerts, missedKyouka)}
+      ${_facNameCell(f.id, f.name, facAlerts)}
       <td>${_svcTypeBadge(f.id)}</td>
       ${ymCellKango}
       <td style="text-align:center">${avgCell}</td>
@@ -3621,6 +3638,14 @@ function renderAddonChecklist(users) {
 // 修正ログモーダル
 // ============================================================
 const CHANGELOG_DATA = [
+  {
+    version: 'v1.6.18', date: '2026-08-07', label: '新機能',
+    labelColor: '#276749', labelBg: '#c6f6d5',
+    items: [
+      { tag: '新機能', tagColor: '#276749', tagBg: '#c6f6d5', text: '看護体制強化加算 要件未達なのに算定中の事業所に🚨赤アラート追加（Ⅰ・Ⅱそれぞれ個別判定）' },
+      { tag: '改善', tagColor: '#2b6cb0', tagBg: '#bee3f8', text: 'アラートをbuildFacAlerts()で一元管理する設計に刷新。ALERT_STYLESで色定義を集中管理し、新種追加が容易に' },
+    ]
+  },
   {
     version: 'v1.6.17', date: '2026-08-07', label: '新機能',
     labelColor: '#276749', labelBg: '#c6f6d5',
