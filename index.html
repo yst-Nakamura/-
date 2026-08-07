@@ -1333,13 +1333,21 @@ function renderDashboard() {
       : `<td style="font-size:12px;color:#718096">${ymLabel(latestYm)}</td>`;
     const taiseiAlerts = getTaiseiAlerts(ctx.monthData[latestYm].users);
     const chuiyoAlerts = getChuiyoKaizenDupes(ctx.monthData[latestYm].users);
-    // 看護体制強化加算: 算定可能なのに未算定チェック
-    const isKyoukaBilling = Object.values(ctx.monthData[latestYm].users)
-      .some(u => (u.items || []).some(i => i.name && i.name.includes('看護体制強化加算')));
+    // 看護体制強化加算: 未算定 or ⅡのみでⅠに昇格可能チェック
+    const usersArr = Object.values(ctx.monthData[latestYm].users);
+    const isKyoukaIBilling  = usersArr.some(u => (u.items || []).some(i => i.name && i.name.includes('看護体制強化加算Ⅰ')));
+    const isKyoukaIIBilling = usersArr.some(u => (u.items || []).some(i => i.name && i.name.includes('看護体制強化加算Ⅱ')));
+    const isKyoukaBilling   = isKyoukaIBilling || isKyoukaIIBilling;
     let missedKyouka = null;
-    if (!isKyoukaBilling && !isStaleKango) {
-      if (cur1ok === true) missedKyouka = '加算Ⅰ（Ⅱ含む）';
-      else if (cur2ok === true) missedKyouka = '加算Ⅱ';
+    if (!isStaleKango) {
+      if (!isKyoukaBilling) {
+        // 全く算定していない
+        if (cur1ok === true) missedKyouka = '加算Ⅰ（Ⅱ含む）が未算定';
+        else if (cur2ok === true) missedKyouka = '加算Ⅱが未算定';
+      } else if (isKyoukaIIBilling && !isKyoukaIBilling && cur1ok === true) {
+        // ⅡのみでⅠの要件も満たしている → アップグレード可能
+        missedKyouka = '加算ⅡをⅠにアップグレード可能';
+      }
     }
     return { f, row: `<tr${isStaleKango ? ' style="background:#fffafa"' : ''}>
       ${_facNameCell(f.id, f.name, taiseiAlerts, chuiyoAlerts, missedKyouka)}
@@ -3613,6 +3621,13 @@ function renderAddonChecklist(users) {
 // 修正ログモーダル
 // ============================================================
 const CHANGELOG_DATA = [
+  {
+    version: 'v1.6.17', date: '2026-08-07', label: '新機能',
+    labelColor: '#276749', labelBg: '#c6f6d5',
+    items: [
+      { tag: '新機能', tagColor: '#276749', tagBg: '#c6f6d5', text: '看護体制強化加算Ⅱ算定中でⅠの要件も満たす事業所に🔶アラート追加（「加算ⅡをⅠにアップグレード可能」）。Ⅰ未算定も同様に🔶で案内' },
+    ]
+  },
   {
     version: 'v1.6.16', date: '2026-08-07', label: '新機能',
     labelColor: '#276749', labelBg: '#c6f6d5',
