@@ -2016,9 +2016,9 @@ function parseCSV(text, facilityServiceType) {
   const isHoumon = facilityServiceType === 'houmon';
 
   // 小多機: svcType 32=要介護, 33=要支援(予防)  34=短期要介護, 35=短期要支援 → 34/35は除外
-  // 看多機: svcType 36=通常, 短期は itemName で判定
+  // 看多機: svcType 36=通常, 37=短期看護小規模 → 37は除外
   const validSvcCodes  = isHoumon ? null : isShotaki ? new Set(['32','33']) : new Set(['36']);
-  const shortTermCodes = isShotaki ? new Set(['34','35']) : new Set();
+  const shortTermCodes = isShotaki ? new Set(['34','35']) : new Set(['37']);
   const baseCodePattern = isHoumon
     ? /訪問看護[ⅠIＩ]/           // 訪問看護Ⅰ or 予防訪問看護Ⅰ にマッチ
     : isShotaki
@@ -3638,6 +3638,13 @@ function renderAddonChecklist(users) {
 // 修正ログモーダル
 // ============================================================
 const CHANGELOG_DATA = [
+  {
+    version: 'v1.6.19', date: '2026-08-26', label: 'バグ修正',
+    labelColor: '#9b2c2c', labelBg: '#fed7d7',
+    items: [
+      { tag: 'バグ修正', tagColor: '#9b2c2c', tagBg: '#fed7d7', text: '看多機の短期看護小規模（svcType=37）が利用者総数・平均介護度・加算判定の集計に含まれていたバグを修正。shortTermCodes に 37 を追加し、CSVパース時点で除外するよう変更' },
+    ]
+  },
   {
     version: 'v1.6.18', date: '2026-08-07', label: '新機能',
     labelColor: '#276749', labelBg: '#c6f6d5',
