@@ -811,9 +811,9 @@ tr.summary-row:first-of-type td{border-top:2px solid var(--ocean);}
           ここで設定した日数が、この拠点の正社員・支配人・計画作成 全員にそのまま適用されます。職員ごとに個別設定する必要はありません。
         </p>
       </div>
-      <div class="form-field" id="fcNeedWrap" style="display:none;">
-        <label>1日に必要な日勤人数</label>
-        <input type="number" id="fcNeed" min="1" max="30" value="2">
+      <div class="form-field" id="fcNeedWrap" style="display:none;grid-column:1/-1;">
+        <label>曜日別の1日に必要な日勤人数</label>
+        <div class="users-by-wd" id="fcNeedByWd"></div>
       </div>
       <div class="form-field" id="fcOpenWrap" style="display:none;">
         <label>営業曜日(休業日はシフトを組みません)</label>
@@ -893,6 +893,8 @@ tr.summary-row:first-of-type td{border-top:2px solid var(--ocean);}
 /* ================= 修正ログ =================
    コードを変更したら必ずここに1行追加すること */
 const CHANGELOG_DATA = [
+  { version: 'v1.39.0', date: '2026-08-13', label: '新機能', text: '「曜日別の訪問看護ルート数」の入力欄を、これまでの看多機だけでなく訪問看護の拠点でも使えるようにした。この人数が日ごとの看護師必要数として扱われ、自動作成・配置チェック・拠点一覧の表示すべてに反映される(これまでは訪問看護の拠点は「看護師が最低1名いればOK」という一律の判定だった)。既存の訪問看護拠点は未設定なら従来通り1ルート相当として動作する' },
+  { version: 'v1.38.0', date: '2026-08-13', label: '新機能', text: '訪問看護の拠点編集画面で、「1日に必要な日勤人数」を曜日ごとに設定できるように変更(これまでは全曜日共通の1つの数値のみだった)。土日は人数を減らす、といった運用に対応。既存拠点は今までの一律の値がそのまま全曜日の初期値として引き継がれる(自動作成・配置チェック・拠点一覧の表示もすべて曜日別の値を参照するよう修正)' },
   { version: 'v1.37.0', date: '2026-08-04', label: '新機能', text: '「シフト確定」時にD1へ送信するデータに、日ごとのオンコール担当(看護師)も含めるようにした。これまではシフトコード(早/日/遅/夜など)のみを送信しており、オンコール担当は送っていなかった。かえりえポータル向けのAPI(?month=...)では、オンコール担当のシフトに備考として「オンコール」を付け、onCallフラグも別途返すようにした' },
   { version: 'v1.36.0', date: '2026-08-04', label: 'バグ修正・新機能', text: '職員編集画面に「社員番号」の入力欄を追加。ポータル連携(D1)で使う従業員IDを、内部管理用のIDとは別に直接編集・修正できるようにした。きっかけは、組織図取り込みの内部IDから社員番号を推測していたことで、たまたま別人の本当の社員番号と一致してしまい、ポータル上で氏名が入れ替わって表示される不具合が発生したこと(看多機かえりえ上北沢の支配人枠で発生、D1側のデータは是正済み)。社員番号を明示的に入力した職員はその値を優先し、未入力の職員は従来どおり内部IDから自動判定する(既存の動作に影響なし)。組織図の再取り込みでも社員番号は引き継がれる。※GAS(コード.gs)側でも、社員番号がスプレッドシートに数値として自動解釈され先頭ゼロが消える不具合が見つかり修正済み(列をプレーンテキスト形式に固定)。この機能を使うにはGAS(コード.gs)の再デプロイが必要です' },
   { version: 'v1.35.0', date: '2026-07-31', label: '新機能', text: '「シフト確定」ボタンを押すと、その拠点・月の確定シフトをCloudflare D1(社内の「かえりえポータル」等で今後シフトを参照するためのデータベース)へ自動送信するようにした。送信されるのは職員ID・氏名・職種・日ごとのシフトコードのみで、要介護度など利用者情報は一切含まない。現時点ではデータを送るのみで、ポータル側の閲覧画面はまだ未実装(今後かえりえポータル側の仕様が固まり次第、対応予定)' },
@@ -990,7 +992,7 @@ const D1_API_KEY = 'f7c1128a02cc5027d369a76cf2e1060a991e88bb17f77196';
 
 /* ================= 状態 ================= */
 let state = {
-  facilities: [], // {id,name,type:'kantaki'|'houkan',pattern:'three'|'day',usersByWd:[日〜土],dayNeed,openDays,annualOff:[1月〜12月]}
+  facilities: [], // {id,name,type:'kantaki'|'houkan',pattern:'three'|'day',usersByWd:[日〜土],dayNeedByWd:[日〜土](訪問看護の曜日別必要人数。旧dayNeedは互換用),openDays,annualOff:[1月〜12月]}
   staff: [],      // {id,facilityId,name,empId(社員番号。D1連携用。未入力=undefined),role,contractType:'fixed'|'weekly',daysPerWeek,workDays:[0-6],nightDays:[0-6],hoursPerDay,workStart,workEnd}
   // 正社員・支配人・計画作成の月の休み日数は拠点ごとに annualOff で一括管理(職員個別には持たない)
   shifts: {},     // key 'facId_YYYYMM' -> {staffId:{day:code}}
@@ -1183,11 +1185,17 @@ function routesOf(fac, wd){
 }
 // 訪問介護の必要人数(基本1名、訪問体制強化加算ありなら2名)
 function homonKaigoNeed(fac){ return fac && fac.kasanHoumon ? 2 : 1; }
-// 曜日別の訪問看護ルート数(看多機のみ。この人数ぶんの看護師を「訪看」に割り当てる)
+// 曜日別の訪問看護ルート数(看多機・訪問看護が対象。この人数ぶんの看護師を訪問看護に割り当てる。小多機は訪問看護がないため対象外)
 function houkanRoutesFor(fac, wd){
-  if(!fac || fac.type !== 'kantaki') return 0;
+  if(!fac || (fac.type !== 'kantaki' && fac.type !== 'houkan')) return 0;
   if(fac.houkanRoutesByWd && fac.houkanRoutesByWd.length === 7) return +fac.houkanRoutesByWd[wd] || 0;
   return 1; // 旧データ互換(これまでは常に1ルート相当だった)
+}
+// 訪問看護(houkan)拠点の曜日別「1日に必要な日勤人数」。看多機・小多機はisTaki側の3対1計算を使うため対象外
+function dayNeedFor(fac, wd){
+  if(!fac) return 2;
+  if(fac.dayNeedByWd && fac.dayNeedByWd.length === 7) return +fac.dayNeedByWd[wd] || 0;
+  return fac.dayNeed != null ? +fac.dayNeed : 2; // 旧データ互換(曜日別未設定時は一律値)
 }
 // 通い側の3対1に必要な常勤換算人数。
 // 小多機は「前年度の平均利用者数」(運営基準で員数算定に使う値)でも3対1を満たす必要があるため、
@@ -1333,12 +1341,12 @@ function checkDay(day){
   const nurses   = dayCare.filter(r => isNurse(r.s));
   const driveCapable = rows.filter(r => DAY_CODES.includes(r.c) && canDoDrive(r.s));
   const nights   = rows.filter(r => r.c === '夜');
+  const wd = weekdayOf(currentYm, day);
 
   const issues = [];
 
   if(isTaki(fac)){
     const isShou = fac.type === 'shoutaki'; // 小多機は訪問看護なし・看護師の人数チェックなし
-    const wd = weekdayOf(currentYm, day);
     const users = usersFor(fac, wd);
     const kayoiNeed = kayoiNeedFor(fac, wd); // 利用者3人に職員1人(小多機は前年度平均とも比較)
     const homonNeed = homonKaigoNeed(fac);  // 訪問介護1名(訪問体制強化加算ありなら2名)
@@ -1430,16 +1438,17 @@ function checkDay(day){
       }
     }
   }else if(fac){ // 訪問看護
-    const need = fac.dayNeed || 2;
+    const need = dayNeedFor(fac, wd);
     if(dayCare.length < need){
       issues.push({ level:'bad', text:`日勤が不足(${dayCare.length}名/${need}名必要)` });
     }else{
       issues.push({ level:'ok', text:`日勤 ${dayCare.length}名(必要${need}名)` });
     }
-    if(nurses.length < 1){
-      issues.push({ level:'bad', text:'看護師がいません' });
+    const houkanRoutesH = houkanRoutesFor(fac, wd);
+    if(nurses.length < houkanRoutesH){
+      issues.push({ level:'bad', text:`看護師が不足(${nurses.length}名/${houkanRoutesH}名必要)` });
     }else{
-      issues.push({ level:'ok', text:`看護師 ${nurses.length}名` });
+      issues.push({ level:'ok', text:`看護師 ${nurses.length}名(必要${houkanRoutesH}名)` });
     }
   }
 
@@ -1596,7 +1605,7 @@ function generateShifts(){
     // 小多機は訪問看護がないため看護師の人数条件は課さない(kayoiNeedForが前年度平均も加味する)
     const houkanRoutes = houkanRoutesFor(fac, wd);
     const needCare = isTaki(fac) ? kayoiNeedFor(fac, wd) + homonKaigoNeed(fac) : 0;
-    const nurseNeed = fac.type === 'kantaki' ? 1 + houkanRoutes : (fac.type === 'shoutaki' ? 0 : 1);
+    const nurseNeed = fac.type === 'kantaki' ? 1 + houkanRoutes : (fac.type === 'shoutaki' ? 0 : houkanRoutes);
     // 固定曜日の非常勤などで既に埋まっている分を考慮する
     const placed = roster.filter(s => isCareWorker(s) && DAY_CODES.includes(getCode(g, s.id, d)));
     // 3対1側の常勤換算(訪問看護ルートぶん、換算値の小さい看護師から除外)。
@@ -1657,7 +1666,7 @@ function generateShifts(){
       const nurseShort = (nsCount < nurseNeed && pool.some(isNurse)) || kayoiNurseShort;
       const careShort = isTaki(fac)
         ? (units3(cur) < needCare || cur.length < routeHeadNeed)
-        : cur.length < (fac.dayNeed || 2);
+        : cur.length < dayNeedFor(fac, wd);
       if(!nurseShort && !careShort) break;
       let idx = 0;
       if(nurseShort){
@@ -1749,7 +1758,7 @@ function generateShifts(){
     const dayStaff = roster.filter(s => isCareWorker(s) && DAY_CODES.includes(getCode(g, s.id, d)));
     const ns = dayStaff.filter(isNurse);
     const houkanRoutes2 = houkanRoutesFor(fac, wd);
-    const nurseNeed2 = fac.type === 'kantaki' ? 1 + houkanRoutes2 : (fac.type === 'shoutaki' ? 0 : 1);
+    const nurseNeed2 = fac.type === 'kantaki' ? 1 + houkanRoutes2 : (fac.type === 'shoutaki' ? 0 : houkanRoutes2);
     let careShort;
     if(isTaki(fac)){
       const need = kayoiNeedFor(fac, wd) + homonKaigoNeed(fac);
@@ -1758,7 +1767,7 @@ function generateShifts(){
       const routeUnit = nsUnitsAsc.slice(0, excludeCount).reduce((t, u) => t + u, 0);
       careShort = need - (dayStaff.reduce((t, s) => t + unitOf(s, wd), 0) - routeUnit);
     }else{
-      careShort = (fac.dayNeed || 2) - dayStaff.length;
+      careShort = dayNeedFor(fac, wd) - dayStaff.length;
     }
     return { careShort, nurseShort: nurseNeed2 - ns.length };
   };
@@ -2497,7 +2506,11 @@ function renderFacView(){
         ? ` / 前年度平均${f.avgUsersPrevYear}名` : '';
       numLabel = `日中 常勤換算${mn === mx ? mn : mn + '〜' + mx}人分(3対1+訪問介護${homonKaigoNeed(f)}名)${nurseLabel} / 送迎${rmn === rmx ? rmn : rmn + '〜' + rmx}ルート${shiftRouteLabel}${avgLabel}${f.kasanHoumon ? ' / 訪問体制強化加算' : ''}`;
     }else{
-      numLabel = `日勤${f.dayNeed}名必要`;
+      const dnts = [0,1,2,3,4,5,6].map(wd => dayNeedFor(f, wd));
+      const dnmn = Math.min(...dnts), dnmx = Math.max(...dnts);
+      const hrts = [0,1,2,3,4,5,6].map(wd => houkanRoutesFor(f, wd));
+      const hrmn = Math.min(...hrts), hrmx = Math.max(...hrts);
+      numLabel = `日勤${dnmn === dnmx ? dnmn : dnmn + '〜' + dnmx}名必要 / 訪問看護${hrmn === hrmx ? hrmn : hrmn + '〜' + hrmx}ルート`;
     }
     numLabel += openLabel;
     div.innerHTML = `
@@ -2571,7 +2584,7 @@ function fillFacForm(f){
   document.getElementById('fcKasanHoumon').checked = f ? !!f.kasanHoumon : false;
   document.getElementById('fcAvgUsersPrevYear').value = f && f.avgUsersPrevYear != null ? f.avgUsersPrevYear : 0;
   renderNumsByMonth('fcAnnualOff', f ? f.annualOff : null, 9);
-  document.getElementById('fcNeed').value = f ? (f.dayNeed || 2) : 2;
+  renderNumsByWd('fcNeedByWd', f ? f.dayNeedByWd : null, f && f.dayNeed != null ? f.dayNeed : 2);
   renderWdChecks('fcOpen', f && f.openDays && f.openDays.length ? f.openDays : [1,2,3,4,5]);
   updateFacFormVisibility();
   document.getElementById('facFormTitle').textContent = f ? '拠点を編集' : '拠点を追加';
@@ -2586,8 +2599,8 @@ function updateFacFormVisibility(){
   document.getElementById('fcUsersWrap').style.display = taki ? '' : 'none';
   document.getElementById('fcRoutesWrap').style.display = taki ? '' : 'none';
   document.getElementById('fcKasanWrap').style.display = taki ? '' : 'none';
-  // 訪問看護ルートは看多機のみ(小多機には訪問看護がない)
-  document.getElementById('fcHoukanRoutesWrap').style.display = isKantaki ? '' : 'none';
+  // 訪問看護ルートは看多機・訪問看護が対象(小多機には訪問看護がない)
+  document.getElementById('fcHoukanRoutesWrap').style.display = (isKantaki || type === 'houkan') ? '' : 'none';
   // 前年度の平均利用者数は小多機のみ(看多機・訪問看護には適用しない)
   document.getElementById('fcAvgPrevWrap').style.display = isShoutaki ? '' : 'none';
   document.getElementById('fcNeedWrap').style.display = taki ? 'none' : '';
@@ -3632,7 +3645,7 @@ function bindEvents(){
       kasanHoumon: document.getElementById('fcKasanHoumon').checked,
       avgUsersPrevYear: Math.max(0, +document.getElementById('fcAvgUsersPrevYear').value || 0),
       annualOff: readNumsByMonth('fcAnnualOff'),
-      dayNeed: +document.getElementById('fcNeed').value || 2,
+      dayNeedByWd: readNumsByWd('fcNeedByWd'),
       openDays: readWdChecks('fcOpen'),
     };
     if(data.type === 'houkan' && data.openDays.length === 0){
