@@ -123,23 +123,23 @@ section.view.active{display:block;}
 }
 
 /* ===== シフト表 ===== */
-/* 横スライドせず、月の日数に応じて列幅を自動計算し1画面に収める(NAME_COL_PCT/TOTAL_COL_PCTはJSと合わせる) */
+/* 日付列は固定px幅(DAY_COL_PXとCSSを合わせる)で、画面に収まらない分は横スライドで見る(名前列は左に固定表示) */
 .grid-wrap{
-  overflow-x:hidden; /* 表は常に画面幅ちょうどに収まる設計のため、横スライドを発生させない */
+  overflow-x:auto; /* 日数が多い月・画面が狭い時は横スライドで見る */
+  -webkit-overflow-scrolling:touch;
   background:var(--white);
   border-radius:12px;
   border:1px solid var(--mist);
 }
 table.shift{
   border-collapse:collapse;
-  width:100%;
-  table-layout:fixed; /* 内容の長さ(訪看・希休など2文字コードや名前)で列幅がバラつかないよう固定し、画面幅ちょうどに割り付ける */
+  table-layout:fixed; /* 内容の長さ(訪看・希休など2文字コードや名前)で列幅がバラつかないよう固定する */
 }
 table.shift th,table.shift td{
   border:1px solid var(--mist);
   text-align:center;
   white-space:nowrap;
-  font-size:clamp(0.5rem, 1.8vw, 0.82rem);
+  font-size:0.76rem;
 }
 table.shift thead th{
   background:var(--ocean);
@@ -150,7 +150,7 @@ table.shift thead th{
   top:0;
   overflow:hidden;
 }
-table.shift thead th small{font-size:clamp(0.4rem, 1.3vw, 0.7rem);}
+table.shift thead th small{font-size:0.62rem;}
 table.shift thead th.sat{background:var(--sky);}
 table.shift thead th.sun{background:#E8D5C4;}
 table.shift th.name-col{
@@ -158,8 +158,8 @@ table.shift th.name-col{
   left:0;
   z-index:10;
   background:var(--mint);
-  width:16%;
-  min-width:36px;
+  width:96px;
+  min-width:96px;
   overflow:hidden;
   text-overflow:ellipsis;
   text-align:left;
@@ -176,8 +176,8 @@ table.shift td.cell{
 }
 table.shift td.total-col,table.shift th.total-col{
   background:var(--mist);
-  width:6%;
-  min-width:16px;
+  width:38px;
+  min-width:38px;
   font-weight:700;
 }
 .role-badge{
@@ -201,8 +201,8 @@ td.c-日{background:var(--mint);}
 td.c-遅{background:#F0E2CF;}
 td.c-リ{background:var(--ocean);font-weight:700;}
 td.c-半{background:var(--mint);color:var(--sand);font-weight:700;}
-td.c-訪介{background:#E3CFA8;font-size:clamp(0.4rem, 1.4vw, 0.66rem) !important;letter-spacing:-0.06em;}
-td.c-訪看{background:#BFD9D6;color:var(--green);font-size:clamp(0.4rem, 1.4vw, 0.66rem) !important;letter-spacing:-0.06em;}
+td.c-訪介{background:#E3CFA8;font-size:0.68rem !important;letter-spacing:-0.02em;}
+td.c-訪看{background:#BFD9D6;color:var(--green);font-size:0.68rem !important;letter-spacing:-0.02em;}
 /* オンコール担当のマーク(マスの右上に小さく「オ」) */
 table.shift td.cell{position:relative;}
 table.shift.confirmed td.cell{cursor:not-allowed;}
@@ -217,8 +217,8 @@ table.shift.confirmed td.cell{cursor:not-allowed;}
 }
 /* 配置番号(看多機のみ)。マスの表示コード(日・訪介など)の代わりに「通介①」のような番号入り表記をマス本文として表示する。過剰配置は赤字+マス全体に枠 */
 .pos-label{
-  font-size:clamp(0.3rem, 1.05vw, 0.42rem);
-  letter-spacing:-0.15em;
+  font-size:0.64rem;
+  letter-spacing:-0.04em;
   color:var(--green);
 }
 .pos-label.excess{color:var(--danger);}
@@ -229,8 +229,8 @@ tr.oncall-row th.name-col{font-size:0.72rem;font-weight:500;color:var(--gray);ba
 td.c-夜{background:var(--ink);color:var(--white);}
 td.c-明{background:var(--mist);color:var(--gray);}
 td.c-休{background:var(--white);color:var(--gray);font-weight:400;}
-td.c-希休{background:var(--mist);color:var(--sand);font-weight:700;font-size:clamp(0.4rem, 1.4vw, 0.66rem) !important;letter-spacing:-0.06em;}
-td.c-希日{background:var(--sand);color:var(--white);font-weight:700;font-size:clamp(0.4rem, 1.4vw, 0.66rem) !important;letter-spacing:-0.06em;}
+td.c-希休{background:var(--mist);color:var(--sand);font-weight:700;font-size:0.68rem !important;letter-spacing:-0.02em;}
+td.c-希日{background:var(--sand);color:var(--white);font-weight:700;font-size:0.68rem !important;letter-spacing:-0.02em;}
 td.c-有{background:#DCEBE9;color:var(--green);}
 
 /* チェック行 */
@@ -504,11 +504,13 @@ tr.summary-row:first-of-type td{border-top:2px solid var(--ocean);}
     display:block;font-size:16px;font-weight:700;margin-bottom:6px;
   }
   .grid-wrap{overflow:visible;border:none;border-radius:0;}
-  table.shift{width:100%;}
-  table.shift th,table.shift td{font-size:10px;}
+  /* 画面用の日付列固定px幅(横スライド用)は印刷では使わず、紙1枚に収まるよう%指定に戻す */
+  table.shift{width:100% !important;}
+  table.shift th,table.shift td{font-size:10px;width:auto !important;}
+  table.shift th.name-col{width:16% !important;min-width:0;position:static;}
+  table.shift td.total-col,table.shift th.total-col{width:6% !important;min-width:0;}
   table.shift td.cell{height:26px;min-width:auto;}
   table.shift thead th{position:static;}
-  table.shift th.name-col{position:static;}
   td.c-夜{background:var(--ink) !important;color:var(--white) !important;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
   td.c-早,td.c-遅,td.c-明,td.c-有,td.c-希日,td.pos-excess,td.chk-ok,td.chk-warn,td.chk-bad{-webkit-print-color-adjust:exact;print-color-adjust:exact;}
 }
@@ -905,6 +907,7 @@ tr.summary-row:first-of-type td{border-top:2px solid var(--ocean);}
 /* ================= 修正ログ =================
    コードを変更したら必ずここに1行追加すること */
 const CHANGELOG_DATA = [
+  { version: 'v1.47.0', date: '2026-08-31', label: '改善', text: 'シフト表の列幅を「画面幅ちょうどに収める(v1.27.0)」設計から「日付列は読みやすい固定幅(40px)にして、収まらない分は横スライドで見る」設計に変更。名前列は左端に固定表示されたまま(sticky)日付だけを左右にスライドできる。この変更により文字を画面幅に合わせて縮小する必要がなくなったため、シフトコード・配置番号(v1.41.0/v1.46.0)の文字サイズをすべて固定値に戻し、より大きく・読みやすく表示されるようにした。印刷(標準様式1とは別の「印刷」ボタンでのA3横印刷)は従来通り紙1枚に収まる%指定のレイアウトのまま変更なし(画面用の固定px幅は印刷時のみCSSで無効化)' },
   { version: 'v1.46.0', date: '2026-08-31', label: '改善', text: '配置番号(v1.41.0)の表示方法を変更。これまではマスの右下に8.8px程度の極小の丸数字を重ねて表示していたが、スマホでは実質見えないサイズだった。マスの本文(これまで「日」「訪介」等のコードを表示していた部分)を「通介①」「通看⑤」「訪介①」のような番号入りの表記に置き換え、ひと目で配置番号が分かるようにした(元のコードはマスをタップ/長押しした時のツールチップで確認可能)。看多機のみ対象、対象日以外(休み・夜勤など配置番号のない日)は従来通りコード表示のまま' },
   { version: 'v1.45.0', date: '2026-08-31', label: '改善', text: '配置番号(v1.41.0)の過剰配置表示を強化。これまでは右下の小さな丸数字の色だけで過剰配置を示していたため、実際の画面では気づきにくかった。過剰配置のマスには枠線(赤)も付けて、マス全体でひと目で分かるようにした(印刷時にも表示される)' },
   { version: 'v1.44.0', date: '2026-08-13', label: 'バグ修正', text: 'v1.43.0の土日優先修正後も、月末が土日にあたる月で人員不足が残る不具合を修正。土日をまとめて先頭で処理するようにしたことで、土日ぶん(月7〜9日)が処理のごく序盤に集中し、進捗率に応じて上限を抑える「ペース配分(paceCap)」が早々に効いてしまい、特に土日グループの最後(月末側)で常勤職員がペース上限に達して配置できなくなっていた。土日についてはペース配分を適用せず、月間の契約日数(target)の範囲内であれば進捗率に関わらず配置できるようにした(平日側のペース配分はこれまで通り)' },
@@ -2062,14 +2065,15 @@ function renderShiftTable(){
   const dim = daysInMonth(currentYm);
   const g = grid();
   const ocMap = state.oncalls[shiftKey()] || {};
-  // 横スライドせず1画面に収まるよう、月の日数に応じて日付列の幅(%)を割り出す
-  // (名前列16%・勤務列6%は固定、残りを日数で均等割り。table.shift th.name-col/total-colのCSSと合わせる)
-  const dayColPct = Math.max(0, (100 - 16 - 6) / dim);
+  // 日付列は固定px幅。画面に収まらない分は.grid-wrapの横スライドで見る(名前列・勤務列も画面幅を問わず固定で読みやすい大きさを維持)
+  // table-layout:fixedのまま table自体のwidthをautoにすると、ブラウザがcontainer幅に合わせて各列を比例的に引き伸ばしてしまう
+  // (結果スクロールが発生しない)ため、table.shift th.name-col/td.total-colのCSS指定値と合わせてtable自体の幅を明示指定する
+  const DAY_COL_PX = 40, NAME_COL_PX = 96, TOTAL_COL_PX = 38;
   let html = '<thead><tr><th class="name-col">職員</th>';
   for(let d = 1; d <= dim; d++){
     const wd = weekdayOf(currentYm, d);
     const cls = wd === 0 ? 'sun' : (wd === 6 ? 'sat' : '');
-    html += `<th class="${cls}" style="width:${dayColPct}%;">${d}<br><small>${WD_CHARS[wd]}</small></th>`;
+    html += `<th class="${cls}" style="width:${DAY_COL_PX}px;">${d}<br><small>${WD_CHARS[wd]}</small></th>`;
   }
   html += '<th class="total-col">勤務</th></tr></thead><tbody>';
 
@@ -2215,6 +2219,7 @@ function renderShiftTable(){
   }
   html += '<td class="total-col"></td></tr>';
   html += '</tbody>';
+  table.style.width = (NAME_COL_PX + TOTAL_COL_PX + dim * DAY_COL_PX) + 'px';
   table.innerHTML = html;
 
   renderDayDetail();
