@@ -903,6 +903,8 @@ tr.summary-row:first-of-type td{border-top:2px solid var(--ocean);}
 /* ================= 修正ログ =================
    コードを変更したら必ずここに1行追加すること */
 const CHANGELOG_DATA = [
+  { version: 'v1.43.0', date: '2026-08-13', label: 'バグ修正', text: '土日に人員が大幅に不足する不具合を修正。支配人・計画作成・多くの非常勤は土日に出勤できない契約のため、土日に出られるのは常勤の介護・看護職員だけになるケースが多いが、従来は平日を先に処理していたため、常勤職員が平日の連勤で先に埋まってしまい、いざ土日を埋めようとした時には連勤上限で入れなくなる、という現象が起きていた(実データで検証したところ、ほぼ毎週土日に必要人数6人に対し実際3〜4人しか配置されない状態だった)。①自動作成の処理順を「土日を先に→平日を後に」変更し、常勤職員の土日出勤枠を平日の連勤で潰れる前に確保するようにした②連勤上限(4日)を、4連勤以内でどうしても必要人数を満たせない日・職員に限り5連勤まで許容するようにした(通常はこれまで通り4日が上限、本当に他に候補がいない時だけの最後の手段)' },
+  { version: 'v1.42.0', date: '2026-08-13', label: '改善', text: '自動作成のシフト割当ロジックを改善。支配人・計画作成(半日勤務=常勤換算0.5人分)を、日中の必要人数を満たすための最後の手段として扱うように変更した(これまでは介護・看護職員と同じ優先順位で競合していたため、必要数を満たせるはずの介護・看護職員がいるのに支配人・計画作成が先に半日勤務で入ってしまい、結局もう1人追加で必要になることがあった)。契約日数の帳尻合わせ(Step3)でも、支配人・計画作成の割当は介護・看護職員の割当が決まった後に行うようにした。送迎担当の優先順位(driveRank)と同じ考え方に統一' },
   { version: 'v1.41.0', date: '2026-08-13', label: '新機能', text: '看護小規模多機能型居宅介護(看多機)のシフト表に「配置番号」を追加。3対1の配置基準(通い側の常勤換算+訪問介護)に対して、その日実際に配置されている職員が何人目にあたるかを、マスの右下に小さな丸数字(①②③…)で表示するようにした。通い側は介護職員→看護師の順に通し番号を振り(3対1には通い担当の看護師も含める)、必要人数を超えた分は色を変えて「過剰配置」と分かるようにした(ホバー/タップで「通介①」等の詳細も見られる)。訪問介護も同じ考え方で別に番号を振る(訪問体制強化加算で必要2名の時、①のみ埋まっていれば1名不足と一目で分かる)。実際の勤務コード・時間計算・勤務形態一覧表の出力には一切影響しない表示専用の機能。小多機・訪問看護の拠点には表示しない(看多機のみ)' },
   { version: 'v1.40.0', date: '2026-08-13', label: '新機能', text: '「日勤希望」を追加。希望休・有給と同じように、シフト表のマス(または希望休入力カード)で特定の職員の特定の日を「日勤希望(希日)」に設定できるようにした。設定した日は自動作成を何回実行しても崩れず固定される(勤務時間・常勤換算・連勤日数の計算もすべて通常の「日」と同じ扱い)。セルの色はサンド色で他のコードと区別できるようにした。※コード.gs側の希望データの保存形式に列を1つ追加したため、この機能をクラウド経由で共有するにはGAS(コード.gs)の再デプロイが必要です(再デプロイ前でもこの端末上では問題なく動作します)' },
   { version: 'v1.39.0', date: '2026-08-13', label: '新機能', text: '「曜日別の訪問看護ルート数」の入力欄を、これまでの看多機だけでなく訪問看護の拠点でも使えるようにした。この人数が日ごとの看護師必要数として扱われ、自動作成・配置チェック・拠点一覧の表示すべてに反映される(これまでは訪問看護の拠点は「看護師が最低1名いればOK」という一律の判定だった)。既存の訪問看護拠点は未設定なら従来通り1ルート相当として動作する' },
@@ -969,6 +971,8 @@ const ROLE_LABELS = {
 // 表示の並び順: 支配人→計画作成→介護正社員→介護非常勤→送迎ドライバー→夜勤者→看護正社員→看護非常勤
 const ROLE_ORDER = { shihainin:0, keikaku:1, kaigo_full:2, kaigo_part:3, driver:4, yakin:5, ns_full:6, ns_part:7 };
 const MAX_CONSECUTIVE = 4; // 連勤の上限(固定曜日契約の非常勤は契約どおり勤務するため対象外)
+// 4連勤以内では日中の必要人数を満たせない(=他に候補がいない)時だけ、最後の手段として5連勤まで許容する
+const MAX_CONSECUTIVE_HARD = MAX_CONSECUTIVE + 1;
 
 // 資格: 介護職員(介護正社員・介護非常勤・夜勤専従・送迎ドライバー・支配人・計画作成)向け
 const KAIGO_QUALS = [
@@ -1571,10 +1575,19 @@ function generateShifts(){
   });
 
   // 営業日を「中央から広げる順」に並べ替える。人手が足りない月でも、
-  // 割当に失敗する日が月末に集中せず、月全体にまんべんなく散らばるようにする
+  // 割当に失敗する日が月末に集中せず、月全体にまんべんなく散らばるようにする。
+  // ただし土日は、支配人・計画作成・多くの非常勤が出勤できず常勤職員しか候補がいないため、
+  // 平日を先に処理すると常勤職員が平日の連勤で埋まってしまい土日に手が回らなくなる。
+  // そのため土日を先に(土日の中で中央から広げる順)、続けて平日を処理する
   const openDaysList = [];
   for(let d = 1; d <= dim; d++){ if(isOpenDay(fac, currentYm, d)) openDaysList.push(d); }
-  const dayOrder = spreadOrder(openDaysList.length).map(i => openDaysList[i - 1]);
+  const isWeekend = d => [0, 6].includes(weekdayOf(currentYm, d));
+  const weekendOpenDays = openDaysList.filter(isWeekend);
+  const weekdayOpenDays = openDaysList.filter(d => !isWeekend(d));
+  const dayOrder = [
+    ...spreadOrder(weekendOpenDays.length).map(i => weekendOpenDays[i - 1]),
+    ...spreadOrder(weekdayOpenDays.length).map(i => weekdayOpenDays[i - 1]),
+  ];
   const progressOf = {};
   dayOrder.forEach((d, i) => { progressOf[d] = i + 1; });
   const totalOpenDays = openDaysList.length || 1;
@@ -1666,7 +1679,10 @@ function generateShifts(){
 
   // ---- 2. 日ごとに日中の職員を割り当て(固定曜日の非常勤以外) ----
   // 処理順は dayOrder(月全体にまんべんなく散らした順)。休業日は最初から含まれない
-  const dayWorkers = roster.filter(s => isCareWorker(s) && !isFixedPart(s));
+  // 支配人・計画作成は契約日数の帳尻合わせ(Step3)でも最後に回す(他の職員の勤務が
+  // 決まった後の残り枠に、半日勤務として埋めていく形にするため)
+  const dayWorkers = roster.filter(s => isCareWorker(s) && !isFixedPart(s))
+    .sort((a, b) => (isManagement(a) ? 1 : 0) - (isManagement(b) ? 1 : 0));
   for(const d of dayOrder){
     const wd = weekdayOf(currentYm, d);
     // 看多機・小多機: 3対1(常勤換算) + 訪問介護1名(加算ありは2名)
@@ -1689,14 +1705,20 @@ function generateShifts(){
       return rest.reduce((t, s) => t + unitOf(s, wd), 0) - routeUnit;
     };
 
+    // 4連勤以内の候補をプールに含める。それでも足りない時だけ、ソートの優先度を下げた形で
+    // 5連勤までの候補も後ろに含めておく(本当に他に候補がいない日だけ最後の手段として使われる)
     const pool = dayWorkers.filter(s =>
       cellEmpty(s, d) &&
       (s.workDays || []).includes(wd) &&
       assigned[s.id] < paceCap(s, d) &&
-      runLenIfWorked(s, d) <= MAX_CONSECUTIVE
+      runLenIfWorked(s, d) <= MAX_CONSECUTIVE_HARD
     );
-    // 勤務が少ない人から優先(公平に配分)。同率なら日付でローテーション
+    // 支配人・計画作成(半日=0.5人分)は他の職員で必要数を満たせない時の最後の手段とする
+    // (0.5人分では1人だけでは日中の枠を埋めきれないため、まず1.0人分の職員を優先する)。
+    // 同じ優先度の中では勤務が少ない人から優先(公平に配分)、同率なら日付でローテーション
     pool.sort((a, b) =>
+      (isManagement(a) ? 1 : 0) - (isManagement(b) ? 1 : 0) ||
+      ((runLenIfWorked(a, d) > MAX_CONSECUTIVE ? 1 : 0) - (runLenIfWorked(b, d) > MAX_CONSECUTIVE ? 1 : 0)) ||
       (assigned[a.id] / (target[a.id] || 1)) - (assigned[b.id] / (target[b.id] || 1)) ||
       ((a.id.charCodeAt(2) + d) % 7) - ((b.id.charCodeAt(2) + d) % 7)
     );
@@ -1797,26 +1819,31 @@ function generateShifts(){
   }
 
   // ---- 3. 契約日数に届かない職員を、人が薄い日に追加配置 ----
-  dayWorkers.forEach(s => {
-    if(assigned[s.id] >= target[s.id]) return;
-    // 配置人数が少ない日から順に埋める
+  // 配置人数が少ない日から順に埋める(契約日数を満たすことを優先し、ここではペース制限なし)。
+  // maxConsecはこの回で許容する連勤日数の上限
+  const fillThinDaysFor = (s, maxConsec) => {
     const days = [];
     for(let d = 1; d <= dim; d++){
       if(!isOpenDay(fac, currentYm, d)) continue;
       if(!cellEmpty(s, d)) continue;
       if(!(s.workDays || []).includes(weekdayOf(currentYm, d))) continue;
-      if(runLenIfWorked(s, d) > MAX_CONSECUTIVE) continue;
+      if(runLenIfWorked(s, d) > maxConsec) continue;
       const count = roster.filter(x => DAY_CODES.includes(getCode(g, x.id, d))).length;
       days.push({ d, count });
     }
-    // 配置が薄い日から埋める(契約日数を満たすことを優先し、ここではペース制限なし)
     days.sort((a, b) => a.count - b.count || a.d - b.d);
     for(const { d } of days){
       if(assigned[s.id] >= target[s.id]) break;
-      if(runLenIfWorked(s, d) > MAX_CONSECUTIVE) continue;
+      if(runLenIfWorked(s, d) > maxConsec) continue;
       setCode(g, s.id, d, dayCodeFor(s));
       assigned[s.id]++;
     }
+  };
+  dayWorkers.forEach(s => {
+    if(assigned[s.id] >= target[s.id]) return;
+    fillThinDaysFor(s, MAX_CONSECUTIVE);
+    // 4連勤以内ではどうしても契約日数を満たせなかった職員だけ、5連勤まで許容して埋める
+    if(assigned[s.id] < target[s.id]) fillThinDaysFor(s, MAX_CONSECUTIVE_HARD);
   });
 
   // ---- 3.5 再配分: 余っている日から不足している日へ勤務を移す ----
