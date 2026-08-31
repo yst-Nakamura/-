@@ -907,6 +907,7 @@ tr.summary-row:first-of-type td{border-top:2px solid var(--ocean);}
 /* ================= 修正ログ =================
    コードを変更したら必ずここに1行追加すること */
 const CHANGELOG_DATA = [
+  { version: 'v1.48.0', date: '2026-08-31', label: 'バグ修正', text: '看多機で「余剰の日があるのに月の後半に看護師がいない」不具合を修正。実データ(拠点fmr9xhg9vhb2y、2027年2月、看護師3名)で調査したところ、3名とも出勤する日(実質1名分が余剰)がある一方、月末付近で1名も出勤しない日ができるなど、看護師の休みが偶然同じ日に重なって不足日が生じていた。既存の再配分(3.5)は「その日から看護師を1名抜いても3対1の常勤換算が足りるか」しか見ておらず、看護師は3対1側の頭数(FTE)にも数えているため、3名出勤日から1名抜くとその日自体が3対1不足になってしまい、実際には移動できないケースがほとんどだった(単純な人数の余剰は、常勤換算で見ると余剰ではなかった)。**修正**: 新しいStep3.6として、看護師を「不足日で勤務・元の出勤日で休み」に振り替え、元の出勤日でFTEが不足する分だけ休みの介護職員を1名補って埋める(看護師の必要人数(専門職としての頭数)は介護職員では代替できないため、あくまで看護師本人を移動させ、移動元のFTE穴だけを埋める設計)。実データと同じ職員構成のテスト环境で検証: 修正前は不足日3日(1名不足×2日+2名不足×1日)だったのが、修正後は1名不足の日が1日だけに改善(5回連続で自動作成しても安定して同じ結果)。看護師3名それぞれの月間勤務日数(19日)は変更前後で同じ(振り替えは同一人物の休み位置を動かすだけで、勤務日数の合計は変えない設計のため)。残る1日の不足は、その日の前後が偶数日で埋まっており、これ以上動かすと5連勤の上限を超えるか、隣接日も看護師必要数ぎりぎりで動かせないための限界(看護師3名という体制上の制約による残存不足で、アルゴリズムのバグではない)。テストはgasSaveをスタブして実施、テストデータは作成せず(実データを一時的に再生成して検証しただけ)、検証後はgasLoad()で実データ(23拠点397名)を復元・dirty=false確認済み' },
   { version: 'v1.47.0', date: '2026-08-31', label: '改善', text: 'シフト表の列幅を「画面幅ちょうどに収める(v1.27.0)」設計から「日付列は読みやすい固定幅(40px)にして、収まらない分は横スライドで見る」設計に変更。名前列は左端に固定表示されたまま(sticky)日付だけを左右にスライドできる。この変更により文字を画面幅に合わせて縮小する必要がなくなったため、シフトコード・配置番号(v1.41.0/v1.46.0)の文字サイズをすべて固定値に戻し、より大きく・読みやすく表示されるようにした。印刷(標準様式1とは別の「印刷」ボタンでのA3横印刷)は従来通り紙1枚に収まる%指定のレイアウトのまま変更なし(画面用の固定px幅は印刷時のみCSSで無効化)' },
   { version: 'v1.46.0', date: '2026-08-31', label: '改善', text: '配置番号(v1.41.0)の表示方法を変更。これまではマスの右下に8.8px程度の極小の丸数字を重ねて表示していたが、スマホでは実質見えないサイズだった。マスの本文(これまで「日」「訪介」等のコードを表示していた部分)を「通介①」「通看⑤」「訪介①」のような番号入りの表記に置き換え、ひと目で配置番号が分かるようにした(元のコードはマスをタップ/長押しした時のツールチップで確認可能)。看多機のみ対象、対象日以外(休み・夜勤など配置番号のない日)は従来通りコード表示のまま' },
   { version: 'v1.45.0', date: '2026-08-31', label: '改善', text: '配置番号(v1.41.0)の過剰配置表示を強化。これまでは右下の小さな丸数字の色だけで過剰配置を示していたため、実際の画面では気づきにくかった。過剰配置のマスには枠線(赤)も付けて、マス全体でひと目で分かるようにした(印刷時にも表示される)' },
@@ -1913,6 +1914,55 @@ function generateShifts(){
       }
     }
     if(!moved) break;
+  }
+
+  // ---- 3.6 看護師必要数の確保: 看護師の人数が偶然同じ日に偏り(例: 3名中3名とも出勤する日がある一方、1名も出勤しない日ができる)、
+  // 看護師が必要数に足りない日が残ることがある。3.5の再配分は「その日から看護師を1名抜いても3対1の常勤換算が足りるか」しか見ておらず、
+  // 看護師は3対1側の頭数(FTE)にも数えているため、単純に抜くとその日の3対1が不足してしまい移動できないケースが多い。
+  // そこで、看護師を「不足日で勤務・元の出勤日で休み」に振り替えた上で、元の出勤日でFTEが不足する分だけ介護職員を1名補って埋める
+  if(isTaki(fac)){
+    for(let d = 1; d <= dim; d++){
+      if(!isOpenDay(fac, currentYm, d)) continue;
+      const wd = weekdayOf(currentYm, d);
+      const houkanRoutesD = houkanRoutesFor(fac, wd);
+      const nurseNeedD = fac.type === 'kantaki' ? 1 + houkanRoutesD : houkanRoutesD;
+      if(nurseNeedD <= 0) continue;
+      const offNurses = roster.filter(s =>
+        isNurse(s) && cellEmpty(s, d) && (s.workDays || []).includes(wd) &&
+        runLenIfWorked(s, d) <= MAX_CONSECUTIVE_HARD);
+      for(const n of offNurses){
+        const nurseCountD = roster.filter(s => isNurse(s) && DAY_CODES.includes(getCode(g, s.id, d))).length;
+        if(nurseCountD >= nurseNeedD) break;
+        for(let d2 = 1; d2 <= dim; d2++){
+          if(d2 === d) continue;
+          const c2 = getCode(g, n.id, d2);
+          if(!DAY_CODES.includes(c2)) continue;
+          setCode(g, n.id, d2, ''); // 仮に外してみる
+          let st2 = dayShort(d2);
+          let backfillId = null;
+          if(st2.careShort > 0){
+            // 看護師を抜いたことで3対1の常勤換算が不足する分は、その日休みの介護職員を1名補って埋められないか試す
+            const wd2 = weekdayOf(currentYm, d2);
+            const backfillCands = roster.filter(s =>
+              isCareWorker(s) && !isNurse(s) && cellEmpty(s, d2) && (s.workDays || []).includes(wd2) &&
+              runLenIfWorked(s, d2) <= MAX_CONSECUTIVE);
+            if(backfillCands.length > 0){
+              const b = backfillCands[Math.floor(Math.random() * backfillCands.length)];
+              setCode(g, b.id, d2, dayCodeFor(b));
+              backfillId = b.id;
+              st2 = dayShort(d2);
+            }
+          }
+          if(st2 && st2.careShort <= 0 && st2.nurseShort <= 0 && runLenIfWorked(n, d) <= MAX_CONSECUTIVE_HARD){
+            setCode(g, n.id, d, dayCodeFor(n)); // 振り替え成立(nはd2で休み・dで勤務に)
+            break;
+          }
+          // 失敗: 元に戻す
+          if(backfillId) setCode(g, backfillId, d2, '');
+          setCode(g, n.id, d2, c2);
+        }
+      }
+    }
   }
 
   // ---- 3.8 訪問担当の指定: 訪看(訪問看護ルートの看護師)と訪介(訪問介護担当)をランダムに選ぶ ----
