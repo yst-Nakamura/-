@@ -215,13 +215,13 @@ table.shift.confirmed td.cell{cursor:not-allowed;}
   position:absolute;top:0;left:1px;
   font-size:0.55rem;font-weight:700;color:var(--sand);line-height:1.1;
 }
-/* 配置番号のマーク(看多機のみ・マスの右下に小さく①②③…。過剰配置は色を変える) */
-.pos-mark{
-  position:absolute;bottom:0;right:1px;
-  font-size:0.55rem;font-weight:700;color:var(--green);line-height:1.1;
+/* 配置番号(看多機のみ)。マスの表示コード(日・訪介など)の代わりに「通介①」のような番号入り表記をマス本文として表示する。過剰配置は赤字+マス全体に枠 */
+.pos-label{
+  font-size:clamp(0.3rem, 1.05vw, 0.42rem);
+  letter-spacing:-0.15em;
+  color:var(--green);
 }
-.pos-mark.excess{color:var(--danger);}
-/* 過剰配置のマスは、小さな数字だけでなくマス全体にも枠をつけて目立たせる */
+.pos-label.excess{color:var(--danger);}
 td.cell.pos-excess{box-shadow:inset 0 0 0 2px var(--danger);}
 tr.oncall-row td{height:34px;font-size:0.7rem;cursor:pointer;background:var(--white);}
 tr.oncall-row td.oc-set{background:#F5E9E5;color:var(--danger);font-weight:700;}
@@ -905,6 +905,7 @@ tr.summary-row:first-of-type td{border-top:2px solid var(--ocean);}
 /* ================= 修正ログ =================
    コードを変更したら必ずここに1行追加すること */
 const CHANGELOG_DATA = [
+  { version: 'v1.46.0', date: '2026-08-31', label: '改善', text: '配置番号(v1.41.0)の表示方法を変更。これまではマスの右下に8.8px程度の極小の丸数字を重ねて表示していたが、スマホでは実質見えないサイズだった。マスの本文(これまで「日」「訪介」等のコードを表示していた部分)を「通介①」「通看⑤」「訪介①」のような番号入りの表記に置き換え、ひと目で配置番号が分かるようにした(元のコードはマスをタップ/長押しした時のツールチップで確認可能)。看多機のみ対象、対象日以外(休み・夜勤など配置番号のない日)は従来通りコード表示のまま' },
   { version: 'v1.45.0', date: '2026-08-31', label: '改善', text: '配置番号(v1.41.0)の過剰配置表示を強化。これまでは右下の小さな丸数字の色だけで過剰配置を示していたため、実際の画面では気づきにくかった。過剰配置のマスには枠線(赤)も付けて、マス全体でひと目で分かるようにした(印刷時にも表示される)' },
   { version: 'v1.44.0', date: '2026-08-13', label: 'バグ修正', text: 'v1.43.0の土日優先修正後も、月末が土日にあたる月で人員不足が残る不具合を修正。土日をまとめて先頭で処理するようにしたことで、土日ぶん(月7〜9日)が処理のごく序盤に集中し、進捗率に応じて上限を抑える「ペース配分(paceCap)」が早々に効いてしまい、特に土日グループの最後(月末側)で常勤職員がペース上限に達して配置できなくなっていた。土日についてはペース配分を適用せず、月間の契約日数(target)の範囲内であれば進捗率に関わらず配置できるようにした(平日側のペース配分はこれまで通り)' },
   { version: 'v1.43.0', date: '2026-08-13', label: 'バグ修正', text: '土日に人員が大幅に不足する不具合を修正。支配人・計画作成・多くの非常勤は土日に出勤できない契約のため、土日に出られるのは常勤の介護・看護職員だけになるケースが多いが、従来は平日を先に処理していたため、常勤職員が平日の連勤で先に埋まってしまい、いざ土日を埋めようとした時には連勤上限で入れなくなる、という現象が起きていた(実データで検証したところ、ほぼ毎週土日に必要人数6人に対し実際3〜4人しか配置されない状態だった)。①自動作成の処理順を「土日を先に→平日を後に」変更し、常勤職員の土日出勤枠を平日の連勤で潰れる前に確保するようにした②連勤上限(4日)を、4連勤以内でどうしても必要人数を満たせない日・職員に限り5連勤まで許容するようにした(通常はこれまで通り4日が上限、本当に他に候補がいない時だけの最後の手段)' },
@@ -2121,9 +2122,12 @@ function renderShiftTable(){
       const oc = ocMap[d] === s.id ? '<span class="oc-mark">オ</span>' : '';
       const drv = driversByDay[d].has(s.id) ? '<span class="drv-mark" title="送迎担当">送</span>' : '';
       const pl = posLabelsByDay[d][s.id];
-      const pos = pl ? `<span class="pos-mark${pl.excess ? ' excess' : ''}" title="${escapeHtml(pl.text)}${pl.excess ? '(過剰配置)' : ''}">${pl.text.slice(-1)}</span>` : '';
       const posExcessCls = pl && pl.excess ? ' pos-excess' : '';
-      html += `<td class="cell c-${c || 'none'}${posExcessCls}" data-staff="${s.id}" data-day="${d}">${c || ''}${oc}${drv}${pos}</td>`;
+      // 配置番号がある日は、マス本文をコード(日・訪介など)の代わりに「通介①」のような番号入り表記にする
+      const cellBody = pl
+        ? `<span class="pos-label${pl.excess ? ' excess' : ''}" title="${escapeHtml(c)}${pl.excess ? '(過剰配置)' : ''}">${escapeHtml(pl.text)}</span>`
+        : (c || '');
+      html += `<td class="cell c-${c || 'none'}${posExcessCls}" data-staff="${s.id}" data-day="${d}">${cellBody}${oc}${drv}</td>`;
     }
     html += `<td class="total-col">${workCount}</td></tr>`;
   });
