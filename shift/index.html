@@ -215,6 +215,12 @@ table.shift.confirmed td.cell{cursor:not-allowed;}
   position:absolute;top:0;left:1px;
   font-size:0.55rem;font-weight:700;color:var(--sand);line-height:1.1;
 }
+/* 配置番号のマーク(看多機のみ・マスの右下に小さく①②③…。過剰配置は色を変える) */
+.pos-mark{
+  position:absolute;bottom:0;right:1px;
+  font-size:0.55rem;font-weight:700;color:var(--green);line-height:1.1;
+}
+.pos-mark.excess{color:var(--danger);}
 tr.oncall-row td{height:34px;font-size:0.7rem;cursor:pointer;background:var(--white);}
 tr.oncall-row td.oc-set{background:#F5E9E5;color:var(--danger);font-weight:700;}
 tr.oncall-row th.name-col{font-size:0.72rem;font-weight:500;color:var(--gray);background:var(--mist);}
@@ -897,6 +903,7 @@ tr.summary-row:first-of-type td{border-top:2px solid var(--ocean);}
 /* ================= 修正ログ =================
    コードを変更したら必ずここに1行追加すること */
 const CHANGELOG_DATA = [
+  { version: 'v1.41.0', date: '2026-08-13', label: '新機能', text: '看護小規模多機能型居宅介護(看多機)のシフト表に「配置番号」を追加。3対1の配置基準(通い側の常勤換算+訪問介護)に対して、その日実際に配置されている職員が何人目にあたるかを、マスの右下に小さな丸数字(①②③…)で表示するようにした。通い側は介護職員→看護師の順に通し番号を振り(3対1には通い担当の看護師も含める)、必要人数を超えた分は色を変えて「過剰配置」と分かるようにした(ホバー/タップで「通介①」等の詳細も見られる)。訪問介護も同じ考え方で別に番号を振る(訪問体制強化加算で必要2名の時、①のみ埋まっていれば1名不足と一目で分かる)。実際の勤務コード・時間計算・勤務形態一覧表の出力には一切影響しない表示専用の機能。小多機・訪問看護の拠点には表示しない(看多機のみ)' },
   { version: 'v1.40.0', date: '2026-08-13', label: '新機能', text: '「日勤希望」を追加。希望休・有給と同じように、シフト表のマス(または希望休入力カード)で特定の職員の特定の日を「日勤希望(希日)」に設定できるようにした。設定した日は自動作成を何回実行しても崩れず固定される(勤務時間・常勤換算・連勤日数の計算もすべて通常の「日」と同じ扱い)。セルの色はサンド色で他のコードと区別できるようにした。※コード.gs側の希望データの保存形式に列を1つ追加したため、この機能をクラウド経由で共有するにはGAS(コード.gs)の再デプロイが必要です(再デプロイ前でもこの端末上では問題なく動作します)' },
   { version: 'v1.39.0', date: '2026-08-13', label: '新機能', text: '「曜日別の訪問看護ルート数」の入力欄を、これまでの看多機だけでなく訪問看護の拠点でも使えるようにした。この人数が日ごとの看護師必要数として扱われ、自動作成・配置チェック・拠点一覧の表示すべてに反映される(これまでは訪問看護の拠点は「看護師が最低1名いればOK」という一律の判定だった)。既存の訪問看護拠点は未設定なら従来通り1ルート相当として動作する' },
   { version: 'v1.38.0', date: '2026-08-13', label: '新機能', text: '訪問看護の拠点編集画面で、「1日に必要な日勤人数」を曜日ごとに設定できるように変更(これまでは全曜日共通の1つの数値のみだった)。土日は人数を減らす、といった運用に対応。既存拠点は今までの一律の値がそのまま全曜日の初期値として引き継がれる(自動作成・配置チェック・拠点一覧の表示もすべて曜日別の値を参照するよう修正)' },
@@ -1213,6 +1220,59 @@ function kayoiNeedFor(fac, wd){
     if(avg > 0) need = Math.max(need, Math.ceil(avg / 3));
   }
   return need;
+}
+
+/* ---- 配置番号(看多機のみ): その日の3対1配置が「足りているか・過剰か」をシフト表のマスに
+   小さな番号で可視化するための表示専用ラベル。実際の勤務コード・時間計算には一切影響しない ----
+   通い側(3対1、看護師も含む)は通介①②③…→看護師は続き番号で通看、訪問介護は訪介①②…で別シーケンス */
+const CIRCLED_NUMS = ['①','②','③','④','⑤','⑥','⑦','⑧','⑨','⑩','⑪','⑫','⑬','⑭','⑮','⑯','⑰','⑱','⑲','⑳'];
+function circled(n){ return CIRCLED_NUMS[n - 1] || ('(' + n + ')'); }
+function positionLabelsForDay(fac, day){
+  const labels = {}; // staffId -> {text, excess}
+  if(!fac || fac.type !== 'kantaki') return labels; // 看護小規模多機能型居宅介護のみ対象
+  const wd = weekdayOf(currentYm, day);
+  const g = grid();
+  const roster = facStaff();
+  const careNeed = kayoiNeedFor(fac, wd);   // 3対1の必要人数(看護師ぶんも含めた合計)
+  const homonNeed = homonKaigoNeed(fac);     // 訪問介護の必要人数(通常1・訪問体制強化加算ありなら2)
+
+  // 通い側(3対1、訪問看護ルート担当・訪問介護担当は対象外)
+  const careIds = [], nurseIds = [];
+  roster.forEach(s => {
+    const code = getCode(g, s.id, day);
+    if(code === '訪看' || code === '訪介' || !DAY_CODES.includes(code) || !isCareWorker(s)) return;
+    (isNurse(s) ? nurseIds : careIds).push(s.id);
+  });
+  // 看護師が1名以上いる場合、必要人数の最後の1枠は「通い側に看護師1名以上」のルール分として
+  // 予約しておく(番号上も、看護師がいる限りは必要数の範囲内として見せるため)
+  const careStdSlots = nurseIds.length > 0 ? Math.max(0, careNeed - 1) : careNeed;
+  let overflow = careNeed; // 必要数を超えた分(過剰配置)の通し番号
+  careIds.forEach((staffId, i) => {
+    if(i < careStdSlots){
+      labels[staffId] = { text: '通介' + circled(i + 1), excess: false };
+    }else{
+      overflow++;
+      labels[staffId] = { text: '通介' + circled(overflow), excess: true };
+    }
+  });
+  nurseIds.forEach((staffId, i) => {
+    if(i === 0 && careStdSlots < careNeed){
+      labels[staffId] = { text: '通看' + circled(careNeed), excess: false }; // 予約枠
+    }else{
+      overflow++;
+      labels[staffId] = { text: '通看' + circled(overflow), excess: true };
+    }
+  });
+
+  // 訪問介護は別シーケンス
+  let homonSlot = 0;
+  roster.forEach(s => {
+    if(getCode(g, s.id, day) !== '訪介') return;
+    homonSlot++;
+    labels[s.id] = { text: '訪介' + circled(homonSlot), excess: homonSlot > homonNeed };
+  });
+
+  return labels;
 }
 
 // 正社員・支配人・計画作成の月の休み日数(拠点の年間設定から、指定月(YYYYMM)分を取り出す。全員共通)
@@ -1993,6 +2053,9 @@ function renderShiftTable(){
   }
   const driversByDay = {};
   for(let d = 1; d <= dim; d++) driversByDay[d] = driversForDay(d);
+  // その日の配置番号(通介①・通看・訪介①など、看多機のみ)
+  const posLabelsByDay = {};
+  for(let d = 1; d <= dim; d++) posLabelsByDay[d] = positionLabelsForDay(fac, d);
 
   const roleBadge = s => {
     let b;
@@ -2023,7 +2086,9 @@ function renderShiftTable(){
       if(isWorkCode(c)) workCount += (c === '夜' ? 2 : 1); // 夜勤は2日分
       const oc = ocMap[d] === s.id ? '<span class="oc-mark">オ</span>' : '';
       const drv = driversByDay[d].has(s.id) ? '<span class="drv-mark" title="送迎担当">送</span>' : '';
-      html += `<td class="cell c-${c || 'none'}" data-staff="${s.id}" data-day="${d}">${c || ''}${oc}${drv}</td>`;
+      const pl = posLabelsByDay[d][s.id];
+      const pos = pl ? `<span class="pos-mark${pl.excess ? ' excess' : ''}" title="${escapeHtml(pl.text)}${pl.excess ? '(過剰配置)' : ''}">${pl.text.slice(-1)}</span>` : '';
+      html += `<td class="cell c-${c || 'none'}" data-staff="${s.id}" data-day="${d}">${c || ''}${oc}${drv}${pos}</td>`;
     }
     html += `<td class="total-col">${workCount}</td></tr>`;
   });
