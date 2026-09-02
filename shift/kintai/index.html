@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>出退勤の打刻 | かえりえ</title>
+<style>
+:root{
+  --ink:#090401;
+  --ocean:#91B9C1;
+  --sky:#C3DCF0;
+  --sand:#C19569;
+  --mist:#D8DDE1;
+  --mint:#EBF4F8;
+  --green:#5F8C8A;
+  --gray:#6B7880;
+  --danger:#7A3B2E;
+  --white:#FFFFFF;
+}
+*{margin:0;padding:0;box-sizing:border-box;}
+body{
+  font-family:"Noto Sans JP","Hiragino Kaku Gothic ProN","Yu Gothic",sans-serif;
+  background:var(--mint);
+  color:var(--ink);
+  font-size:16px;
+  line-height:1.7;
+}
+button{font-family:inherit;cursor:pointer;}
+select{font-family:inherit;font-size:16px;}
+
+header{
+  background:var(--ink);
+  color:var(--white);
+  padding:14px 16px;
+  text-align:center;
+}
+header h1{font-size:1.1rem;font-weight:700;letter-spacing:-0.02em;}
+header p{font-size:0.75rem;color:var(--mist);}
+
+main{padding:14px;max-width:480px;margin:0 auto;}
+
+.step-card{
+  background:var(--white);
+  border:1px solid var(--mist);
+  border-radius:14px;
+  padding:16px;
+  margin-bottom:12px;
+}
+.step-card h2{
+  font-size:0.95rem;
+  margin-bottom:10px;
+  display:flex;align-items:center;gap:8px;
+}
+.step-num{
+  display:inline-flex;align-items:center;justify-content:center;
+  width:26px;height:26px;border-radius:50%;
+  background:var(--green);color:var(--white);
+  font-size:0.85rem;font-weight:700;flex-shrink:0;
+}
+.step-card select{
+  width:100%;min-height:50px;padding:10px 12px;
+  border:1px solid var(--ocean);border-radius:10px;background:var(--white);
+}
+
+.today-label{
+  text-align:center;font-size:1.05rem;font-weight:700;margin-bottom:8px;
+}
+.punch-status{
+  text-align:center;font-size:0.95rem;color:var(--gray);margin-bottom:14px;
+  background:var(--mint);border-radius:10px;padding:10px;
+}
+.punch-status b{color:var(--green);}
+
+.submit-btn{
+  width:100%;min-height:56px;
+  border:none;border-radius:14px;
+  background:var(--green);color:var(--white);
+  font-size:1.05rem;font-weight:700;
+}
+.submit-btn:disabled{background:var(--mist);color:var(--gray);}
+
+.note{font-size:0.75rem;color:var(--gray);margin-top:10px;}
+
+#loading{text-align:center;padding:40px 0;color:var(--gray);}
+#errorBox{
+  background:#F5E9E5;border:1px solid var(--danger);border-radius:10px;
+  padding:10px 14px;font-size:0.85rem;color:var(--danger);
+  margin-bottom:12px;display:none;
+}
+#toast{
+  position:fixed;bottom:24px;left:50%;transform:translateX(-50%);
+  background:var(--ink);color:var(--white);padding:10px 22px;border-radius:24px;
+  font-size:0.85rem;opacity:0;pointer-events:none;transition:opacity 0.25s;z-index:99;
+  max-width:90vw;
+}
+#toast.show{opacity:0.95;}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>出退勤の打刻</h1>
+  <p>かえりえ シフト作成</p>
+</header>
+
+<main>
+  <div id="loading">読み込み中…</div>
+  <div id="errorBox"></div>
+
+  <div id="formArea" style="display:none;">
+    <div class="step-card">
+      <h2><span class="step-num">1</span>事業所を選ぶ</h2>
+      <select id="selFac"></select>
+    </div>
+
+    <div class="step-card">
+      <h2><span class="step-num">2</span>自分の名前を選ぶ</h2>
+      <select id="selStaff"></select>
+    </div>
+
+    <div class="step-card" id="punchCard" style="display:none;">
+      <h2><span class="step-num">3</span>打刻する</h2>
+      <div class="today-label" id="todayLabel"></div>
+      <div class="punch-status" id="punchStatus">読み込み中…</div>
+      <button class="submit-btn" id="btnPunchIn">出勤する</button>
+      <button class="submit-btn" id="btnPunchOut" style="margin-top:10px;background:var(--sand);">退勤する</button>
+      <p class="note">
+        ボタンを押した時点の時刻がその場で記録されます。押し間違えた場合は「勤怠」タブから管理者が修正できます。
+      </p>
+    </div>
+  </div>
+</main>
+
+<div id="toast"></div>
+
+<script>
+'use strict';
+
+const GAS_URL = 'https://script.google.com/macros/s/AKfycbxkzwV0TQx0zvJxhwtM8NIVxX_xW1qSOCN6x8mpJjMzWMAzZhQBFavTyFlORn3xi_u7/exec';
+const LS_KEY = 'kaerie_kintai_page_v1';
+
+let info = { facilities: [], staff: [] };
+
+function toast(msg){
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(t._timer);
+  t._timer = setTimeout(() => t.classList.remove('show'), 3000);
+}
+function showError(msg){
+  const box = document.getElementById('errorBox');
+  box.textContent = msg;
+  box.style.display = '';
+}
+
+function ymLabel(ym){ return (+ym.slice(0,4)) + '年' + (+ym.slice(4,6)) + '月'; }
+// 端末の現在時刻から「今日」の年月・日・HH:MMを求める
+function todayInfo(){
+  const now = new Date();
+  const ym = '' + now.getFullYear() + String(now.getMonth() + 1).padStart(2, '0');
+  const day = now.getDate();
+  const timeStr = String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0');
+  return { ym, day, timeStr };
+}
+
+/* ---- 描画 ---- */
+function renderFacSelect(){
+  const sel = document.getElementById('selFac');
+  sel.innerHTML = '';
+  info.facilities.forEach(f => sel.appendChild(new Option(f.name, f.id)));
+  try{
+    const saved = JSON.parse(localStorage.getItem(LS_KEY) || '{}');
+    if(saved.facId && info.facilities.some(f => f.id === saved.facId)) sel.value = saved.facId;
+  }catch(e){}
+  renderStaffSelect();
+}
+
+function renderStaffSelect(){
+  const sel = document.getElementById('selStaff');
+  const facId = document.getElementById('selFac').value;
+  sel.innerHTML = '';
+  sel.appendChild(new Option('名前を選んでください', ''));
+  info.staff.filter(s => s.facilityId === facId)
+    .forEach(s => sel.appendChild(new Option(s.name, s.id)));
+  try{
+    const saved = JSON.parse(localStorage.getItem(LS_KEY) || '{}');
+    if(saved.staffId && [...sel.options].some(o => o.value === saved.staffId)) sel.value = saved.staffId;
+  }catch(e){}
+  refreshStatus();
+}
+
+/* ---- 通信 ---- */
+async function loadInfo(){
+  try{
+    const res = await fetch(GAS_URL + '?action=kintaiInfo', { redirect:'follow' });
+    const data = await res.json();
+    if(data.error) throw new Error(data.error);
+    info = data;
+    if(info.facilities.length === 0){
+      showError('事業所が登録されていません。管理者に連絡してください。');
+      document.getElementById('loading').style.display = 'none';
+      return;
+    }
+    document.getElementById('loading').style.display = 'none';
+    document.getElementById('formArea').style.display = '';
+    renderFacSelect();
+  }catch(e){
+    document.getElementById('loading').style.display = 'none';
+    showError('読み込みに失敗しました。電波の良いところでもう一度開いてください。');
+  }
+}
+
+// 今日すでに打刻済みかどうかを取得して表示する
+async function refreshStatus(){
+  const facId = document.getElementById('selFac').value;
+  const staffId = document.getElementById('selStaff').value;
+  const card = document.getElementById('punchCard');
+  if(!facId || !staffId){ card.style.display = 'none'; return; }
+  card.style.display = '';
+  const { ym, day } = todayInfo();
+  document.getElementById('todayLabel').textContent = `${ymLabel(ym)}${day}日`;
+  document.getElementById('punchStatus').textContent = '読み込み中…';
+  try{
+    const res = await fetch(GAS_URL + `?action=kintaiGet&facilityId=${encodeURIComponent(facId)}&staffId=${encodeURIComponent(staffId)}&ym=${ym}&day=${day}`, { redirect:'follow' });
+    const data = await res.json();
+    document.getElementById('punchStatus').innerHTML =
+      `出勤: <b>${data.in || '未打刻'}</b>　　退勤: <b>${data.out || '未打刻'}</b>`;
+  }catch(e){
+    document.getElementById('punchStatus').textContent = '状態の取得に失敗しました(打刻は可能です)';
+  }
+}
+
+async function punch(type){
+  const facId = document.getElementById('selFac').value;
+  const staffId = document.getElementById('selStaff').value;
+  if(!staffId){ toast('名前を選んでください'); return; }
+  const { ym, day, timeStr } = todayInfo();
+  const btnIn = document.getElementById('btnPunchIn');
+  const btnOut = document.getElementById('btnPunchOut');
+  btnIn.disabled = true; btnOut.disabled = true;
+  try{
+    const res = await fetch(GAS_URL, {
+      method:'POST',
+      redirect:'follow',
+      headers:{ 'Content-Type':'text/plain;charset=utf-8' },
+      body: JSON.stringify({
+        action:'submitPunch',
+        facilityId: facId,
+        staffId: staffId,
+        ym: ym,
+        day: day,
+        type: type,
+        time: timeStr,
+      }),
+    });
+    const data = await res.json();
+    if(data.error) throw new Error(data.error);
+    localStorage.setItem(LS_KEY, JSON.stringify({ facId, staffId }));
+    toast((type === 'in' ? '出勤' : '退勤') + `を記録しました(${timeStr})`);
+    refreshStatus();
+  }catch(e){
+    toast('送信できませんでした: ' + e.message);
+  }
+  btnIn.disabled = false; btnOut.disabled = false;
+}
+
+/* ---- イベント ---- */
+document.getElementById('selFac').addEventListener('change', () => {
+  renderStaffSelect();
+});
+document.getElementById('selStaff').addEventListener('change', refreshStatus);
+document.getElementById('btnPunchIn').addEventListener('click', () => punch('in'));
+document.getElementById('btnPunchOut').addEventListener('click', () => punch('out'));
+
+loadInfo();
+</script>
+</body>
+</html>

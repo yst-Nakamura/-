@@ -493,6 +493,19 @@ tr.summary-row:first-of-type td{border-top:2px solid var(--ocean);}
 .changelog li{font-size:0.82rem;color:var(--gray);padding:3px 0;list-style:none;}
 .changelog li b{color:var(--ink);}
 
+/* ===== 勤怠 ===== */
+table.kintai-table,table.kintai-detail-table{border-collapse:collapse;width:100%;font-size:0.85rem;margin-top:10px;}
+table.kintai-table th,table.kintai-table td,
+table.kintai-detail-table th,table.kintai-detail-table td{
+  border:1px solid var(--mist);padding:6px 8px;text-align:center;
+}
+table.kintai-table th{background:var(--ocean);color:var(--ink);font-weight:500;}
+table.kintai-table td:first-child{text-align:left;font-weight:500;}
+table.kintai-detail-table th{background:var(--mist);font-weight:500;}
+table.kintai-detail-table input[type="time"],table.kintai-detail-table input[type="number"]{
+  border:1px solid var(--ocean);border-radius:6px;padding:4px;font-size:0.85rem;min-height:32px;
+}
+
 /* ===== 印刷 ===== */
 .print-title{display:none;}
 @media print{
@@ -534,6 +547,7 @@ tr.summary-row:first-of-type td{border-top:2px solid var(--ocean);}
   <button data-view="shift" class="active">シフト表</button>
   <button data-view="staff">職員</button>
   <button data-view="fac">拠点</button>
+  <button data-view="kintai">勤怠</button>
   <button data-view="settings">設定</button>
 </nav>
 
@@ -845,6 +859,36 @@ tr.summary-row:first-of-type td{border-top:2px solid var(--ocean);}
   </div>
 </section>
 
+<!-- ============ 勤怠 ============ -->
+<section class="view" id="view-kintai">
+  <div class="toolbar">
+    <div class="month-nav">
+      <button id="kintaiPrevMonth" aria-label="前の月">◀</button>
+      <span class="ym-label" id="kintaiYmLabel"></span>
+      <button id="kintaiNextMonth" aria-label="次の月">▶</button>
+    </div>
+    <button class="btn btn-secondary" id="btnKintaiCsv">CSV</button>
+  </div>
+  <div class="card">
+    <h2>勤怠(予定・実績・変形労働制の月間上限)</h2>
+    <p style="font-size:0.8rem;color:var(--gray);line-height:1.5;">
+      「予定」はシフト表の勤務予定から計算した時間、「実績」は打刻記録(職員用の打刻ページ、または下の一覧から手入力)を集計した時間です。
+      「法定上限」は変形労働制(1ヶ月単位)の月間上限時間(40時間×週÷7日を月の日数から算出。例: 30日の月=171時間、31日の月=177時間)です。
+      実績が法定上限を超えている職員は赤字で表示されます。
+    </p>
+    <div id="kintaiWrap"></div>
+  </div>
+  <div class="card" id="kintaiDetailCard" style="display:none;">
+    <h2 id="kintaiDetailTitle"></h2>
+    <p style="font-size:0.75rem;color:var(--gray);">出勤・退勤の時刻(HH:MM)と休憩時間(分)を入力してください。空欄の日は実績0時間として扱われます。</p>
+    <div id="kintaiDetailWrap" style="overflow-x:auto;"></div>
+    <div style="margin-top:10px;">
+      <button class="btn btn-primary" id="btnKintaiDetailSave">この職員の打刻を保存</button>
+      <button class="btn btn-secondary" id="btnKintaiDetailClose">閉じる</button>
+    </div>
+  </div>
+</section>
+
 <!-- ============ 設定 ============ -->
 <section class="view" id="view-settings">
   <div class="card">
@@ -907,6 +951,7 @@ tr.summary-row:first-of-type td{border-top:2px solid var(--ocean);}
 /* ================= 修正ログ =================
    コードを変更したら必ずここに1行追加すること */
 const CHANGELOG_DATA = [
+  { version: 'v1.49.0', date: '2026-09-02', label: '新機能', text: '勤怠管理機能を追加。新しい「勤怠」タブで、職員ごとの月間の予定時間(シフト計画)・実績時間(打刻記録の集計)・法定上限(変形労働制1ヶ月単位、40時間×週÷7日を月の日数から算出。例: 30日の月=171時間、31日の月=177時間)を一覧表示し、実績が法定上限を超えている職員は赤字で表示する。行の「打刻を見る」から日別の出勤・退勤時刻・休憩分を直接入力・修正できる(管理者による事後修正用)。CSV書き出しにも対応。あわせて、職員がスマホから自分で出退勤を打刻できる専用ページ`kintai.html`(希望休入力ページkibou.htmlと同じ、事業所→名前選択のみでログイン不要な設計)と、そのQRポスター`kintai-qr.html`を新規追加。実データ(23拠点397名)を壊さずに、gasSaveをスタブ化した状態で打刻の入力・集計・超過表示・CSV出力を検証し、検証後は状態を元に戻して実データをgasLoad()で復元済み。**GAS側(コード.gs)の変更が必要**: 「打刻記録」シート・打刻の読込/保存・打刻ページ用のAPI(kintaiInfo/kintaiGet/submitPunch)を追加したため、ユーザーが手動でApps Scriptに貼り替えて再デプロイするまでは打刻機能はクラウドに反映されない(再デプロイ前でも勤怠タブの予定/実績表示・手入力による集計自体はローカルでは動作する)' },
   { version: 'v1.48.0', date: '2026-08-31', label: 'バグ修正', text: '看多機で「余剰の日があるのに月の後半に看護師がいない」不具合を修正。実データ(拠点fmr9xhg9vhb2y、2027年2月、看護師3名)で調査したところ、3名とも出勤する日(実質1名分が余剰)がある一方、月末付近で1名も出勤しない日ができるなど、看護師の休みが偶然同じ日に重なって不足日が生じていた。既存の再配分(3.5)は「その日から看護師を1名抜いても3対1の常勤換算が足りるか」しか見ておらず、看護師は3対1側の頭数(FTE)にも数えているため、3名出勤日から1名抜くとその日自体が3対1不足になってしまい、実際には移動できないケースがほとんどだった(単純な人数の余剰は、常勤換算で見ると余剰ではなかった)。**修正**: 新しいStep3.6として、看護師を「不足日で勤務・元の出勤日で休み」に振り替え、元の出勤日でFTEが不足する分だけ休みの介護職員を1名補って埋める(看護師の必要人数(専門職としての頭数)は介護職員では代替できないため、あくまで看護師本人を移動させ、移動元のFTE穴だけを埋める設計)。実データと同じ職員構成のテスト环境で検証: 修正前は不足日3日(1名不足×2日+2名不足×1日)だったのが、修正後は1名不足の日が1日だけに改善(5回連続で自動作成しても安定して同じ結果)。看護師3名それぞれの月間勤務日数(19日)は変更前後で同じ(振り替えは同一人物の休み位置を動かすだけで、勤務日数の合計は変えない設計のため)。残る1日の不足は、その日の前後が偶数日で埋まっており、これ以上動かすと5連勤の上限を超えるか、隣接日も看護師必要数ぎりぎりで動かせないための限界(看護師3名という体制上の制約による残存不足で、アルゴリズムのバグではない)。テストはgasSaveをスタブして実施、テストデータは作成せず(実データを一時的に再生成して検証しただけ)、検証後はgasLoad()で実データ(23拠点397名)を復元・dirty=false確認済み' },
   { version: 'v1.47.0', date: '2026-08-31', label: '改善', text: 'シフト表の列幅を「画面幅ちょうどに収める(v1.27.0)」設計から「日付列は読みやすい固定幅(40px)にして、収まらない分は横スライドで見る」設計に変更。名前列は左端に固定表示されたまま(sticky)日付だけを左右にスライドできる。この変更により文字を画面幅に合わせて縮小する必要がなくなったため、シフトコード・配置番号(v1.41.0/v1.46.0)の文字サイズをすべて固定値に戻し、より大きく・読みやすく表示されるようにした。印刷(標準様式1とは別の「印刷」ボタンでのA3横印刷)は従来通り紙1枚に収まる%指定のレイアウトのまま変更なし(画面用の固定px幅は印刷時のみCSSで無効化)' },
   { version: 'v1.46.0', date: '2026-08-31', label: '改善', text: '配置番号(v1.41.0)の表示方法を変更。これまではマスの右下に8.8px程度の極小の丸数字を重ねて表示していたが、スマホでは実質見えないサイズだった。マスの本文(これまで「日」「訪介」等のコードを表示していた部分)を「通介①」「通看⑤」「訪介①」のような番号入りの表記に置き換え、ひと目で配置番号が分かるようにした(元のコードはマスをタップ/長押しした時のツールチップで確認可能)。看多機のみ対象、対象日以外(休み・夜勤など配置番号のない日)は従来通りコード表示のまま' },
@@ -1024,6 +1069,7 @@ let state = {
   wishes: {},     // key 'facId_YYYYMM' -> {staffId:{day:'kibou'|'yukyu'|'nikkin'}} 希望休・有給・日勤希望(自動作成でも保持)
   oncalls: {},    // key 'facId_YYYYMM' -> {day: staffId} その日のオンコール担当(看護師)
   confirmed: {},  // key 'facId_YYYYMM' -> true(シフト確定済み。手入力・自動作成・希望休はロック、オンコールは変更可)
+  punches: {},    // key 'facId_YYYYMM' -> {staffId:{day:{in:'HH:MM',out:'HH:MM',breakMin:number,note}}} 実際の出退勤(打刻)記録
   gasUrl: DEFAULT_GAS_URL,
 };
 let currentFacId = null;
@@ -1199,6 +1245,37 @@ function hoursForCode(s, code, wd){
   if(['早','日','遅','リ','訪介','希日'].includes(code)) return dayHoursFor(s, wd);
   return 0;
 }
+/* ================= 勤怠(打刻・変形労働制) ================= */
+// 変形労働制(1ヶ月単位)の法定月間上限時間。40時間×週 ÷ 7日 を月の日数から算出(切り捨て)
+// 例: 28日→160、29日→165、30日→171、31日→177
+function legalMonthlyHours(ym){ return Math.floor(40 * daysInMonth(ym) / 7); }
+// シフト計画(予定)から見た月間合計時間。hoursForCodeだけだと訪看(訪問看護ルート)の時間が
+// 抜けてしまう(勤務形態一覧表エクスポート用のkinmuHoursSplitで別途対応されている既存の仕様)ため、
+// ここでは夜勤の日中/夜間分割・訪看も正しく含むkinmuHoursSplitを流用して集計する
+function plannedHoursForStaff(s, ym, g){
+  const dim = daysInMonth(ym);
+  let total = 0;
+  for(let d = 1; d <= dim; d++){
+    const split = kinmuHoursSplit(s, getCode(g, s.id, d), weekdayOf(ym, d));
+    if(split) total += split[0] + split[1];
+  }
+  return total;
+}
+// 打刻(出退勤時刻)から実働時間を計算(休憩分を引く)。HH:MM文字列を想定
+function punchHoursForDay(punch){
+  if(!punch || !punch.in || !punch.out) return 0;
+  const toMin = t => { const p = String(t).split(':').map(Number); return (p[0] || 0) * 60 + (p[1] || 0); };
+  const mins = toMin(punch.out) - toMin(punch.in) - (punch.breakMin || 0);
+  return mins > 0 ? mins / 60 : 0;
+}
+// 打刻記録から見た月間実働合計時間
+function actualHoursForStaff(s, ym, facId){
+  const dim = daysInMonth(ym);
+  const byStaff = ((state.punches[facId + '_' + ym] || {})[s.id]) || {};
+  let total = 0;
+  for(let d = 1; d <= dim; d++) total += punchHoursForDay(byStaff[d]);
+  return total;
+}
 // 通い・泊まり・訪問介護をまとめて行う多機能型(看多機・小多機)か。
 // 3対1・送迎・訪問介護の考え方はこの2種別で共通。訪問看護は看多機のみ
 function isTaki(fac){ return !!fac && (fac.type === 'kantaki' || fac.type === 'shoutaki'); }
@@ -1353,6 +1430,7 @@ function normalizeData(){
   if(!state.oncalls) state.oncalls = {};
   if(!state.wishes) state.wishes = {};
   if(!state.confirmed) state.confirmed = {};
+  if(!state.punches) state.punches = {};
 }
 // 現在表示中の拠点・月がシフト確定済みかどうか
 function isConfirmed(){ return !!state.confirmed[shiftKey()]; }
@@ -1379,7 +1457,7 @@ function saveLocal(){
     localStorage.setItem(LS_KEY, JSON.stringify({
       facilities: state.facilities, staff: state.staff,
       shifts: state.shifts, wishes: state.wishes, oncalls: state.oncalls,
-      confirmed: state.confirmed, gasUrl: state.gasUrl,
+      confirmed: state.confirmed, punches: state.punches, gasUrl: state.gasUrl,
       currentFacId, currentYm,
       dirty, // 未保存(クラウド未反映)かどうかを端末をまたいでも判定できるよう保存する
     }));
@@ -1396,6 +1474,7 @@ function loadLocal(){
     state.wishes = d.wishes || {};
     state.oncalls = d.oncalls || {};
     state.confirmed = d.confirmed || {};
+    state.punches = d.punches || {};
     state.gasUrl = d.gasUrl || '';
     currentFacId = d.currentFacId || null;
     if(d.currentYm) currentYm = d.currentYm;
@@ -2779,6 +2858,127 @@ function updateFacFormVisibility(){
   document.getElementById('fcOpenWrap').style.display = taki ? 'none' : '';
 }
 
+/* ---- 勤怠画面 ---- */
+let selectedKintaiStaffId = null;
+function renderKintaiView(){
+  document.getElementById('kintaiYmLabel').textContent = ymLabel(currentYm);
+  const wrap = document.getElementById('kintaiWrap');
+  const fac = currentFacility();
+  if(!fac){
+    wrap.innerHTML = '<p style="color:var(--gray);font-size:0.85rem;">「拠点」タブから拠点を登録すると、ここに勤怠が表示されます。</p>';
+    document.getElementById('kintaiDetailCard').style.display = 'none';
+    return;
+  }
+  const roster = facStaff();
+  if(roster.length === 0){
+    wrap.innerHTML = '<p style="color:var(--gray);font-size:0.85rem;">「職員」タブから職員を登録すると、ここに勤怠が表示されます。</p>';
+    document.getElementById('kintaiDetailCard').style.display = 'none';
+    return;
+  }
+  const g = grid();
+  const legal = legalMonthlyHours(currentYm);
+  let html = '<table class="kintai-table"><thead><tr><th>職員</th><th>予定</th><th>実績</th><th>差分</th><th>法定上限(変形労働制)</th><th>上限差</th><th></th></tr></thead><tbody>';
+  roster.forEach(s => {
+    const planned = plannedHoursForStaff(s, currentYm, g);
+    const actual = actualHoursForStaff(s, currentYm, fac.id);
+    const diff = actual - planned;
+    const over = actual - legal;
+    const overStyle = over > 0 ? ' style="color:var(--danger);font-weight:700;"' : '';
+    html += `<tr>
+      <td>${escapeHtml(s.name)}</td>
+      <td>${fmtUnit(planned)}h</td>
+      <td${overStyle}>${fmtUnit(actual)}h</td>
+      <td>${diff >= 0 ? '+' : ''}${fmtUnit(diff)}h</td>
+      <td>${legal}h</td>
+      <td${overStyle}>${over > 0 ? '+' : ''}${fmtUnit(over)}h</td>
+      <td><button class="btn btn-secondary kintai-detail-btn" data-staff="${s.id}">打刻を見る</button></td>
+    </tr>`;
+  });
+  html += '</tbody></table>';
+  wrap.innerHTML = html;
+  wrap.querySelectorAll('.kintai-detail-btn').forEach(b => {
+    b.addEventListener('click', () => openKintaiDetail(b.dataset.staff));
+  });
+  if(selectedKintaiStaffId && roster.some(s => s.id === selectedKintaiStaffId)){
+    openKintaiDetail(selectedKintaiStaffId);
+  }else{
+    selectedKintaiStaffId = null;
+    document.getElementById('kintaiDetailCard').style.display = 'none';
+  }
+}
+// 指定した職員の日別打刻(出勤・退勤・休憩分)を入力できるパネルを開く
+function openKintaiDetail(staffId){
+  const fac = currentFacility();
+  const s = facStaff().find(x => x.id === staffId);
+  if(!fac || !s) return;
+  selectedKintaiStaffId = staffId;
+  document.getElementById('kintaiDetailCard').style.display = 'block';
+  document.getElementById('kintaiDetailTitle').textContent = s.name + ' さんの打刻(' + ymLabel(currentYm) + ')';
+  const dim = daysInMonth(currentYm);
+  const key = fac.id + '_' + currentYm;
+  const byStaff = (state.punches[key] || {})[staffId] || {};
+  let html = '<table class="kintai-detail-table"><thead><tr><th>日</th><th>出勤</th><th>退勤</th><th>休憩(分)</th></tr></thead><tbody>';
+  for(let d = 1; d <= dim; d++){
+    const wd = weekdayOf(currentYm, d);
+    const p = byStaff[d] || {};
+    html += `<tr>
+      <td>${d}(${WD_CHARS[wd]})</td>
+      <td><input type="time" data-day="${d}" data-field="in" value="${p.in || ''}"></td>
+      <td><input type="time" data-day="${d}" data-field="out" value="${p.out || ''}"></td>
+      <td><input type="number" min="0" step="5" data-day="${d}" data-field="breakMin" value="${p.breakMin || ''}" style="width:64px;"></td>
+    </tr>`;
+  }
+  html += '</tbody></table>';
+  document.getElementById('kintaiDetailWrap').innerHTML = html;
+}
+// 開いている打刻パネルの入力内容を state.punches の形(day -> {in,out,breakMin})に集約する
+function collectKintaiDetailInputs(){
+  const inputs = document.querySelectorAll('#kintaiDetailWrap input[data-day]');
+  const byDay = {};
+  inputs.forEach(inp => {
+    const d = inp.dataset.day;
+    if(!byDay[d]) byDay[d] = {};
+    byDay[d][inp.dataset.field] = inp.dataset.field === 'breakMin' ? (Number(inp.value) || 0) : (inp.value || '');
+  });
+  const cleaned = {};
+  Object.keys(byDay).forEach(d => {
+    const rec = byDay[d];
+    if(rec.in || rec.out || rec.breakMin) cleaned[d] = { in: rec.in || '', out: rec.out || '', breakMin: rec.breakMin || 0 };
+  });
+  return cleaned;
+}
+function saveKintaiDetail(){
+  const fac = currentFacility();
+  if(!fac || !selectedKintaiStaffId) return;
+  if(isConfirmed()){ toast('この月はシフト確定済みです。打刻の編集はできません'); return; }
+  const key = fac.id + '_' + currentYm;
+  if(!state.punches[key]) state.punches[key] = {};
+  state.punches[key][selectedKintaiStaffId] = collectKintaiDetailInputs();
+  markDirty();
+  renderKintaiView();
+  toast('打刻を保存しました(クラウドへは「一時保存」で反映されます)');
+}
+function exportKintaiCsv(){
+  const fac = currentFacility();
+  if(!fac) return;
+  const roster = facStaff();
+  const g = grid();
+  const legal = legalMonthlyHours(currentYm);
+  const rows = [['職員名', '予定時間', '実績時間', '差分', '法定上限(変形労働制)', '上限差']];
+  roster.forEach(s => {
+    const planned = plannedHoursForStaff(s, currentYm, g);
+    const actual = actualHoursForStaff(s, currentYm, fac.id);
+    rows.push([s.name, fmtUnit(planned), fmtUnit(actual), fmtUnit(actual - planned), legal, fmtUnit(actual - legal)]);
+  });
+  const csv = rows.map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\r\n');
+  const blob = new Blob(['﻿' + csv], { type:'text/csv' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `勤怠_${fac.name}_${currentYm}.csv`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
 /* ---- 設定画面 ---- */
 function renderSettings(){
   document.getElementById('gasUrl').value = state.gasUrl || '';
@@ -2801,6 +3001,7 @@ async function gasLoad(){
     if(data.wishes) state.wishes = data.wishes;
     if(data.oncalls) state.oncalls = data.oncalls;
     if(data.confirmed) state.confirmed = data.confirmed;
+    if(data.punches) state.punches = data.punches; // 打刻ページ(kintai.html)からの打刻も含め、打刻記録シートの内容をそのまま反映
     // 職員がスマホから出した休み希望を希望休として取り込む
     // (その職員のその月の希望休は送信内容で置き換え。有給はそのまま残す)
     if(data.kibouSubs){
@@ -2840,6 +3041,7 @@ async function gasSave(){
         wishes: state.wishes,
         oncalls: state.oncalls,
         confirmed: state.confirmed,
+        punches: state.punches,
       }),
     });
     const data = await res.json();
@@ -3482,7 +3684,7 @@ async function exportKinmuKeitai(){
 function exportJson(){
   const blob = new Blob([JSON.stringify({
     facilities: state.facilities, staff: state.staff, shifts: state.shifts,
-    wishes: state.wishes, oncalls: state.oncalls,
+    wishes: state.wishes, oncalls: state.oncalls, punches: state.punches,
   }, null, 2)], { type:'application/json' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
@@ -3502,6 +3704,7 @@ function importJson(file){
       state.shifts = d.shifts || {};
       state.wishes = d.wishes || {};
       state.oncalls = d.oncalls || {};
+      state.punches = d.punches || {};
       normalizeData();
       if(!currentFacility() && state.facilities.length) currentFacId = state.facilities[0].id;
       markDirty();
@@ -3524,6 +3727,7 @@ function switchView(name){
   if(name === 'fac') renderFacView();
   if(name === 'settings') renderSettings();
   if(name === 'shift') renderShiftTable();
+  if(name === 'kintai') renderKintaiView();
 }
 
 function openPicker(staffId, day){
@@ -3628,6 +3832,20 @@ function bindEvents(){
   });
   document.getElementById('nextMonth').addEventListener('click', () => {
     currentYm = addMonths(currentYm, 1); selectedDetailDay = null; saveLocal(); renderShiftTable();
+  });
+
+  // 勤怠タブの月切替(シフト表と同じ currentYm を共有)
+  document.getElementById('kintaiPrevMonth').addEventListener('click', () => {
+    currentYm = addMonths(currentYm, -1); selectedKintaiStaffId = null; saveLocal(); renderKintaiView();
+  });
+  document.getElementById('kintaiNextMonth').addEventListener('click', () => {
+    currentYm = addMonths(currentYm, 1); selectedKintaiStaffId = null; saveLocal(); renderKintaiView();
+  });
+  document.getElementById('btnKintaiCsv').addEventListener('click', exportKintaiCsv);
+  document.getElementById('btnKintaiDetailSave').addEventListener('click', saveKintaiDetail);
+  document.getElementById('btnKintaiDetailClose').addEventListener('click', () => {
+    selectedKintaiStaffId = null;
+    document.getElementById('kintaiDetailCard').style.display = 'none';
   });
 
   // シフト表操作

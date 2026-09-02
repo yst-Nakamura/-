@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>出退勤の打刻はスマホから | かえりえ</title>
+<style>
+:root{
+  --ink:#090401; --ocean:#91B9C1; --sky:#C3DCF0; --sand:#C19569;
+  --mist:#D8DDE1; --mint:#EBF4F8; --green:#5F8C8A; --gray:#6B7880; --white:#FFFFFF;
+}
+*{margin:0;padding:0;box-sizing:border-box;}
+body{
+  font-family:"Noto Sans JP","Hiragino Kaku Gothic ProN","Yu Gothic",sans-serif;
+  background:var(--mint);color:var(--ink);line-height:1.7;
+  display:flex;justify-content:center;padding:20px;
+}
+.poster{
+  background:var(--white);
+  width:100%;max-width:640px;
+  border:1px solid var(--mist);border-radius:16px;
+  padding:36px 32px;text-align:center;
+}
+h1{
+  font-size:1.7rem;letter-spacing:-0.02em;line-height:1.4;
+  border-bottom:4px solid var(--ocean);padding-bottom:14px;margin-bottom:20px;
+}
+.qr{width:min(320px, 70vw);height:auto;margin:10px auto;display:block;}
+.url{
+  font-size:0.85rem;color:var(--gray);word-break:break-all;
+  background:var(--mint);border-radius:8px;padding:6px 10px;margin:10px 0 24px;
+}
+ol{
+  text-align:left;display:inline-block;font-size:1.05rem;font-weight:500;
+  margin-bottom:20px;
+}
+ol li{padding:4px 0;}
+.rules{
+  background:var(--mint);border-radius:12px;padding:14px 18px;
+  text-align:left;font-size:0.9rem;
+}
+.rules b{color:var(--green);}
+.print-btn{
+  margin-top:20px;min-height:48px;padding:10px 26px;
+  border:none;border-radius:10px;background:var(--green);color:var(--white);
+  font-size:0.95rem;font-weight:700;font-family:inherit;cursor:pointer;
+}
+@media print{
+  body{background:var(--white);padding:0;}
+  .poster{border:none;max-width:none;}
+  .print-btn{display:none;}
+  @page{size:A4 portrait;margin:15mm;}
+}
+</style>
+</head>
+<body>
+<div class="poster">
+  <h1>出退勤の打刻はスマホから<br>できます</h1>
+  <img class="qr" alt="打刻ページのQRコード" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAZoAAAGaAQAAAAAefbjOAAADOklEQVR4nO1cW46jQAy0A9J8EmkOkKPAzfZqcJQcIBJ8rkTklR/dMH/DhB2SdNVHJglYkMJyVxkzLLQZw2l7DBGCAiAiACICICIAIgIgIgAiXokIDtRENDFzN9m75SXt0B1yehuBoB2IaEUxEnHXiNBw1iy5zETUzMQdVbY9qVBQXgARUy4AE7P0zV+WPlUG6b2M1Med3iYgaFcihnMl1I5WN2byZOj+y5G+AwQdToT0dGdbNYimD7FVw9Ji9yN9Cwj6dSLq+NuoRpi0MoyaDdOHsEmIdiRXD+tOFq7T+xMxmGBQPakqkv/YqnENr8Ed3V1RHHV624Cgx2uErL5p1GH4dzOJ1Q2vIAtA+RsTQe4qW3eflQuHUA9N/k7dp4oJ96D9k/+mE4IezgjpSR2GmgttSiwvyy7rnUF54H2J4M4qg5qL4SISHy1LtEYM2oowR3rM6W0EgvbQEVM9E2lfiibWj2fits86IjlSbs2IgvLAm+sI0nrgcsEWkUA0rHzBwKpRko4QkTkvDqYxVT2oxlR56bLCFCh0RCk1gvINrXzjayUqe8sNZEQhNULG7DXS3Qx/5ymwCE1kRFGrxhg6IhRFWjC8R+FSAxlRhtfgVu6c2pXVrL6CbbFg9R9hS7maX+M3nRC0w52u6VNo6FhLgeXGreZ2vBO1/V1bmDdNEN3w8yOdEPQSRNDaVTbzeoP7UG1lZzMKZVmO1xitbZ3Ug+XG4j80LRYxAfdZTkaIacesIs1/+IaUDHCf5QRVspqAGM5JaPptjjSQfdzpbQGC9qoR/dKDymbU2lS+kqAfUUTuUXQlmywgV5ohEiT2tHEJ6IgygiRuWiSv8XWgLmTF1T4ecXobgaAdOlTkqGYZunoWn8WmaubhfLNuhedKlAtQTm/foWqteT196quJSrsDqvMRZB0q1Zipj/n0v+mEoF2f6WpUKlzVV6jDsAd6dFI7Pe/38JE2AUFPQMRUJzN60RTwh/5scCJP0eA6FUVE4ytEyg2tDPb4BvoRb3BxfzCdL7mVHQ9/5vGpPE+DLnYR/QhHGpuJzkQesvPWFWaoSghi/Geyl7hOJwQ5QEQARARARABEBEBE4PeI+AdgoHhMfSq1eAAAAABJRU5ErkJggg==">
+  <div class="url">https://yst-nakamura.github.io/-/shift/kintai/</div>
+  <ol>
+    <li>スマホのカメラでQRコードを読み取る</li>
+    <li>事業所と自分の名前を選ぶ</li>
+    <li>出勤・退勤のタイミングでボタンをタップ</li>
+  </ol>
+  <div class="rules">
+    <b>■ 出勤時</b>: 「出勤する」ボタンを押してください(押した時刻が記録されます)<br>
+    <b>■ 退勤時</b>: 「退勤する」ボタンを押してください<br>
+    <b>■ 間違えた場合</b>: 管理者が「勤怠」タブから修正できます
+  </div>
+  <button class="print-btn" onclick="window.print()">このポスターを印刷する</button>
+</div>
+</body>
+</html>
