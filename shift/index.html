@@ -868,6 +868,7 @@ table.kintai-detail-table input[type="time"],table.kintai-detail-table input[typ
       <button id="kintaiNextMonth" aria-label="次の月">▶</button>
     </div>
     <button class="btn btn-secondary" id="btnKintaiCsv">CSV</button>
+    <button class="btn btn-secondary" id="btnKintaiSyncD1">D1に同期</button>
   </div>
   <div class="card">
     <h2>勤怠(予定・実績・変形労働制の月間上限)</h2>
@@ -951,6 +952,7 @@ table.kintai-detail-table input[type="time"],table.kintai-detail-table input[typ
 /* ================= 修正ログ =================
    コードを変更したら必ずここに1行追加すること */
 const CHANGELOG_DATA = [
+  { version: 'v1.51.0', date: '2026-09-03', label: '新機能', text: '看護ポータル担当から「所定労働時間・残業の計算はシフト作成アプリ側で持ってほしい(ポータルは表示だけにしたい、二重管理を避けるため)」との正式依頼を受け対応。ユーザーとの確認で「残業=個人の所定労働時間(シフト予定)を超えた分」(月の法定上限171h/177hではなく、常勤・非常勤それぞれの個人ごとの所定を超えた分を残業とする)、「有給取得日数も月次で集計に含める(積み上げれば年度合計になる)」と決定。シフトの時間表現自体(コードごとの固定時間)は変更しないという方針も確認済み。**追加した関数**(すべて既存のplannedHoursForStaff/actualHoursForStaffを再利用、新規ロジックは最小限): `paidLeaveDaysForStaff(s,ym,facId)`(希望休入力の有給日数をカウント)、`computeWorkSummaryForStaff(s,ym,g,facId)`(所定・実績・残業・有給をまとめて返す、残業=max(0,実績-所定))、`sendWorkSummaryToD1()`(拠点の全職員ぶんを新設の`/api/work-summary`エンドポイントへPOST、punchesと同じ「その拠点月ぶんを丸ごと入れ替え」パターン)。呼び出しタイミングはsendPunchesToD1と同じ箇所(打刻保存時・シフト確定時)に追加、加えて勤怠タブに「D1に同期」ボタンを新設し任意のタイミングでも同期できるようにした。勤怠タブの一覧に「残業(所定超過)」列を追加(既存の「法定上限/上限差」列は月間総枠の安全チェック用としてそのまま残した)。CSV出力にも残業・有給取得日数の列を追加。D1側は`work_summary`テーブル(facility_id,year_month,staff_id,scheduled_minutes,worked_minutes,overtime_minutes,paid_leave_days)を新設(本番に適用済み)、`night_minutes`(深夜時間)はポータル仕様書でも任意項目のため今回は見送り。ブラウザでgasSave・fetchをモックして計算結果とPOSTペイロードを実データで検証(実際に31日分09:00-20:00の打刻を入力→所定144h・実績341h・残業197hが正しく計算されることを確認)、テスト後は状態をクリアしgasLoad()で実データ(24拠点422名)を復元・dirty=false確認済み。**要デプロイ**: `D:\\Claude-Projects\\shift-worker`で`npx wrangler deploy`(work_summaryテーブル自体は既に本番適用済み、コードのデプロイのみ必要)。ポータル側の表示実装は「看護師ポータルサイト再構築」スレッドが別途対応(更新タイミングはshift_dashboard.html側の操作がトリガーになるため、ポータル単体の打刻だけでは即時反映されない点を申し送り済み)' },
   { version: 'v1.50.0', date: '2026-09-02', label: '新機能', text: '看護ポータル(かえりえポータル、Documents\\kaerie-portal)に出勤・退勤ボタンを実装し、打刻データをシフト作成アプリの「勤怠」タブ(v1.49.0)と統合した。打刻はD1データベース(shift-app-db、確定シフトの共有に使っているものと同じ)の新設「punches」テーブルに保存され、かえりえポータル側はSHIFT_DBバインディング経由で直接書き込む(Worker間のHTTP呼び出しは同一アカウント内でエラー1042になる既知の制約があるため)。**shift_dashboard.html側の変更**: `sendPunchesToD1()`を新設し、勤怠タブでの打刻保存時(`saveKintaiDetail()`)に、その拠点・月の打刻を丸ごとD1へ送るようにした(専用の`/api/punches`エンドポイントを新設。既存の`/api/shifts`のPOSTに相乗りさせなかったのは、そちらは呼ぶたびにconfirmations(シフト確定状態)を無条件で上書きしてしまうため、打刻保存のたびに未確定の月を確定済み扱いにしてしまう事故を避けるため)。`fetchD1Punches()`を新設し、勤怠タブを開いた時に拠点・月が変わっていればD1から打刻を取得し、既存のGASスプレッドシート由来の`state.punches`にマージする(かえりえポータルでの打刻がそのまま管理画面にも反映される)。GASスプレッドシート経由の打刻・kintai.htmlはこれまで通り動作し、D1が「もう一つの入力経路」として追加された形。ブラウザ・wrangler devの両方でfetchをモック/ローカルD1にテスト用データ(zzプレフィックス)を投入して実際にPOST/GET往復を確認し、テスト後はローカルテストデータを削除・実データをgasLoad()で復元済み(実クラウドD1・実GASスプレッドシートには一切書き込んでいない)。**要デプロイ作業(ユーザーに実施いただく必要あり)**: ①`D:\\Claude-Projects\\shift-worker`で`npx wrangler deploy`(D1のpunchesテーブル自体は既にClaudeが本番に適用済み)②`Documents\\kaerie-portal`で`npx wrangler deploy`。どちらもClaude Codeの自動承認範囲外(本番デプロイのため)で、ユーザー自身の実行が必要' },
   { version: 'v1.49.0', date: '2026-09-02', label: '新機能', text: '勤怠管理機能を追加。新しい「勤怠」タブで、職員ごとの月間の予定時間(シフト計画)・実績時間(打刻記録の集計)・法定上限(変形労働制1ヶ月単位、40時間×週÷7日を月の日数から算出。例: 30日の月=171時間、31日の月=177時間)を一覧表示し、実績が法定上限を超えている職員は赤字で表示する。行の「打刻を見る」から日別の出勤・退勤時刻・休憩分を直接入力・修正できる(管理者による事後修正用)。CSV書き出しにも対応。あわせて、職員がスマホから自分で出退勤を打刻できる専用ページ`kintai.html`(希望休入力ページkibou.htmlと同じ、事業所→名前選択のみでログイン不要な設計)と、そのQRポスター`kintai-qr.html`を新規追加。実データ(23拠点397名)を壊さずに、gasSaveをスタブ化した状態で打刻の入力・集計・超過表示・CSV出力を検証し、検証後は状態を元に戻して実データをgasLoad()で復元済み。**GAS側(コード.gs)の変更が必要**: 「打刻記録」シート・打刻の読込/保存・打刻ページ用のAPI(kintaiInfo/kintaiGet/submitPunch)を追加したため、ユーザーが手動でApps Scriptに貼り替えて再デプロイするまでは打刻機能はクラウドに反映されない(再デプロイ前でも勤怠タブの予定/実績表示・手入力による集計自体はローカルでは動作する)' },
   { version: 'v1.48.0', date: '2026-08-31', label: 'バグ修正', text: '看多機で「余剰の日があるのに月の後半に看護師がいない」不具合を修正。実データ(拠点fmr9xhg9vhb2y、2027年2月、看護師3名)で調査したところ、3名とも出勤する日(実質1名分が余剰)がある一方、月末付近で1名も出勤しない日ができるなど、看護師の休みが偶然同じ日に重なって不足日が生じていた。既存の再配分(3.5)は「その日から看護師を1名抜いても3対1の常勤換算が足りるか」しか見ておらず、看護師は3対1側の頭数(FTE)にも数えているため、3名出勤日から1名抜くとその日自体が3対1不足になってしまい、実際には移動できないケースがほとんどだった(単純な人数の余剰は、常勤換算で見ると余剰ではなかった)。**修正**: 新しいStep3.6として、看護師を「不足日で勤務・元の出勤日で休み」に振り替え、元の出勤日でFTEが不足する分だけ休みの介護職員を1名補って埋める(看護師の必要人数(専門職としての頭数)は介護職員では代替できないため、あくまで看護師本人を移動させ、移動元のFTE穴だけを埋める設計)。実データと同じ職員構成のテスト环境で検証: 修正前は不足日3日(1名不足×2日+2名不足×1日)だったのが、修正後は1名不足の日が1日だけに改善(5回連続で自動作成しても安定して同じ結果)。看護師3名それぞれの月間勤務日数(19日)は変更前後で同じ(振り替えは同一人物の休み位置を動かすだけで、勤務日数の合計は変えない設計のため)。残る1日の不足は、その日の前後が偶数日で埋まっており、これ以上動かすと5連勤の上限を超えるか、隣接日も看護師必要数ぎりぎりで動かせないための限界(看護師3名という体制上の制約による残存不足で、アルゴリズムのバグではない)。テストはgasSaveをスタブして実施、テストデータは作成せず(実データを一時的に再生成して検証しただけ)、検証後はgasLoad()で実データ(23拠点397名)を復元・dirty=false確認済み' },
@@ -1064,6 +1066,8 @@ const D1_API_KEY = 'f7c1128a02cc5027d369a76cf2e1060a991e88bb17f77196';
 // (/api/shiftsは呼ぶたびにconfirmations(シフト確定状態)を上書きしてしまうため、
 //  打刻の保存のためだけに呼ぶと「確定していないのに確定済み」になる事故になる)
 const D1_PUNCHES_URL = 'https://shift-app-worker.tetsuya-nakamura-y.workers.dev/api/punches';
+// 所定労働時間・実労働時間・残業時間・有給取得日数の集計専用エンドポイント(かえりえポータルが読み取り専用で参照する)
+const D1_WORK_SUMMARY_URL = 'https://shift-app-worker.tetsuya-nakamura-y.workers.dev/api/work-summary';
 
 /* ================= 状態 ================= */
 let state = {
@@ -1280,6 +1284,24 @@ function actualHoursForStaff(s, ym, facId){
   let total = 0;
   for(let d = 1; d <= dim; d++) total += punchHoursForDay(byStaff[d]);
   return total;
+}
+// その月の有給取得日数(希望休入力の'yukyu'の日数)
+function paidLeaveDaysForStaff(s, ym, facId){
+  const byStaff = (state.wishes[facId + '_' + ym] || {})[s.id] || {};
+  return Object.values(byStaff).filter(kind => kind === 'yukyu').length;
+}
+// 所定労働時間・実労働時間・残業時間・有給取得日数をまとめて計算する(かえりえポータルのwork_summary向け)。
+// 残業は「個人の所定労働時間(シフト予定)を超えた分」を基準とする(月の法定上限との比較は別途「上限差」列で表示)
+function computeWorkSummaryForStaff(s, ym, g, facId){
+  const scheduledHours = plannedHoursForStaff(s, ym, g);
+  const workedHours = actualHoursForStaff(s, ym, facId);
+  const overtimeHours = Math.max(0, workedHours - scheduledHours);
+  return {
+    scheduledMinutes: Math.round(scheduledHours * 60),
+    workedMinutes: Math.round(workedHours * 60),
+    overtimeMinutes: Math.round(overtimeHours * 60),
+    paidLeaveDays: paidLeaveDaysForStaff(s, ym, facId),
+  };
 }
 // 通い・泊まり・訪問介護をまとめて行う多機能型(看多機・小多機)か。
 // 3対1・送迎・訪問介護の考え方はこの2種別で共通。訪問看護は看多機のみ
@@ -2892,18 +2914,21 @@ function renderKintaiView(){
   }
   const g = grid();
   const legal = legalMonthlyHours(currentYm);
-  let html = '<table class="kintai-table"><thead><tr><th>職員</th><th>予定</th><th>実績</th><th>差分</th><th>法定上限(変形労働制)</th><th>上限差</th><th></th></tr></thead><tbody>';
+  let html = '<table class="kintai-table"><thead><tr><th>職員</th><th>予定</th><th>実績</th><th>差分</th><th>残業(所定超過)</th><th>法定上限(変形労働制)</th><th>上限差</th><th></th></tr></thead><tbody>';
   roster.forEach(s => {
     const planned = plannedHoursForStaff(s, currentYm, g);
     const actual = actualHoursForStaff(s, currentYm, fac.id);
     const diff = actual - planned;
+    const overtime = Math.max(0, diff); // 個人の所定労働時間(シフト予定)を超えた分を残業とする(かえりえポータルと合意済みの基準)
     const over = actual - legal;
     const overStyle = over > 0 ? ' style="color:var(--danger);font-weight:700;"' : '';
+    const otStyle = overtime > 0 ? ' style="color:var(--danger);font-weight:700;"' : '';
     html += `<tr>
       <td>${escapeHtml(s.name)}</td>
       <td>${fmtUnit(planned)}h</td>
       <td${overStyle}>${fmtUnit(actual)}h</td>
       <td>${diff >= 0 ? '+' : ''}${fmtUnit(diff)}h</td>
+      <td${otStyle}>${fmtUnit(overtime)}h</td>
       <td>${legal}h</td>
       <td${overStyle}>${over > 0 ? '+' : ''}${fmtUnit(over)}h</td>
       <td><button class="btn btn-secondary kintai-detail-btn" data-staff="${s.id}">打刻を見る</button></td>
@@ -2972,6 +2997,7 @@ function saveKintaiDetail(){
   markDirty();
   renderKintaiView();
   sendPunchesToD1(); // かえりえポータルにも即座に反映されるよう、GAS保存とは別にD1へも送る
+  sendWorkSummaryToD1(); // 打刻が変わると残業時間も変わるため、集計もあわせて送り直す
   toast('打刻を保存しました(クラウドへは「一時保存」で反映されます)');
 }
 function exportKintaiCsv(){
@@ -2980,11 +3006,12 @@ function exportKintaiCsv(){
   const roster = facStaff();
   const g = grid();
   const legal = legalMonthlyHours(currentYm);
-  const rows = [['職員名', '予定時間', '実績時間', '差分', '法定上限(変形労働制)', '上限差']];
+  const rows = [['職員名', '予定時間', '実績時間', '差分', '残業(所定超過)', '法定上限(変形労働制)', '上限差', '有給取得日数']];
   roster.forEach(s => {
     const planned = plannedHoursForStaff(s, currentYm, g);
     const actual = actualHoursForStaff(s, currentYm, fac.id);
-    rows.push([s.name, fmtUnit(planned), fmtUnit(actual), fmtUnit(actual - planned), legal, fmtUnit(actual - legal)]);
+    const diff = actual - planned;
+    rows.push([s.name, fmtUnit(planned), fmtUnit(actual), fmtUnit(diff), fmtUnit(Math.max(0, diff)), legal, fmtUnit(actual - legal), paidLeaveDaysForStaff(s, currentYm, fac.id)]);
   });
   const csv = rows.map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\r\n');
   const blob = new Blob(['﻿' + csv], { type:'text/csv' });
@@ -3134,6 +3161,27 @@ async function sendPunchesToD1(){
   }catch(e){
     console.error('D1打刻送信エラー', e);
     toast('クラウド共有(D1)への打刻送信に失敗しました');
+  }
+}
+// 拠点の全職員ぶんの所定・実績・残業・有給をまとめてD1に送る(かえりえポータルが読み取り専用で表示する)
+async function sendWorkSummaryToD1(){
+  const fac = currentFacility();
+  if(!fac) return;
+  const g = grid();
+  const summaryArr = facStaff().map(s => {
+    const w = computeWorkSummaryForStaff(s, currentYm, g, fac.id);
+    return { staffId: s.id, scheduledMinutes: w.scheduledMinutes, workedMinutes: w.workedMinutes, overtimeMinutes: w.overtimeMinutes, paidLeaveDays: w.paidLeaveDays };
+  });
+  try{
+    const res = await fetch(D1_WORK_SUMMARY_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-API-Key': D1_API_KEY },
+      body: JSON.stringify({ facilityId: fac.id, yearMonth: currentYm, summary: summaryArr }),
+    });
+    if(!res.ok) throw new Error('HTTP ' + res.status);
+  }catch(e){
+    console.error('D1勤怠集計送信エラー', e);
+    toast('クラウド共有(D1)への勤怠集計送信に失敗しました');
   }
 }
 // D1から打刻を読み込み、state.punchesにマージする(かえりえポータルで打刻された分を管理画面にも反映するため)。
@@ -3908,6 +3956,11 @@ function bindEvents(){
     currentYm = addMonths(currentYm, 1); selectedKintaiStaffId = null; saveLocal(); renderKintaiView();
   });
   document.getElementById('btnKintaiCsv').addEventListener('click', exportKintaiCsv);
+  document.getElementById('btnKintaiSyncD1').addEventListener('click', () => {
+    sendPunchesToD1();
+    sendWorkSummaryToD1();
+    toast('D1(かえりえポータル)へ同期しました');
+  });
   document.getElementById('btnKintaiDetailSave').addEventListener('click', saveKintaiDetail);
   document.getElementById('btnKintaiDetailClose').addEventListener('click', () => {
     selectedKintaiStaffId = null;
@@ -3935,6 +3988,7 @@ function bindEvents(){
     toast('シフトを確定しました');
     if(state.gasUrl) gasSave();
     sendShiftsToD1();
+    sendWorkSummaryToD1(); // シフトが確定すると所定労働時間が固まるため、集計もあわせて送る
   });
   document.getElementById('btnShiftUnconfirm').addEventListener('click', () => {
     const fac = currentFacility();
