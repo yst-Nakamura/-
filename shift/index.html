@@ -566,6 +566,8 @@ table.kintai-detail-table input[type="time"],table.kintai-detail-table input[typ
       <option value="all">全体シフト</option>
       <option value="ns">訪問看護のみ</option>
     </select>
+    <!-- 看多機(kantaki)の場合、この<option>群はupdateViewModeOptions()により「かんたき/訪問看護/全体シフト」の3択に差し替えられる -->
+
     <button class="btn btn-secondary" id="btnCsv">CSV</button>
     <button class="btn btn-secondary" id="btnPrint">印刷</button>
     <button class="btn btn-warn" id="btnCloudSave">一時保存<span id="dirtyDot"></span></button>
@@ -783,6 +785,10 @@ table.kintai-detail-table input[type="time"],table.kintai-detail-table input[typ
           <option value="day">日勤のみ</option>
         </select>
       </div>
+      <!-- 看多機(kantaki)のみ: かんたき/訪問看護/共通のグループ見出し(updateFacFormVisibility()で表示切替) -->
+      <div class="form-field" id="fcGroupKaigoHeader" style="display:none;grid-column:1/-1;margin-bottom:-8px;">
+        <h3 style="margin:0;font-size:0.95rem;color:var(--ocean);border-bottom:1px solid var(--mist);padding-bottom:4px;">かんたき設定</h3>
+      </div>
       <div class="form-field" id="fcUsersWrap" style="grid-column:1/-1;">
         <label>曜日別の通い利用者数(3対1計算に使用)</label>
         <div class="users-by-wd" id="fcUsersByWd"></div>
@@ -803,13 +809,6 @@ table.kintai-detail-table input[type="time"],table.kintai-detail-table input[typ
         <label>曜日別の送迎ルート数(1日に必要な運転者の人数。送迎がない曜日は0)</label>
         <div class="users-by-wd" id="fcRoutesByWd"></div>
       </div>
-      <div class="form-field" id="fcHoukanRoutesWrap" style="grid-column:1/-1;">
-        <label>曜日別の訪問看護ルート数(この人数ぶん看護師を訪問看護に割り当てます。ない曜日は0)</label>
-        <div class="users-by-wd" id="fcHoukanRoutesByWd"></div>
-        <p style="font-size:0.75rem;color:var(--gray);margin-top:4px;">
-          この人数を超える看護師が出勤している日は、あふれた分はそのまま通常の日勤になります。
-        </p>
-      </div>
       <div class="form-field" id="fcShiftRoutesWrap" style="grid-column:1/-1;display:none;">
         <label>早番・日勤・遅番のルート数(1日に必要な人数)</label>
         <div class="users-by-wd">
@@ -828,9 +827,32 @@ table.kintai-detail-table input[type="time"],table.kintai-detail-table input[typ
           訪問体制強化加算(訪問介護の必要数が1名→2名になります)
         </label>
       </div>
+      <div class="form-field" id="fcKibouDaysKaigoWrap" style="display:none;">
+        <label>休み希望の入力可能日数(かんたき・介護職員用ページの上限)</label>
+        <input type="number" id="fcKibouDaysKaigo" min="0" max="15" value="3">
+      </div>
+      <!-- 看多機のみ: 訪問看護設定グループ -->
+      <div class="form-field" id="fcGroupNurseHeader" style="display:none;grid-column:1/-1;margin-bottom:-8px;">
+        <h3 style="margin:0;font-size:0.95rem;color:var(--ocean);border-bottom:1px solid var(--mist);padding-bottom:4px;">訪問看護設定</h3>
+      </div>
+      <div class="form-field" id="fcHoukanRoutesWrap" style="grid-column:1/-1;">
+        <label>曜日別の訪問看護ルート数(この人数ぶん看護師を訪問看護に割り当てます。ない曜日は0)</label>
+        <div class="users-by-wd" id="fcHoukanRoutesByWd"></div>
+        <p style="font-size:0.75rem;color:var(--gray);margin-top:4px;">
+          この人数を超える看護師が出勤している日は、あふれた分はそのまま通常の日勤になります。
+        </p>
+      </div>
+      <div class="form-field" id="fcKibouDaysNurseWrap" style="display:none;">
+        <label>休み希望の入力可能日数(訪問看護・看護師用ページの上限)</label>
+        <input type="number" id="fcKibouDaysNurse" min="0" max="15" value="3">
+      </div>
       <div class="form-field" id="fcKibouDaysWrap">
         <label>休み希望の入力可能日数(職員用ページの上限)</label>
         <input type="number" id="fcKibouDays" min="0" max="15" value="3">
+      </div>
+      <!-- 看多機のみ: 共通設定グループ -->
+      <div class="form-field" id="fcGroupCommonHeader" style="display:none;grid-column:1/-1;margin-bottom:-8px;">
+        <h3 style="margin:0;font-size:0.95rem;color:var(--ocean);border-bottom:1px solid var(--mist);padding-bottom:4px;">共通設定</h3>
       </div>
       <div class="form-field" id="fcAnnualOffWrap" style="grid-column:1/-1;">
         <label>正社員・支配人・計画作成の月の休み日数(年間・全員共通)</label>
@@ -952,6 +974,7 @@ table.kintai-detail-table input[type="time"],table.kintai-detail-table input[typ
 /* ================= 修正ログ =================
    コードを変更したら必ずここに1行追加すること */
 const CHANGELOG_DATA = [
+  { version: 'v1.52.0', date: '2026-09-04', label: '新機能', text: '看多機(kantaki)の「かんたき(介護)」と「訪問看護」のシフトを別々に自動作成できるようにした。ユーザー要望: 「介護と看護のシフトを別々に作成し、両方完成後に全体シフトで1枚に表示・確認したい。かんたきの3対1計算には看護師1名を含む要件があるが、これは訪問看護側が必ず通いに看護師を配置するので、かんたき側は看護師1名ぶんを差し引いた人数で作成してよい」との方針を確認して対応。**生成ロジックの分離**: 既存の`generateShifts()`(houkan/shoutaki用)はそのまま残し、看多機専用に`generateKaigoShifts(fac)`(介護職のみ対象。通いの3対1必要人数を`kayoiNeedFor(fac,wd)-1+訪問介護必要数`とし、送迎ルート合計からも看護師ぶんの+1を除外。旧Step2の看護師関連判定・旧Step3.6(看護師確保+介護バックフィル)は看護師依存が無くなったため丸ごと削除)と`generateNurseShifts(fac)`(看護師のみ対象。必要人数を`1(通い側)+訪問看護ルート数`とする独立ループ。オンコール担当の抽選もこちらに移植)を新設。**表示切替**: 看多機のみ`viewMode`を「かんたき/訪問看護/全体シフト」の3択にし(houkan/shoutakiは従来の「全体シフト/訪問看護のみ」のまま)、自動作成ボタンは選んでいるビューに応じて新関数を呼び分ける(全体シフトは確認専用のためボタン自体を非表示に)。全体シフトの結合表示・配置番号(通介①・通看②など、看護師がいれば最後の1枠を予約する既存ロジック)・人員配置チェックは変更なし(`positionLabelsForDay`/`checkDay`は元々全職員の実データを直接見る作りだったため無改修で新設計と整合)。**拠点タブ**: 看多機のみ「かんたき設定/訪問看護設定/共通設定」の見出しでフォームを再編成し、休み希望の入力可能日数を`kibouDaysKaigo`(かんたき用)/`kibouDaysNurse`(訪問看護用)に分離(かんたきと訪問看護で希望日数が違うことがあるため。houkan/shoutakiは従来の単一`kibouDays`のまま)。**GAS(コード.gs)・kibou.html対応**: `FAC_HEADERS`に「休み希望日数(かんたき)」「休み希望日数(訪問看護)」列を追加(末尾に追記、既存列のインデックスは変更なし)、`kibouInfo()`が拠点タイプ+両方の上限日数+職員の職種を返すようにし、`submitKibou()`とkibou.htmlの`maxDays()`が「看多機なら職員の職種(看護師かどうか)で上限を切り替え、それ以外は従来通り単一のkibouDaysを使う」判定に対応。**要デプロイ**: 今回はGAS(Google Apps Script)側の`コード.gs`と`kibou.html`も変更したため、Apps Scriptエディタから「新しいデプロイ」を実行する必要がある(shift_dashboard.htmlのGitHub Pages分とは別の作業)。**検証**: ブラウザでテスト拠点(zzプレフィックス、看多機・介護職員3名+看護師2名)を作成しgasSaveをスタブ化した上で、かんたき/訪問看護それぞれの自動作成をエラーなく実行→介護側に訪看コードが出ない・看護側に訪介/リーダーコードが出ないことを確認、全体シフトで結合表示・配置番号(通介/通看)が看護師1名を最後の枠として正しく予約表示されることを確認、3対1判定の新数式(need-1)を直接計算し曜日ごとの必要数と一致することを確認、拠点フォームの表示切替(kantaki/houkan/shoutakiそれぞれ)とkibouDaysKaigo/kibouDaysNurseの保存・再読込を確認、kibou.htmlのmaxDays()が看多機で職種により4日/6日を正しく切り替え、houkan拠点では従来通り単一値を返すことを確認。houkan/shoutaki拠点は表示・生成ロジックとも無改修(既存の2択viewMode・単一kibouDaysのまま)。テスト後の状態はクリアし、実データ(gasLoad())への影響なし' },
   { version: 'v1.51.0', date: '2026-09-03', label: '新機能', text: '看護ポータル担当から「所定労働時間・残業の計算はシフト作成アプリ側で持ってほしい(ポータルは表示だけにしたい、二重管理を避けるため)」との正式依頼を受け対応。ユーザーとの確認で「残業=個人の所定労働時間(シフト予定)を超えた分」(月の法定上限171h/177hではなく、常勤・非常勤それぞれの個人ごとの所定を超えた分を残業とする)、「有給取得日数も月次で集計に含める(積み上げれば年度合計になる)」と決定。シフトの時間表現自体(コードごとの固定時間)は変更しないという方針も確認済み。**追加した関数**(すべて既存のplannedHoursForStaff/actualHoursForStaffを再利用、新規ロジックは最小限): `paidLeaveDaysForStaff(s,ym,facId)`(希望休入力の有給日数をカウント)、`computeWorkSummaryForStaff(s,ym,g,facId)`(所定・実績・残業・有給をまとめて返す、残業=max(0,実績-所定))、`sendWorkSummaryToD1()`(拠点の全職員ぶんを新設の`/api/work-summary`エンドポイントへPOST、punchesと同じ「その拠点月ぶんを丸ごと入れ替え」パターン)。呼び出しタイミングはsendPunchesToD1と同じ箇所(打刻保存時・シフト確定時)に追加、加えて勤怠タブに「D1に同期」ボタンを新設し任意のタイミングでも同期できるようにした。勤怠タブの一覧に「残業(所定超過)」列を追加(既存の「法定上限/上限差」列は月間総枠の安全チェック用としてそのまま残した)。CSV出力にも残業・有給取得日数の列を追加。D1側は`work_summary`テーブル(facility_id,year_month,staff_id,scheduled_minutes,worked_minutes,overtime_minutes,paid_leave_days)を新設(本番に適用済み)、`night_minutes`(深夜時間)はポータル仕様書でも任意項目のため今回は見送り。ブラウザでgasSave・fetchをモックして計算結果とPOSTペイロードを実データで検証(実際に31日分09:00-20:00の打刻を入力→所定144h・実績341h・残業197hが正しく計算されることを確認)、テスト後は状態をクリアしgasLoad()で実データ(24拠点422名)を復元・dirty=false確認済み。**要デプロイ**: `D:\\Claude-Projects\\shift-worker`で`npx wrangler deploy`(work_summaryテーブル自体は既に本番適用済み、コードのデプロイのみ必要)。ポータル側の表示実装は「看護師ポータルサイト再構築」スレッドが別途対応(更新タイミングはshift_dashboard.html側の操作がトリガーになるため、ポータル単体の打刻だけでは即時反映されない点を申し送り済み)' },
   { version: 'v1.50.0', date: '2026-09-02', label: '新機能', text: '看護ポータル(かえりえポータル、Documents\\kaerie-portal)に出勤・退勤ボタンを実装し、打刻データをシフト作成アプリの「勤怠」タブ(v1.49.0)と統合した。打刻はD1データベース(shift-app-db、確定シフトの共有に使っているものと同じ)の新設「punches」テーブルに保存され、かえりえポータル側はSHIFT_DBバインディング経由で直接書き込む(Worker間のHTTP呼び出しは同一アカウント内でエラー1042になる既知の制約があるため)。**shift_dashboard.html側の変更**: `sendPunchesToD1()`を新設し、勤怠タブでの打刻保存時(`saveKintaiDetail()`)に、その拠点・月の打刻を丸ごとD1へ送るようにした(専用の`/api/punches`エンドポイントを新設。既存の`/api/shifts`のPOSTに相乗りさせなかったのは、そちらは呼ぶたびにconfirmations(シフト確定状態)を無条件で上書きしてしまうため、打刻保存のたびに未確定の月を確定済み扱いにしてしまう事故を避けるため)。`fetchD1Punches()`を新設し、勤怠タブを開いた時に拠点・月が変わっていればD1から打刻を取得し、既存のGASスプレッドシート由来の`state.punches`にマージする(かえりえポータルでの打刻がそのまま管理画面にも反映される)。GASスプレッドシート経由の打刻・kintai.htmlはこれまで通り動作し、D1が「もう一つの入力経路」として追加された形。ブラウザ・wrangler devの両方でfetchをモック/ローカルD1にテスト用データ(zzプレフィックス)を投入して実際にPOST/GET往復を確認し、テスト後はローカルテストデータを削除・実データをgasLoad()で復元済み(実クラウドD1・実GASスプレッドシートには一切書き込んでいない)。**要デプロイ作業(ユーザーに実施いただく必要あり)**: ①`D:\\Claude-Projects\\shift-worker`で`npx wrangler deploy`(D1のpunchesテーブル自体は既にClaudeが本番に適用済み)②`Documents\\kaerie-portal`で`npx wrangler deploy`。どちらもClaude Codeの自動承認範囲外(本番デプロイのため)で、ユーザー自身の実行が必要' },
   { version: 'v1.49.0', date: '2026-09-02', label: '新機能', text: '勤怠管理機能を追加。新しい「勤怠」タブで、職員ごとの月間の予定時間(シフト計画)・実績時間(打刻記録の集計)・法定上限(変形労働制1ヶ月単位、40時間×週÷7日を月の日数から算出。例: 30日の月=171時間、31日の月=177時間)を一覧表示し、実績が法定上限を超えている職員は赤字で表示する。行の「打刻を見る」から日別の出勤・退勤時刻・休憩分を直接入力・修正できる(管理者による事後修正用)。CSV書き出しにも対応。あわせて、職員がスマホから自分で出退勤を打刻できる専用ページ`kintai.html`(希望休入力ページkibou.htmlと同じ、事業所→名前選択のみでログイン不要な設計)と、そのQRポスター`kintai-qr.html`を新規追加。実データ(23拠点397名)を壊さずに、gasSaveをスタブ化した状態で打刻の入力・集計・超過表示・CSV出力を検証し、検証後は状態を元に戻して実データをgasLoad()で復元済み。**GAS側(コード.gs)の変更が必要**: 「打刻記録」シート・打刻の読込/保存・打刻ページ用のAPI(kintaiInfo/kintaiGet/submitPunch)を追加したため、ユーザーが手動でApps Scriptに貼り替えて再デプロイするまでは打刻機能はクラウドに反映されない(再デプロイ前でも勤怠タブの予定/実績表示・手入力による集計自体はローカルでは動作する)' },
@@ -1088,7 +1111,9 @@ let editingStaffId = null;
 let editingFacId = null;
 let pickerTarget = null; // {staffId, day}
 let selectedDetailDay = null;
-let viewMode = 'all'; // 'all'=全体シフト / 'ns'=訪問看護のみ
+let viewMode = 'all'; // 'all'=全体シフト / 'ns'=訪問看護のみ(houkan/shoutaki)
+// kantakiのみ: 'kaigo'=かんたき(介護)のみ / 'nurse'=訪問看護のみ / 'all'=全体シフト(確認専用)
+// (updateViewModeOptions()が拠点タイプに応じて<select id="viewMode">の選択肢とこの値を切り替える)
 
 /* ================= ユーティリティ ================= */
 function defaultYm(){
@@ -2163,6 +2188,601 @@ function generateShifts(){
   toast('シフト案を作成しました。警告(▲✕)がある日はマスを調整してください');
 }
 
+/* ================= 看多機: かんたき/訪問看護を分離して自動作成(v1.52.0) =================
+   看多機では「通いの3対1に看護師1名を含める」というルールがあるため、
+   介護側と看護側を1つの関数で同時に作ると必要人数判定が複雑に絡み合っていた(旧generateShifts参照)。
+   このため看多機に限り、介護側の必要人数から看護師1名ぶんをあらかじめ差し引いておき、
+   看護師を通いに1名配置する責任は看護側の自動作成が持つ、という設計で完全に独立させた。
+   houkan(訪問看護単独)・shoutaki(小多機)には看護師1名を通いに含める概念自体が無いため、
+   これらは従来通り上のgenerateShifts()を使う(変更なし) */
+
+// かんたきの介護側だけを自動作成する。看護師のマス・看護師の人数は一切参照しない
+function generateKaigoShifts(fac){
+  const roster = facStaff().filter(s => !isNurse(s));
+  if(roster.length === 0){ toast('介護職員が登録されていません'); return; }
+
+  const dim = daysInMonth(currentYm);
+  const g = grid();
+
+  // 介護職員ぶんのマスだけクリアし、希望休・有給を入れ直す(看護師のマスには触れない)
+  roster.forEach(s => {
+    for(let d = 1; d <= dim; d++) setCode(g, s.id, d, '');
+    for(let d = 1; d <= dim; d++){
+      const w = getWish(s.id, d);
+      if(w) setCode(g, s.id, d, wishToCode(w));
+    }
+  });
+
+  const target = {}, assigned = {}, earlyCount = {}, lateCount = {};
+  roster.forEach(s => {
+    let base;
+    if(isFulltime(s) || isManagement(s)) base = dim - annualOffFor(fac, currentYm);
+    else base = Math.round((s.daysPerWeek || 5) * dim / 7);
+    target[s.id] = Math.max(0, base - countYukyu(s.id));
+    let preAssigned = 0;
+    for(let d = 1; d <= dim; d++){ if(isWorkCode(getCode(g, s.id, d))) preAssigned++; }
+    assigned[s.id] = preAssigned;
+    earlyCount[s.id] = 0;
+    lateCount[s.id] = 0;
+  });
+
+  const openDaysList = [];
+  for(let d = 1; d <= dim; d++){ if(isOpenDay(fac, currentYm, d)) openDaysList.push(d); }
+  const isWeekend = d => [0, 6].includes(weekdayOf(currentYm, d));
+  const weekendOpenDays = openDaysList.filter(isWeekend);
+  const weekdayOpenDays = openDaysList.filter(d => !isWeekend(d));
+  const dayOrder = [
+    ...spreadOrder(weekendOpenDays.length).map(i => weekendOpenDays[i - 1]),
+    ...spreadOrder(weekdayOpenDays.length).map(i => weekdayOpenDays[i - 1]),
+  ];
+  const progressOf = {};
+  dayOrder.forEach((d, i) => { progressOf[d] = i + 1; });
+  const totalOpenDays = openDaysList.length || 1;
+  const paceCap = (s, d) => Math.min(target[s.id], Math.ceil(target[s.id] * (progressOf[d] || 1) / totalOpenDays) + 1);
+
+  const cellEmpty = (s, d) => d >= 1 && d <= dim && !getCode(g, s.id, d);
+  const runLenIfWorked = (s, d) => {
+    let n = 1;
+    for(let x = d - 1, steps = 0; steps < MAX_CONSECUTIVE + 3; x--, steps++){
+      const code = x >= 1 ? getCode(g, s.id, x) : crossMonthCode(s.id, currentYm, x);
+      if(isWorkCode(code)) n++; else break;
+    }
+    for(let x = d + 1, steps = 0; steps < MAX_CONSECUTIVE + 3; x++, steps++){
+      const code = x <= dim ? getCode(g, s.id, x) : crossMonthCode(s.id, currentYm, x);
+      if(isWorkCode(code)) n++; else break;
+    }
+    return n;
+  };
+
+  // ---- 1. 夜勤者を固定曜日に配置 ----
+  roster.filter(s => s.role === 'yakin').forEach(s => {
+    for(let d = 1; d <= dim; d++){
+      const wd = weekdayOf(currentYm, d);
+      if((s.nightDays || []).includes(wd) && cellEmpty(s, d)){
+        setCode(g, s.id, d, '夜');
+        assigned[s.id]++;
+        const nextWd = weekdayOf(currentYm, d + 1);
+        const nextIsNight = d < dim && (s.nightDays || []).includes(nextWd) && cellEmpty(s, d + 1);
+        if(!nextIsNight && d < dim && cellEmpty(s, d + 1)){
+          setCode(g, s.id, d + 1, '明');
+          const afterAkeWd = weekdayOf(currentYm, d + 2);
+          if(d + 2 <= dim && cellEmpty(s, d + 2) && !(s.nightDays || []).includes(afterAkeWd)){
+            setCode(g, s.id, d + 2, '休');
+          }
+        }
+      }
+    }
+  });
+
+  // ---- 1.2 夜勤の穴埋め ----
+  for(let d = 1; d <= dim; d++){
+    if(roster.some(s => getCode(g, s.id, d) === '夜')) continue;
+    const wd = weekdayOf(currentYm, d);
+    const subs = roster.filter(s =>
+      s.canNight &&
+      (s.role === 'kaigo_full' || s.role === 'kaigo_part') &&
+      cellEmpty(s, d) &&
+      (d >= dim || cellEmpty(s, d + 1)) &&
+      (s.workDays || []).includes(wd) &&
+      assigned[s.id] < target[s.id] &&
+      runLenIfWorked(s, d) <= MAX_CONSECUTIVE
+    ).sort((a, b) => (assigned[a.id] / (target[a.id] || 1)) - (assigned[b.id] / (target[b.id] || 1)));
+    if(subs.length > 0){
+      const s = subs[0];
+      setCode(g, s.id, d, '夜');
+      if(d < dim){
+        setCode(g, s.id, d + 1, '明');
+        if(d + 2 <= dim && cellEmpty(s, d + 2)) setCode(g, s.id, d + 2, '休');
+      }
+      assigned[s.id] += 2;
+    }
+  }
+
+  // ---- 1.5 固定曜日契約の非常勤、「訪問のみ」曜日を先に配置 ----
+  roster.filter(isParttime).forEach(s => {
+    for(let d = 1; d <= dim; d++){
+      if(!isOpenDay(fac, currentYm, d)) continue;
+      const wd = weekdayOf(currentYm, d);
+      if(!(s.workDays || []).includes(wd) || !cellEmpty(s, d)) continue;
+      const wdt = s.wdTimes && s.wdTimes[wd];
+      const visitOnly = !!(wdt && wdt.visitOnly);
+      if(!isFixedPart(s) && !visitOnly) continue;
+      setCode(g, s.id, d, visitOnly ? '訪介' : '日');
+      assigned[s.id]++;
+    }
+  });
+
+  // ---- 2. 日ごとに日中の介護職員を割り当て ----
+  // 通いの必要人数は、看護師1名(訪問看護側の自動作成が必ず配置する)ぶんを差し引いた人数
+  const dayWorkers = roster.filter(s => isCareWorker(s) && !isFixedPart(s))
+    .sort((a, b) => (isManagement(a) ? 1 : 0) - (isManagement(b) ? 1 : 0));
+  for(const d of dayOrder){
+    const wd = weekdayOf(currentYm, d);
+    const needCare = Math.max(0, kayoiNeedFor(fac, wd) - 1) + homonKaigoNeed(fac);
+    const placed = roster.filter(s => isCareWorker(s) && DAY_CODES.includes(getCode(g, s.id, d)));
+
+    const pool = dayWorkers.filter(s =>
+      cellEmpty(s, d) &&
+      (s.workDays || []).includes(wd) &&
+      (isWeekend(d) ? assigned[s.id] < target[s.id] : assigned[s.id] < paceCap(s, d)) &&
+      runLenIfWorked(s, d) <= MAX_CONSECUTIVE_HARD
+    );
+    pool.sort((a, b) =>
+      (isManagement(a) ? 1 : 0) - (isManagement(b) ? 1 : 0) ||
+      ((runLenIfWorked(a, d) > MAX_CONSECUTIVE ? 1 : 0) - (runLenIfWorked(b, d) > MAX_CONSECUTIVE ? 1 : 0)) ||
+      (assigned[a.id] / (target[a.id] || 1)) - (assigned[b.id] / (target[b.id] || 1)) ||
+      ((a.id.charCodeAt(2) + d) % 7) - ((b.id.charCodeAt(2) + d) % 7)
+    );
+
+    const routes = routesOf(fac, wd);
+    const drvPool = roster.filter(s =>
+      s.role === 'driver' && cellEmpty(s, d) &&
+      (s.workDays || []).includes(wd) &&
+      assigned[s.id] < paceCap(s, d) &&
+      runLenIfWorked(s, d) <= MAX_CONSECUTIVE
+    ).sort((a, b) => (assigned[a.id] / (target[a.id] || 1)) - (assigned[b.id] / (target[b.id] || 1)));
+
+    const picks = [];
+    const needDriveFromCare = () => Math.max(0, routes - drvPool.length
+      - placed.filter(s => canDoDrive(s)).length
+      - picks.filter(s => s.canDrive).length);
+    const routeHeadNeed = (fac.pattern === 'three')
+      ? (fac.earlyRoutes != null ? fac.earlyRoutes : 1)
+        + (fac.dayRoutes != null ? fac.dayRoutes : 1)
+        + (fac.lateRoutes != null ? fac.lateRoutes : 1)
+        + homonKaigoNeed(fac)
+      : 0;
+    while(pool.length > 0){
+      const cur = placed.concat(picks);
+      const careUnits = cur.reduce((t, s) => t + unitOf(s, wd), 0);
+      const careShort = careUnits < needCare || cur.length < routeHeadNeed;
+      if(!careShort) break;
+      let idx = 0;
+      if(needDriveFromCare() > 0){
+        const i = bestDriveIndex(pool, d);
+        if(i >= 0) idx = i;
+      }
+      picks.push(pool.splice(idx, 1)[0]);
+    }
+
+    const flex = picks.filter(s => !isManagement(s));
+    if(fac.pattern === 'three' && flex.length >= 2){
+      const earlyNeed = Math.min(fac.earlyRoutes != null ? fac.earlyRoutes : 1, flex.length);
+      const earlyPool = flex.filter(s => s.canEarly !== false)
+        .sort((a, b) => earlyCount[a.id] - earlyCount[b.id]);
+      const earlyPicked = earlyPool.slice(0, earlyNeed);
+      const afterEarly = flex.filter(s => !earlyPicked.includes(s));
+      const lateNeed = Math.min(fac.lateRoutes != null ? fac.lateRoutes : 1, afterEarly.length);
+      const latePool = afterEarly.filter(s => s.canLate !== false)
+        .sort((a, b) => lateCount[a.id] - lateCount[b.id]);
+      const latePicked = latePool.slice(0, lateNeed);
+      picks.forEach(s => {
+        const code = isManagement(s) ? '半'
+          : earlyPicked.includes(s) ? '早' : (latePicked.includes(s) ? '遅' : '日');
+        setCode(g, s.id, d, code);
+        assigned[s.id]++;
+        if(code === '早') earlyCount[s.id]++;
+        if(code === '遅') lateCount[s.id]++;
+      });
+    }else{
+      picks.forEach(s => { setCode(g, s.id, d, dayCodeFor(s)); assigned[s.id]++; });
+    }
+
+    if(routes > 0){
+      let drvPlaced = 0;
+      while(drvPlaced < routes && drvPool.length > 0){
+        const s = drvPool.shift();
+        setCode(g, s.id, d, '日');
+        assigned[s.id]++;
+        drvPlaced++;
+      }
+      const driveOnDuty = () => roster.filter(s =>
+        DAY_CODES.includes(getCode(g, s.id, d)) && canDoDrive(s)).length;
+      while(driveOnDuty() < routes){
+        const i = bestDriveIndex(pool, d);
+        if(i < 0) break;
+        const s = pool.splice(i, 1)[0];
+        setCode(g, s.id, d, '日');
+        assigned[s.id]++;
+      }
+    }
+  }
+
+  // ---- 3. 契約日数に届かない職員を、人が薄い日に追加配置 ----
+  const fillThinDaysFor = (s, maxConsec) => {
+    const days = [];
+    for(let d = 1; d <= dim; d++){
+      if(!isOpenDay(fac, currentYm, d)) continue;
+      if(!cellEmpty(s, d)) continue;
+      if(!(s.workDays || []).includes(weekdayOf(currentYm, d))) continue;
+      if(runLenIfWorked(s, d) > maxConsec) continue;
+      const count = roster.filter(x => DAY_CODES.includes(getCode(g, x.id, d))).length;
+      days.push({ d, count });
+    }
+    days.sort((a, b) => a.count - b.count || a.d - b.d);
+    for(const { d } of days){
+      if(assigned[s.id] >= target[s.id]) break;
+      if(runLenIfWorked(s, d) > maxConsec) continue;
+      setCode(g, s.id, d, dayCodeFor(s));
+      assigned[s.id]++;
+    }
+  };
+  dayWorkers.forEach(s => {
+    if(assigned[s.id] >= target[s.id]) return;
+    fillThinDaysFor(s, MAX_CONSECUTIVE);
+    if(assigned[s.id] < target[s.id]) fillThinDaysFor(s, MAX_CONSECUTIVE_HARD);
+  });
+
+  // ---- 3.5 再配分: 余っている日から不足している日へ勤務を移す(介護のみ) ----
+  const dayShort = d => {
+    if(!isOpenDay(fac, currentYm, d)) return null;
+    const wd = weekdayOf(currentYm, d);
+    const dayStaff = roster.filter(s => isCareWorker(s) && DAY_CODES.includes(getCode(g, s.id, d)));
+    const need = Math.max(0, kayoiNeedFor(fac, wd) - 1) + homonKaigoNeed(fac);
+    const careShort = need - dayStaff.reduce((t, s) => t + unitOf(s, wd), 0);
+    return { careShort };
+  };
+  for(let pass = 0; pass < 3; pass++){
+    let moved = false;
+    for(let d = 1; d <= dim; d++){
+      let st = dayShort(d);
+      if(!st || st.careShort <= 0) continue;
+      const wd = weekdayOf(currentYm, d);
+      const cands = roster.filter(s =>
+        isCareWorker(s) && !isFixedPart(s) &&
+        cellEmpty(s, d) &&
+        (s.workDays || []).includes(wd) &&
+        runLenIfWorked(s, d) <= MAX_CONSECUTIVE
+      );
+      for(const s of cands){
+        st = dayShort(d);
+        if(st.careShort <= 0) break;
+        for(let d2 = 1; d2 <= dim; d2++){
+          if(d2 === d) continue;
+          const c2 = getCode(g, s.id, d2);
+          if(!DAY_CODES.includes(c2)) continue;
+          setCode(g, s.id, d2, '');
+          const st2 = dayShort(d2);
+          if(st2 && st2.careShort <= 0 && runLenIfWorked(s, d) <= MAX_CONSECUTIVE){
+            setCode(g, s.id, d, dayCodeFor(s));
+            moved = true;
+            break;
+          }
+          setCode(g, s.id, d2, c2);
+        }
+      }
+    }
+    if(!moved) break;
+  }
+
+  // ---- 3.8 訪問介護担当の指定+日勤リーダー ----
+  {
+    const pickRandom = arr => arr[Math.floor(Math.random() * arr.length)];
+    for(let d = 1; d <= dim; d++){
+      if(!isOpenDay(fac, currentYm, d)) continue;
+      let need = homonKaigoNeed(fac);
+      need -= roster.filter(s => getCode(g, s.id, d) === '訪介').length;
+      while(need > 0){
+        const kaigoOn = roster.filter(s =>
+          (s.role === 'kaigo_full' || s.role === 'kaigo_part') &&
+          !s.noHomon &&
+          ['早','日','遅'].includes(getCode(g, s.id, d)));
+        if(kaigoOn.length === 0) break;
+        const prefer = kaigoOn.filter(s => getCode(g, s.id, d) === '日');
+        const chosen = pickRandom(prefer.length ? prefer : kaigoOn);
+        setCode(g, chosen.id, d, '訪介');
+        need--;
+      }
+      if(!roster.some(s => getCode(g, s.id, d) === 'リ')){
+        const leaderPool = roster.filter(s => s.canLeader && getCode(g, s.id, d) === '日');
+        if(leaderPool.length > 0){
+          setCode(g, pickRandom(leaderPool).id, d, 'リ');
+        }
+      }
+    }
+  }
+
+  // ---- 4. 残りの空きマスを「休」に(介護職員のみ) ----
+  roster.forEach(s => {
+    for(let d = 1; d <= dim; d++){
+      if(cellEmpty(s, d)) setCode(g, s.id, d, '休');
+    }
+  });
+
+  markDirty();
+  renderShiftTable();
+  toast('かんたきの介護シフト案を作成しました(看護師は別途「訪問看護」ビューで作成してください)');
+}
+
+// かんたきの看護師だけを自動作成する。必要人数=通い側1名+訪問看護ルート数(曜日別)。
+// 介護側の人数には一切影響しない(介護側は上のgenerateKaigoShiftsが看護師1名ぶんを見込んで作成済みの前提)
+function generateNurseShifts(fac){
+  const roster = facStaff().filter(isNurse);
+  if(roster.length === 0){ toast('看護職員が登録されていません'); return; }
+
+  const dim = daysInMonth(currentYm);
+  const g = grid();
+
+  roster.forEach(s => {
+    for(let d = 1; d <= dim; d++) setCode(g, s.id, d, '');
+    for(let d = 1; d <= dim; d++){
+      const w = getWish(s.id, d);
+      if(w) setCode(g, s.id, d, wishToCode(w));
+    }
+  });
+
+  const target = {}, assigned = {}, earlyCount = {}, lateCount = {};
+  roster.forEach(s => {
+    let base;
+    if(isFulltime(s)) base = dim - annualOffFor(fac, currentYm);
+    else base = Math.round((s.daysPerWeek || 5) * dim / 7);
+    target[s.id] = Math.max(0, base - countYukyu(s.id));
+    let preAssigned = 0;
+    for(let d = 1; d <= dim; d++){ if(isWorkCode(getCode(g, s.id, d))) preAssigned++; }
+    assigned[s.id] = preAssigned;
+    earlyCount[s.id] = 0;
+    lateCount[s.id] = 0;
+  });
+
+  const openDaysList = [];
+  for(let d = 1; d <= dim; d++){ if(isOpenDay(fac, currentYm, d)) openDaysList.push(d); }
+  const isWeekend = d => [0, 6].includes(weekdayOf(currentYm, d));
+  const weekendOpenDays = openDaysList.filter(isWeekend);
+  const weekdayOpenDays = openDaysList.filter(d => !isWeekend(d));
+  const dayOrder = [
+    ...spreadOrder(weekendOpenDays.length).map(i => weekendOpenDays[i - 1]),
+    ...spreadOrder(weekdayOpenDays.length).map(i => weekdayOpenDays[i - 1]),
+  ];
+  const progressOf = {};
+  dayOrder.forEach((d, i) => { progressOf[d] = i + 1; });
+  const totalOpenDays = openDaysList.length || 1;
+  const paceCap = (s, d) => Math.min(target[s.id], Math.ceil(target[s.id] * (progressOf[d] || 1) / totalOpenDays) + 1);
+
+  const cellEmpty = (s, d) => d >= 1 && d <= dim && !getCode(g, s.id, d);
+  const runLenIfWorked = (s, d) => {
+    let n = 1;
+    for(let x = d - 1, steps = 0; steps < MAX_CONSECUTIVE + 3; x--, steps++){
+      const code = x >= 1 ? getCode(g, s.id, x) : crossMonthCode(s.id, currentYm, x);
+      if(isWorkCode(code)) n++; else break;
+    }
+    for(let x = d + 1, steps = 0; steps < MAX_CONSECUTIVE + 3; x++, steps++){
+      const code = x <= dim ? getCode(g, s.id, x) : crossMonthCode(s.id, currentYm, x);
+      if(isWorkCode(code)) n++; else break;
+    }
+    return n;
+  };
+
+  // ---- 固定曜日契約の看護非常勤を先に配置 ----
+  roster.filter(isParttime).forEach(s => {
+    for(let d = 1; d <= dim; d++){
+      if(!isOpenDay(fac, currentYm, d)) continue;
+      const wd = weekdayOf(currentYm, d);
+      if(!(s.workDays || []).includes(wd) || !cellEmpty(s, d)) continue;
+      if(!isFixedPart(s)) continue;
+      setCode(g, s.id, d, '日');
+      assigned[s.id]++;
+    }
+  });
+
+  // ---- 日ごとに看護師を割り当て(通い側1名+訪問看護ルート数ぶん) ----
+  const dayNurseWorkers = roster.filter(s => !isFixedPart(s));
+  for(const d of dayOrder){
+    const wd = weekdayOf(currentYm, d);
+    const need = 1 + houkanRoutesFor(fac, wd); // 通い側1名+訪問看護ルート数
+    const placed = roster.filter(s => DAY_CODES.includes(getCode(g, s.id, d)));
+
+    const pool = dayNurseWorkers.filter(s =>
+      cellEmpty(s, d) &&
+      (s.workDays || []).includes(wd) &&
+      (isWeekend(d) ? assigned[s.id] < target[s.id] : assigned[s.id] < paceCap(s, d)) &&
+      runLenIfWorked(s, d) <= MAX_CONSECUTIVE_HARD
+    );
+    pool.sort((a, b) =>
+      ((runLenIfWorked(a, d) > MAX_CONSECUTIVE ? 1 : 0) - (runLenIfWorked(b, d) > MAX_CONSECUTIVE ? 1 : 0)) ||
+      (assigned[a.id] / (target[a.id] || 1)) - (assigned[b.id] / (target[b.id] || 1)) ||
+      ((a.id.charCodeAt(2) + d) % 7) - ((b.id.charCodeAt(2) + d) % 7)
+    );
+
+    const picks = [];
+    while(pool.length > 0 && placed.length + picks.length < need){
+      picks.push(pool.shift());
+    }
+
+    if(fac.pattern === 'three' && picks.length >= 2){
+      const earlyNeed = Math.min(fac.earlyRoutes != null ? fac.earlyRoutes : 1, picks.length);
+      const earlyPool = picks.filter(s => s.canEarly !== false).sort((a, b) => earlyCount[a.id] - earlyCount[b.id]);
+      const earlyPicked = earlyPool.slice(0, earlyNeed);
+      const afterEarly = picks.filter(s => !earlyPicked.includes(s));
+      const lateNeed = Math.min(fac.lateRoutes != null ? fac.lateRoutes : 1, afterEarly.length);
+      const latePool = afterEarly.filter(s => s.canLate !== false).sort((a, b) => lateCount[a.id] - lateCount[b.id]);
+      const latePicked = latePool.slice(0, lateNeed);
+      picks.forEach(s => {
+        const code = earlyPicked.includes(s) ? '早' : (latePicked.includes(s) ? '遅' : '日');
+        setCode(g, s.id, d, code);
+        assigned[s.id]++;
+        if(code === '早') earlyCount[s.id]++;
+        if(code === '遅') lateCount[s.id]++;
+      });
+    }else{
+      picks.forEach(s => { setCode(g, s.id, d, '日'); assigned[s.id]++; });
+    }
+  }
+
+  // ---- 契約日数に届かない職員を、人が薄い日に追加配置 ----
+  const fillThinDaysFor = (s, maxConsec) => {
+    const days = [];
+    for(let d = 1; d <= dim; d++){
+      if(!isOpenDay(fac, currentYm, d)) continue;
+      if(!cellEmpty(s, d)) continue;
+      if(!(s.workDays || []).includes(weekdayOf(currentYm, d))) continue;
+      if(runLenIfWorked(s, d) > maxConsec) continue;
+      const count = roster.filter(x => DAY_CODES.includes(getCode(g, x.id, d))).length;
+      days.push({ d, count });
+    }
+    days.sort((a, b) => a.count - b.count || a.d - b.d);
+    for(const { d } of days){
+      if(assigned[s.id] >= target[s.id]) break;
+      if(runLenIfWorked(s, d) > maxConsec) continue;
+      setCode(g, s.id, d, '日');
+      assigned[s.id]++;
+    }
+  };
+  dayNurseWorkers.forEach(s => {
+    if(assigned[s.id] >= target[s.id]) return;
+    fillThinDaysFor(s, MAX_CONSECUTIVE);
+    if(assigned[s.id] < target[s.id]) fillThinDaysFor(s, MAX_CONSECUTIVE_HARD);
+  });
+
+  // ---- 再配分: 余っている日から不足している日へ勤務を移す(看護のみ) ----
+  const dayShort = d => {
+    if(!isOpenDay(fac, currentYm, d)) return null;
+    const wd = weekdayOf(currentYm, d);
+    const dayStaff = roster.filter(s => DAY_CODES.includes(getCode(g, s.id, d)));
+    const need = 1 + houkanRoutesFor(fac, wd);
+    return { nurseShort: need - dayStaff.length };
+  };
+  for(let pass = 0; pass < 3; pass++){
+    let moved = false;
+    for(let d = 1; d <= dim; d++){
+      let st = dayShort(d);
+      if(!st || st.nurseShort <= 0) continue;
+      const wd = weekdayOf(currentYm, d);
+      const cands = roster.filter(s =>
+        !isFixedPart(s) &&
+        cellEmpty(s, d) &&
+        (s.workDays || []).includes(wd) &&
+        runLenIfWorked(s, d) <= MAX_CONSECUTIVE
+      );
+      for(const s of cands){
+        st = dayShort(d);
+        if(st.nurseShort <= 0) break;
+        for(let d2 = 1; d2 <= dim; d2++){
+          if(d2 === d) continue;
+          const c2 = getCode(g, s.id, d2);
+          if(!DAY_CODES.includes(c2)) continue;
+          setCode(g, s.id, d2, '');
+          const st2 = dayShort(d2);
+          if(st2 && st2.nurseShort <= 0 && runLenIfWorked(s, d) <= MAX_CONSECUTIVE){
+            setCode(g, s.id, d, '日');
+            moved = true;
+            break;
+          }
+          setCode(g, s.id, d2, c2);
+        }
+      }
+    }
+    if(!moved) break;
+  }
+
+  // ---- 休みの偏り解消(v1.48.0のStep3.6相当。介護バックフィルが不要になったぶん単純化) ----
+  for(let d = 1; d <= dim; d++){
+    if(!isOpenDay(fac, currentYm, d)) continue;
+    const wd = weekdayOf(currentYm, d);
+    const need = 1 + houkanRoutesFor(fac, wd);
+    if(need <= 0) continue;
+    const offNurses = roster.filter(s =>
+      cellEmpty(s, d) && (s.workDays || []).includes(wd) &&
+      runLenIfWorked(s, d) <= MAX_CONSECUTIVE_HARD);
+    for(const n of offNurses){
+      const countD = roster.filter(s => DAY_CODES.includes(getCode(g, s.id, d))).length;
+      if(countD >= need) break;
+      for(let d2 = 1; d2 <= dim; d2++){
+        if(d2 === d) continue;
+        const c2 = getCode(g, n.id, d2);
+        if(!DAY_CODES.includes(c2)) continue;
+        setCode(g, n.id, d2, '');
+        const st2 = dayShort(d2);
+        if(st2 && st2.nurseShort <= 0 && runLenIfWorked(n, d) <= MAX_CONSECUTIVE_HARD){
+          setCode(g, n.id, d, '日');
+          break;
+        }
+        setCode(g, n.id, d2, c2);
+      }
+    }
+  }
+
+  // ---- 訪問看護ルートの指定(通い側に最低1名は残す) ----
+  {
+    const pickRandom = arr => arr[Math.floor(Math.random() * arr.length)];
+    for(let d = 1; d <= dim; d++){
+      if(!isOpenDay(fac, currentYm, d)) continue;
+      const wd = weekdayOf(currentYm, d);
+      const houkanRoutesD = houkanRoutesFor(fac, wd);
+      const dayNurses = roster.filter(s => DAY_CODES.includes(getCode(g, s.id, d)));
+      const kayoiNurses = dayNurses.filter(s => !s.houkanOnly);
+      const maxRoutable = Math.max(0, dayNurses.length - (kayoiNurses.length > 0 ? 1 : 0));
+      let routeNeed = Math.min(houkanRoutesD, maxRoutable)
+        - dayNurses.filter(s => getCode(g, s.id, d) === '訪看').length;
+      while(routeNeed > 0){
+        const candidates = dayNurses.filter(s => getCode(g, s.id, d) !== '訪看' && !s.noHoukan);
+        if(candidates.length === 0) break;
+        const onlyPool = candidates.filter(s => s.houkanOnly);
+        const pickFrom = onlyPool.length ? onlyPool : candidates;
+        const prefer = pickFrom.filter(s => getCode(g, s.id, d) === '日');
+        const chosen = pickRandom(prefer.length ? prefer : pickFrom);
+        setCode(g, chosen.id, d, '訪看');
+        routeNeed--;
+      }
+    }
+  }
+
+  // ---- オンコール担当: 勤務日のみ・翌日も勤務の日のみ・連続2日まで ----
+  {
+    const ocKey = shiftKey();
+    state.oncalls[ocKey] = {};
+    const oc = state.oncalls[ocKey];
+    const ocCount = {};
+    roster.forEach(s => { ocCount[s.id] = 0; });
+    for(let d = 1; d <= dim; d++){
+      if(!isOpenDay(fac, currentYm, d)) continue;
+      const cands = roster.filter(s =>
+        s.canOncall &&
+        DAY_CODES.includes(getCode(g, s.id, d)) &&
+        (d >= dim || isWorkCode(getCode(g, s.id, d + 1))) &&
+        !(oc[d - 1] === s.id && oc[d - 2] === s.id)
+      ).sort((a, b) => ocCount[a.id] - ocCount[b.id]);
+      if(cands.length > 0){
+        const minCnt = ocCount[cands[0].id];
+        const tied = cands.filter(s => ocCount[s.id] === minCnt);
+        const chosen = tied[Math.floor(Math.random() * tied.length)];
+        oc[d] = chosen.id;
+        ocCount[chosen.id]++;
+      }
+    }
+  }
+
+  // ---- 残りの空きマスを「休」に(看護職員のみ) ----
+  roster.forEach(s => {
+    for(let d = 1; d <= dim; d++){
+      if(cellEmpty(s, d)) setCode(g, s.id, d, '休');
+    }
+  });
+
+  markDirty();
+  renderShiftTable();
+  toast('看多機の訪問看護シフト案を作成しました(全体シフトで介護側とあわせて確認してください)');
+}
+
 /* ================= 画面描画 ================= */
 function renderFacSelect(){
   const sel = document.getElementById('facSelect');
@@ -2186,12 +2806,32 @@ function renderFacSelect(){
   }
 }
 
+// 拠点タイプに応じてviewModeの選択肢を切り替える(看多機のみ「かんたき/訪問看護/全体シフト」の3択)。
+// 選択肢の構成が変わった時だけ既定値にリセットする(同じ構成のまま呼ばれた時は現在の選択を維持する)
+function updateViewModeOptions(fac){
+  const sel = document.getElementById('viewMode');
+  const isKantaki = !!(fac && fac.type === 'kantaki');
+  const wantOptions = isKantaki
+    ? [['kaigo', 'かんたき'], ['nurse', '訪問看護'], ['all', '全体シフト']]
+    : [['all', '全体シフト'], ['ns', '訪問看護のみ']];
+  const curValues = Array.from(sel.options).map(o => o.value).join(',');
+  const wantValues = wantOptions.map(o => o[0]).join(',');
+  if(curValues !== wantValues){
+    sel.innerHTML = wantOptions.map(([v, label]) => `<option value="${v}">${escapeHtml(label)}</option>`).join('');
+    viewMode = isKantaki ? 'kaigo' : 'all';
+  }
+  sel.value = viewMode;
+}
+
 // シフト確定/シフト修正ボタン・バナー・自動作成ボタンの状態を、現在の拠点・月に合わせて更新する
 function updateConfirmUi(fac){
   const confirmed = fac ? isConfirmed() : false;
   document.getElementById('btnShiftConfirm').style.display = (fac && !confirmed) ? '' : 'none';
   document.getElementById('btnShiftUnconfirm').style.display = (fac && confirmed) ? '' : 'none';
   document.getElementById('confirmBanner').style.display = confirmed ? '' : 'none';
+  // 看多機の「全体シフト」は介護・看護それぞれの作成結果を確認するだけの表示専用ビューなので、自動作成ボタンは隠す
+  const hideGenerate = !!(fac && fac.type === 'kantaki' && viewMode === 'all');
+  document.getElementById('btnGenerate').style.display = hideGenerate ? 'none' : '';
   document.getElementById('btnGenerate').disabled = confirmed;
   document.getElementById('shiftTable').classList.toggle('confirmed', confirmed);
 }
@@ -2199,10 +2839,12 @@ function updateConfirmUi(fac){
 function renderShiftTable(){
   const table = document.getElementById('shiftTable');
   const fac = currentFacility();
-  const nsOnly = viewMode === 'ns'; // 訪問看護のみ表示(同じデータの看護職員だけを表示)
+  updateViewModeOptions(fac);
+  const nsOnly = viewMode === 'ns' || viewMode === 'nurse'; // 訪問看護のみ表示(同じデータの看護職員だけを表示)
+  const kaigoOnly = viewMode === 'kaigo'; // 看多機のかんたき(介護)のみ表示
   document.getElementById('ymLabel').textContent = ymLabel(currentYm);
   document.getElementById('printTitle').textContent =
-    (fac ? fac.name + ' ' : '') + ymLabel(currentYm) + ' 勤務表' + (nsOnly ? '(訪問看護)' : '');
+    (fac ? fac.name + ' ' : '') + ymLabel(currentYm) + ' 勤務表' + (nsOnly ? '(訪問看護)' : (kaigoOnly ? '(かんたき)' : ''));
   updateConfirmUi(fac);
 
   if(!fac){
@@ -2210,11 +2852,13 @@ function renderShiftTable(){
     return;
   }
   const rosterAll = facStaff();
-  const roster = nsOnly ? rosterAll.filter(isNurse) : rosterAll;
+  const roster = nsOnly ? rosterAll.filter(isNurse) : (kaigoOnly ? rosterAll.filter(s => !isNurse(s)) : rosterAll);
   if(roster.length === 0){
     table.innerHTML = nsOnly
       ? '<tr><td style="padding:20px;">この拠点には看護職員が登録されていません。</td></tr>'
-      : '<tr><td style="padding:20px;">「職員」タブから職員を登録すると、ここにシフト表が表示されます。</td></tr>';
+      : (kaigoOnly
+        ? '<tr><td style="padding:20px;">この拠点には介護職員が登録されていません。</td></tr>'
+        : '<tr><td style="padding:20px;">「職員」タブから職員を登録すると、ここにシフト表が表示されます。</td></tr>');
     return;
   }
 
@@ -2856,6 +3500,9 @@ function fillFacForm(f){
   document.getElementById('fcDayRoutes').value = f && f.dayRoutes != null ? f.dayRoutes : 1;
   document.getElementById('fcLateRoutes').value = f && f.lateRoutes != null ? f.lateRoutes : 1;
   document.getElementById('fcKibouDays').value = f && f.kibouDays != null ? f.kibouDays : 3;
+  // 看多機のみ: かんたき(介護)/訪問看護で休み希望の入力可能日数を別々に持つ(希望日数が違うことがあるため)
+  document.getElementById('fcKibouDaysKaigo').value = f && f.kibouDaysKaigo != null ? f.kibouDaysKaigo : 3;
+  document.getElementById('fcKibouDaysNurse').value = f && f.kibouDaysNurse != null ? f.kibouDaysNurse : 3;
   document.getElementById('fcKasanHoumon').checked = f ? !!f.kasanHoumon : false;
   document.getElementById('fcAvgUsersPrevYear').value = f && f.avgUsersPrevYear != null ? f.avgUsersPrevYear : 0;
   renderNumsByMonth('fcAnnualOff', f ? f.annualOff : null, 9);
@@ -2883,6 +3530,14 @@ function updateFacFormVisibility(){
   document.getElementById('fcShiftRoutesWrap').style.display = isThree ? '' : 'none';
   // 看多機・小多機は365日運営なので営業曜日の設定は訪問看護のみ
   document.getElementById('fcOpenWrap').style.display = taki ? 'none' : '';
+  // 看多機のみ: 休み希望の入力可能日数をかんたき/訪問看護で分け、グループ見出しを表示する
+  // (かんたき・訪問看護は別々に自動作成するため、希望休の上限日数が異なる場合があるための対応)
+  document.getElementById('fcGroupKaigoHeader').style.display = isKantaki ? '' : 'none';
+  document.getElementById('fcGroupNurseHeader').style.display = isKantaki ? '' : 'none';
+  document.getElementById('fcGroupCommonHeader').style.display = isKantaki ? '' : 'none';
+  document.getElementById('fcKibouDaysKaigoWrap').style.display = isKantaki ? '' : 'none';
+  document.getElementById('fcKibouDaysNurseWrap').style.display = isKantaki ? '' : 'none';
+  document.getElementById('fcKibouDaysWrap').style.display = isKantaki ? 'none' : '';
 }
 
 /* ---- 勤怠画面 ---- */
@@ -3392,9 +4047,10 @@ async function orgImportOffice(){
 function exportCsv(){
   const fac = currentFacility();
   if(!fac){ toast('拠点がありません'); return; }
-  const nsOnly = viewMode === 'ns';
+  const nsOnly = viewMode === 'ns' || viewMode === 'nurse';
+  const kaigoOnly = viewMode === 'kaigo';
   const rosterAll = facStaff();
-  const roster = nsOnly ? rosterAll.filter(isNurse) : rosterAll;
+  const roster = nsOnly ? rosterAll.filter(isNurse) : (kaigoOnly ? rosterAll.filter(s => !isNurse(s)) : rosterAll);
   const dim = daysInMonth(currentYm);
   const g = grid();
   const ocMap = state.oncalls[shiftKey()] || {};
@@ -3436,7 +4092,7 @@ function exportCsv(){
   const blob = new Blob(['﻿' + csv], { type:'text/csv' }); // BOM付きUTF-8(Excel対応)
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
-  a.download = `シフト表_${fac.name}${nsOnly ? '_訪問看護' : ''}_${currentYm}.csv`;
+  a.download = `シフト表_${fac.name}${nsOnly ? '_訪問看護' : (kaigoOnly ? '_かんたき' : '')}_${currentYm}.csv`;
   a.click();
   URL.revokeObjectURL(a.href);
 }
@@ -3970,7 +4626,14 @@ function bindEvents(){
   // シフト表操作
   document.getElementById('btnGenerate').addEventListener('click', () => {
     if(isConfirmed()){ toast('この月はシフト確定済みです。修正するには「シフト修正」を押してください'); return; }
-    if(confirm('シフトを自動作成します。希望休・有給(入力欄またはマスで入れたもの)は残し、それ以外は作り直します。よろしいですか?')){
+    const fac = currentFacility();
+    if(!confirm('シフトを自動作成します。希望休・有給(入力欄またはマスで入れたもの)は残し、それ以外は作り直します。よろしいですか?')) return;
+    // 看多機はかんたき(介護)/訪問看護をそれぞれ独立して自動作成する。全体シフトは確認専用のためボタン自体が非表示(念のためのガード)
+    if(fac && fac.type === 'kantaki'){
+      if(viewMode === 'kaigo') generateKaigoShifts(fac);
+      else if(viewMode === 'nurse') generateNurseShifts(fac);
+      else toast('「かんたき」または「訪問看護」を選んでから自動作成してください');
+    }else{
       generateShifts();
     }
   });
@@ -4149,6 +4812,8 @@ function bindEvents(){
       dayRoutes: Math.max(0, +document.getElementById('fcDayRoutes').value || 0),
       lateRoutes: Math.max(0, +document.getElementById('fcLateRoutes').value || 0),
       kibouDays: Math.max(0, +document.getElementById('fcKibouDays').value || 0),
+      kibouDaysKaigo: Math.max(0, +document.getElementById('fcKibouDaysKaigo').value || 0),
+      kibouDaysNurse: Math.max(0, +document.getElementById('fcKibouDaysNurse').value || 0),
       kasanHoumon: document.getElementById('fcKasanHoumon').checked,
       avgUsersPrevYear: Math.max(0, +document.getElementById('fcAvgUsersPrevYear').value || 0),
       annualOff: readNumsByMonth('fcAnnualOff'),

@@ -233,9 +233,22 @@ function ymLabel(ym){ return (+ym.slice(0,4)) + '年' + (+ym.slice(4,6)) + '月'
 function currentFacility(){
   return info.facilities.find(f => f.id === document.getElementById('selFac').value) || null;
 }
+function currentStaff(){
+  return info.staff.find(s => s.id === document.getElementById('selStaff').value) || null;
+}
+// 休み希望の上限日数。看多機はかんたき(介護)/訪問看護で職種により別々の上限を使う
+// (かんたき・訪問看護は別々に自動作成するため、希望休の日数が違うことがある)
 function maxDays(){
   const f = currentFacility();
-  return f && f.kibouDays != null ? f.kibouDays : 3;
+  if(!f) return 3;
+  if(f.type === 'kantaki'){
+    const st = currentStaff();
+    const isNurseRole = st && (st.role === 'ns_full' || st.role === 'ns_part');
+    return isNurseRole
+      ? (f.kibouDaysNurse != null ? f.kibouDaysNurse : 3)
+      : (f.kibouDaysKaigo != null ? f.kibouDaysKaigo : 3);
+  }
+  return f.kibouDays != null ? f.kibouDays : 3;
 }
 
 /* ---- 描画 ---- */
