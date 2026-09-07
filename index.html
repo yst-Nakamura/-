@@ -2276,12 +2276,13 @@ function pct(n, d) { return d ? Math.round(n / d * 100) : 0; }
 
 function getLevel(baseCode) {
   if (!baseCode) return null;
-  // 全角・半角どちらの数字にも対応（看護小規模１２・日割 / 看護小規模12・日割 等）
-  if (baseCode.includes('１１') || baseCode.includes('11')) return 1;
-  if (baseCode.includes('１２') || baseCode.includes('12')) return 2;
-  if (baseCode.includes('１３') || baseCode.includes('13')) return 3;
-  if (baseCode.includes('１４') || baseCode.includes('14')) return 4;
-  if (baseCode.includes('１５') || baseCode.includes('15')) return 5;
+  // 全角数字を半角へ正規化（看護小規模１２・日割 / 看護小規模12・日割 等）
+  const s = baseCode.replace(/[０-９]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0));
+  // 「看護小規模」「小規模多機能」直後の2桁を解析
+  //   1桁目: 1=通常, 2=同一建物   2桁目: 介護度(1〜5)
+  //   例) 看護小規模14 → 要介護4 / 看護小規模25 → 要介護5（同一建物）
+  const m = s.match(/(?:看護小規模|小規模多機能)\s*([12])([1-5])/);
+  if (m) return parseInt(m[2], 10);
   return null;
 }
 
@@ -3638,6 +3639,13 @@ function renderAddonChecklist(users) {
 // 修正ログモーダル
 // ============================================================
 const CHANGELOG_DATA = [
+  {
+    version: 'v1.6.20', date: '2026-09-07', label: 'バグ修正',
+    labelColor: '#9b2c2c', labelBg: '#fed7d7',
+    items: [
+      { tag: 'バグ修正', tagColor: '#9b2c2c', tagBg: '#fed7d7', text: '同一建物の基本コード（看護小規模２１〜２５）の介護度が判定できず「要介護?」と表示され、平均介護度の集計からも除外されていたバグを修正。getLevel()を1桁目=通常/同一建物、2桁目=介護度として解析する方式に変更' },
+    ]
+  },
   {
     version: 'v1.6.19', date: '2026-08-26', label: 'バグ修正',
     labelColor: '#9b2c2c', labelBg: '#fed7d7',
