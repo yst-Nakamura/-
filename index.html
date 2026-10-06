@@ -625,15 +625,25 @@ function normalizeAddonName(name) {
 }
 
 // 体制加算キーワード（全利用者に算定されるべき加算。一部のみの場合は請求事故リスク）
-const TAISEI_ADDON_KEYWORDS = [
-  '看護体制強化加算',
-  '処遇改善加算',
-  '訪問体制強化加算',
-  'サービス提供体制強化加算',
-  '総合マネジメント体制強化加算',
-  '生産性向上推進体制加算',
-  '科学的介護推進体制加算',
+// 体制加算（届出をしたら原則として全員に算定するもの）。
+// kw は RM の実際の加算名に含まれる文字列。RM は「総合マネジメント加算Ⅰ」「サービス提供体制加算Ⅲ」のように
+// 告示の正式名称（〜体制強化加算）を省略するので、短い文字列で探す。
+// yobo: 要支援（介護予防）にも同じ加算があるか。無いもの（訪問体制強化加算）は要支援の利用者を対象外にする
+const TAISEI_ADDONS = [
+  { kw: '看護体制強化加算',         label: '看護体制強化加算',         yobo: false },
+  { kw: '処遇改善加算',             label: '処遇改善加算',             yobo: true  },
+  { kw: '訪問体制強化加算',         label: '訪問体制強化加算',         yobo: false },
+  { kw: 'サービス提供体制',         label: 'サービス提供体制強化加算', yobo: true  },
+  { kw: '総合マネジメント',         label: '総合マネジメント体制強化加算', yobo: true  },
+  { kw: '生産性向上推進体制加算',   label: '生産性向上推進体制加算',   yobo: true  },
+  { kw: '科学的介護推進体制加算',   label: '科学的介護推進体制加算',   yobo: true  },
 ];
+const TAISEI_ADDON_KEYWORDS = TAISEI_ADDONS.map(a => a.kw);
+
+// 要支援（介護予防）の利用者か。小多機は svcType 33、基本コードは「予小規模多機能…」
+function isYoboUser(u) {
+  return u.userSvcType === '33' || u.userSvcType === 'shien' || (typeof u.baseCode === 'string' && u.baseCode.startsWith('予'));
+}
 
 // 体制加算の算定漏れ・過剰算定を検出して警告リストを返す
 function getTaiseiAlerts(usersObj) {
@@ -641,22 +651,48 @@ function getTaiseiAlerts(usersObj) {
   const total = users.length;
   if (total === 0) return [];
   const alerts = [];
-  for (const kw of TAISEI_ADDON_KEYWORDS) {
-    const cnt = users.filter(u => (u.items || []).some(i => i.name && i.name.includes(kw))).length;
-    if (cnt > 0 && cnt < total) alerts.push(`${kw}（${cnt}/${total}名）`);
+  const hasYobo = users.some(isYoboUser);
+  for (const a of TAISEI_ADDONS) {
+    // 予防に無い加算は、要支援の利用者を分母に入れない
+    const targets = a.yobo ? users : users.filter(u => !isYoboUser(u));
+    const has = u => (u.items || []).some(i => i.name && i.name.includes(a.kw));
+    const cnt = targets.filter(has).length;
+    if (cnt === 0 || cnt === targets.length) continue;
+    // 要介護と要支援が混在する事業所では、誰が足りないかを添える
+    let who = '';
+    if (hasYobo) {
+      const lack = targets.filter(u => !has(u));
+      const nYobo = lack.filter(isYoboUser).length, nKaigo = lack.length - nYobo;
+      who = nKaigo && nYobo ? `・要介護${nKaigo}名と要支援${nYobo}名に未算定`
+          : nYobo ? `・要支援の${nYobo}名に未算定` : `・要介護の${nKaigo}名に未算定`;
+    }
+    alerts.push(`${a.label}（${cnt}/${targets.length}名${who}）`);
   }
   return alerts;
 }
 
 // 処遇改善加算の重複算定チェック（同月・同事業所に複数種は請求ミスの可能性）
+// 処遇改善加算の区分（Ⅰ１・Ⅱ２など）を取り出す。
+// 小多機は要介護と要支援の両方を受け入れるため、同じ区分でも
+// 「小規模多機能型処遇改善加算Ⅱ２」と要支援用の「予小規模多機能処遇改善加算Ⅱ２」が混在する。
+// サービス名や「予」の違いは区分に関係ないので、加算名ではなく区分で比べる
+function chuiyoKubun(name) {
+  if (!name || name.includes('特定処遇改善')) return null; // 旧制度の特定処遇改善加算は別物
+  const i = name.indexOf('処遇改善加算');
+  if (i < 0) return null;
+  return name.slice(i + '処遇改善加算'.length).trim()
+    .replace(/[0-9]/g, c => String.fromCharCode(c.charCodeAt(0) + 0xFEE0)); // 数字は全角にそろえる
+}
+
 function getChuiyoKaizenDupes(usersObj) {
-  const found = new Set();
+  const kubuns = new Set();
   Object.values(usersObj || {}).forEach(u => {
     (u.items || []).forEach(i => {
-      if (i.name && i.name.includes('処遇改善加算')) found.add(normalizeAddonName(i.name));
+      const k = chuiyoKubun(i.name);
+      if (k !== null) kubuns.add(k);
     });
   });
-  return found.size >= 2 ? [...found].sort() : [];
+  return kubuns.size >= 2 ? [...kubuns].sort().map(k => '処遇改善加算' + k) : [];
 }
 
 // ============================================================
@@ -3938,6 +3974,15 @@ function renderAddonChecklist(users) {
 // 修正ログモーダル
 // ============================================================
 const CHANGELOG_DATA = [
+  {
+    version: 'v1.6.29', date: '2026-10-06', label: 'バグ修正',
+    labelColor: '#9b2c2c', labelBg: '#fed7d7',
+    items: [
+      { tag: 'バグ修正', tagColor: '#9b2c2c', tagBg: '#fed7d7', text: '小多機で「処遇改善加算 重複請求の疑い」が誤って出ていた問題を修正。小多機は要介護と要支援の両方を受け入れるため、同じ区分でも「小規模多機能型処遇改善加算Ⅱ２」と要支援用の「予小規模多機能処遇改善加算Ⅱ２」が混在する。加算名ではなく区分（Ⅰ１・Ⅱ２など）で比べるようにした' },
+      { tag: 'バグ修正', tagColor: '#9b2c2c', tagBg: '#fed7d7', text: '小多機で「体制加算 算定不一致：訪問体制強化加算」が誤って出ていた問題を修正。要支援（介護予防）には訪問体制強化加算が無いため、要支援の利用者を対象外にした。要介護と要支援が混在する事業所では「要支援の3名に未算定」のように誰が足りないかも表示する' },
+      { tag: 'バグ修正', tagColor: '#9b2c2c', tagBg: '#fed7d7', text: '体制加算の不一致チェックのうち「総合マネジメント体制強化加算」「サービス提供体制強化加算」が、RM の加算名（「総合マネジメント加算Ⅰ」「サービス提供体制加算Ⅲ」など）と一致せず一度も検出されていなかった問題を修正。今後はこの2つの不一致も警告される' },
+    ]
+  },
   {
     version: 'v1.6.28', date: '2026-10-06', label: '改善',
     labelColor: '#2b6cb0', labelBg: '#bee3f8',
