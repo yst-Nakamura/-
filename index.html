@@ -903,8 +903,11 @@ async function gasPost(payload) {
   formData.append('data', JSON.stringify(payload));
   const res = await fetch(getGasUrl(), { method: 'POST', body: formData });
   const result = await res.json();
-  // D1へ非同期バックアップ（失敗しても無視）。新規事業所のIDはGASが採番するため結果も渡す
-  d1KangoSync(payload, result).catch(() => {});
+  // D1へ非同期バックアップ（失敗しても無視）。新規事業所のIDはGASが採番するため結果も渡す。
+  // GAS が保存を断ったもの（古い版からの保存など）はバックアップにも送らない
+  if (result && !result.error && result.success !== false) {
+    d1KangoSync(payload, result).catch(() => {});
+  }
   return result;
 }
 
@@ -2547,14 +2550,26 @@ function _ukeCodeToAddon(code) {
 async function saveMonthlyDataToGas(ym, label, usersArr) {
   if (!hasGasUrl()) return;
   try {
-    await gasPost({
+    const res = await gasPost({
       action: 'saveMonthlyData',
       facilityId: currentFacilityId,
       ym, label,
-      users: usersArr
+      users: usersArr,
+      // GAS はこれ（または利用者の _pv）が無い保存を「古い版のダッシュボード」として断る
+      parserVersion: PARSER_VERSION,
     });
+    if (!res || res.success === false || res.error) {
+      alert(`${ymLabel(ym)}のデータを本体（GAS）に保存できませんでした。\n\n`
+        + ((res && (res.message || res.error)) || '理由が返ってきませんでした。')
+        + '\n\n画面を再読み込み（Ctrl+F5）してから、もう一度CSVを取り込んでください。');
+    }
     renderDashboard();
-  } catch(e) { console.error('GAS保存エラー:', e); }
+  } catch(e) {
+    // GAS は保存を終えたあと、結果を渡す段階で失敗することがあるため「失敗した」とは言い切れない
+    console.error('GAS保存エラー:', e);
+    alert(`${ymLabel(ym)}のデータを本体（GAS）に保存できたか確認できませんでした（通信エラー）。\n\n`
+      + '少し待ってから画面を再読み込みし、月の一覧に反映されていなければ、もう一度CSVを取り込んでください。');
+  }
 }
 
 // ============================================================
@@ -3974,6 +3989,14 @@ function renderAddonChecklist(users) {
 // 修正ログモーダル
 // ============================================================
 const CHANGELOG_DATA = [
+  {
+    version: 'v1.6.30', date: '2026-10-06', label: '改善',
+    labelColor: '#2b6cb0', labelBg: '#bee3f8',
+    items: [
+      { tag: '改善', tagColor: '#2b6cb0', tagBg: '#bee3f8', text: '古い版のダッシュボード（古いブックマークや PC に残った古い HTML）から CSV を取り込むと、月フィルタのバグや加算の重複チェックが無いまま本体のデータを上書きしていた問題への対策。GAS 側で古い版からの保存を断れるよう、保存時に取込版数を送るようにした（GAS の更新が必要）' },
+      { tag: '改善', tagColor: '#2b6cb0', tagBg: '#bee3f8', text: '本体（GAS）への保存が断られたり失敗したりしたときに、画面にはっきり表示するようにした（今までは表示されず、保存できたように見えていた）。断られたデータはバックアップにも送らない' },
+    ]
+  },
   {
     version: 'v1.6.29', date: '2026-10-06', label: 'バグ修正',
     labelColor: '#9b2c2c', labelBg: '#fed7d7',
