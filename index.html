@@ -674,7 +674,12 @@ function buildFacAlerts(usersObj, opts) {
   }
 
   // kango固有チェック（cur1ok/cur2ok が渡された場合のみ）
-  if (opts.cur1ok !== undefined && !opts.isStale) {
+  // 前3ヶ月の取り込み漏れ（加算判定ができない）
+  if (opts.gapMonths && opts.gapMonths.length > 0 && !opts.isStale) {
+    alerts.push({ level:'warn', icon:'🔶', title:'前3ヶ月のデータ不足',
+      detail: opts.gapMonths.map(ymLabel).join('・') + ' のCSVが未取込のため、看護体制強化加算を判定できません' });
+  }
+  if (opts.cur1ok !== undefined && !opts.isStale && !(opts.gapMonths && opts.gapMonths.length > 0)) {
     const arr = Object.values(usersObj);
     const isI  = arr.some(u => (u.items||[]).some(i => i.name && i.name.includes('看護体制強化加算Ⅰ')));
     const isII = arr.some(u => (u.items||[]).some(i => i.name && i.name.includes('看護体制強化加算Ⅱ')));
@@ -841,57 +846,83 @@ async function gasPost(payload) {
   formData.append('data', JSON.stringify(payload));
   const res = await fetch(getGasUrl(), { method: 'POST', body: formData });
   const result = await res.json();
-  // D1へ非同期バックアップ（失敗しても無視）
-  d1KangoSync(payload).catch(() => {});
+  // D1へ非同期バックアップ（失敗しても無視）。新規事業所のIDはGASが採番するため結果も渡す
+  d1KangoSync(payload, result).catch(() => {});
   return result;
 }
 
-async function d1KangoSync(payload) {
+// action 名は GAS（kangosmall_gas.js の doPost）と必ず一致させること。
+// 以前は名前が食い違っていて、事業所追加・ターミナル・医師指示割合が D1 に届いていなかった。
+// ※ saveServiceType / deleteFacility は Worker 側に受け口が無いため未対応
+async function d1KangoSync(payload, result) {
   const { action } = payload;
-  let endpoint, body;
-  switch (action) {
-    case 'createFacility':
-    case 'renameFacility':
-      endpoint = '/api/kango/facility';
-      body = { id: String(payload.facilityId || payload.id), name: payload.name };
-      break;
-    case 'saveMonthlyData':
-      endpoint = '/api/kango/monthly';
-      body = { facilityId: payload.facilityId, ym: payload.ym, users: payload.users };
-      break;
-    case 'deleteMonth':
-      endpoint = '/api/kango/monthly/delete';
-      body = { facilityId: payload.facilityId, ym: payload.ym };
-      break;
-    case 'saveTerminalEntry':
-      endpoint = '/api/kango/terminal';
-      body = { facilityId: payload.facilityId, ym: payload.ym, label: payload.label };
-      break;
-    case 'deleteTerminalEntry':
-      endpoint = '/api/kango/terminal/delete';
-      body = { facilityId: payload.facilityId, ym: payload.ym };
-      break;
-    case 'saveIshaValue':
-      endpoint = '/api/kango/isha';
-      body = { facilityId: payload.facilityId, ym: payload.ym, value: payload.value };
-      break;
-    case 'saveKatsudan':
-      endpoint = '/api/kango/katsudan';
-      body = { facilityId: payload.facilityId, registered: payload.registered, staff: payload.staff };
-      break;
-    default:
-      return; // 読み取り系はスキップ
-  }
-  await fetch(KANGO_WORKER_URL + endpoint, {
+  const post = (endpoint, body) => fetch(KANGO_WORKER_URL + endpoint, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'X-API-Key': KANGO_D1_KEY },
     body: JSON.stringify(body),
   });
+  switch (action) {
+    case 'addFacility': {
+      const id = result && result.id;
+      if (!id) return; // GAS 側で作成に失敗した
+      return post('/api/kango/facility', { id: String(id), name: payload.name });
+    }
+    case 'renameFacility':
+      return post('/api/kango/facility', { id: String(payload.facilityId), name: payload.name });
+    case 'saveMonthlyData': {
+      // Worker は Object.entries(users) のキーを利用者IDとして保存する。配列のまま送ると
+      // "0","1","2"… が利用者IDになってしまうため、利用者IDをキーにした形で送る
+      const arr = Array.isArray(payload.users) ? payload.users : Object.values(payload.users || {});
+      const users = {};
+      arr.forEach(u => { if (u && u.userId) users[String(u.userId)] = u; });
+      return post('/api/kango/monthly', { facilityId: payload.facilityId, ym: payload.ym, users });
+    }
+    case 'deleteMonth':
+      return post('/api/kango/monthly/delete', { facilityId: payload.facilityId, ym: payload.ym });
+    case 'saveTerminal': {
+      // GAS は一覧ごと置き換える。Worker は1件ずつなので、全件を書き込み、外したものは削除する
+      const reqs = (payload.entries || []).map(t =>
+        post('/api/kango/terminal', { facilityId: payload.facilityId, ym: t.ym, label: t.label }));
+      (payload._d1Removed || []).forEach(ym =>
+        reqs.push(post('/api/kango/terminal/delete', { facilityId: payload.facilityId, ym })));
+      return Promise.all(reqs);
+    }
+    case 'saveIsha':
+      return post('/api/kango/isha', { facilityId: payload.facilityId, ym: payload.ym, value: payload.value === '' ? null : payload.value });
+    case 'saveKatsudan': {
+      // GAS へは職員名を JSON 文字列 staffJson で送っているので、Worker 用に配列へ戻す
+      let staff = [];
+      try { staff = JSON.parse(payload.staffJson || '[]'); } catch(e) {}
+      return post('/api/kango/katsudan', { facilityId: payload.facilityId, registered: payload.registered, staff });
+    }
+    default:
+      return; // saveServiceType / deleteFacility は Worker 未対応
+  }
 }
 
 // ============================================================
 // データ読込・変換
 // ============================================================
+
+// スプレッドシートの値を YYYYMM に正規化する。
+// Google スプレッドシートは「2026年7月」「2026-07」などを日付に自動変換し、
+// 世界標準時の "2026-06-30T15:00:00.000Z" として返してくる（日本時間では7月1日）。
+// 数字だけ抜き出すと1ヶ月前にずれるため、日付形式は日本時間に直してから年月を取る。
+function toYm(v) {
+  const s = String(v == null ? '' : v);
+  if (/^\d{4}-\d{2}-\d{2}T/.test(s)) {
+    const d = new Date(s);
+    if (!isNaN(d)) {
+      const j = new Date(d.getTime() + 9 * 3600 * 1000);
+      return `${j.getUTCFullYear()}${String(j.getUTCMonth() + 1).padStart(2, '0')}`;
+    }
+  }
+  return s.replace(/[^0-9]/g, '').slice(0, 6);
+}
+
+// D1（バックアップ）から読み込んで表示しているか。true の間は保存データの一部
+// （金額・区分・取込版数）が欠けているため、それに依存する表示を抑える
+let loadedFromD1 = false;
 
 // GASから返ってきた raw データを facilityData / allFacilities に反映する共通処理
 function _applyRawData(raw) {
@@ -921,7 +952,7 @@ function _applyRawData(raw) {
   (raw.monthlyData || []).forEach(row => {
     const facId = String(row.facilityId);
     if (!newData[facId]) newData[facId] = { monthData: {}, terminalEntries: [], manualIsha: {}, katsudan: { registered: null, staff: [] }, iryoMonthData: {} };
-    const ym = String(row.ym || '').replace(/[^0-9]/g, '').slice(0, 6);
+    const ym = toYm(row.ym);
     if (ym.length !== 6) return;
     let users = {};
     // 保存済みデータにも parseCSV と同じ除外ルールを適用する。
@@ -958,13 +989,16 @@ function _applyRawData(raw) {
   (raw.terminalEntries || []).forEach(row => {
     const facId = String(row.facilityId);
     if (!newData[facId]) newData[facId] = { monthData: {}, terminalEntries: [], manualIsha: {}, katsudan: { registered: null, staff: [] }, iryoMonthData: {} };
-    newData[facId].terminalEntries.push({ ym: String(row.ym), label: String(row.label) });
+    // ラベルはスプレッドシートが日付に変換して壊すため、保存値を使わず年月から作り直す
+    const tYm = toYm(row.ym);
+    if (tYm.length !== 6) return;
+    newData[facId].terminalEntries.push({ ym: tYm, label: ymLabel(tYm) });
   });
   (raw.ishaValues || []).forEach(row => {
     const facId = String(row.facilityId);
     if (!newData[facId]) newData[facId] = { monthData: {}, terminalEntries: [], manualIsha: {}, katsudan: { registered: null, staff: [] }, iryoMonthData: {} };
     const _parsed = parseFloat(row.value);
-    newData[facId].manualIsha[String(row.ym)] = isNaN(_parsed) ? '' : _parsed;
+    newData[facId].manualIsha[toYm(row.ym)] = isNaN(_parsed) ? '' : _parsed;
   });
   (raw.katsudanData || []).forEach(row => {
     const facId = String(row.facilityId);
@@ -1011,7 +1045,7 @@ async function loadFromD1() {
         try { const u = JSON.parse(cur.usersJson)[0]; if (u) acc._map[key]._users.push(u); } catch(e) {}
         return acc;
       }, []),
-      terminalEntries: d.terminalEntries.map(t => ({ facilityId: t.facility_id, ym: t.ym, label: t.label || '' })),
+      terminalEntries: d.terminalEntries.map(t => ({ facilityId: t.facility_id, ym: t.ym, label: ymLabel(toYm(t.ym)) })),
       ishaValues: d.ishaValues.map(v => ({ facilityId: v.facility_id, ym: v.ym, value: v.value })),
       katsudanData: d.katsudan.map(k => ({ facilityId: k.facility_id, registered: k.registered === 1 ? true : k.registered === 0 ? false : null, staffJson: k.staff_json })),
     };
@@ -1022,11 +1056,23 @@ async function loadFromD1() {
     });
     delete raw.monthlyData._map;
     _applyRawData(raw);
+    loadedFromD1 = true;
+    showD1Banner();
     return true;
   } catch(e) {
     console.warn('D1ロードエラー（無視）:', e);
     return false;
   }
+}
+
+// D1（バックアップ）表示中であることを画面上部に出す
+function showD1Banner() {
+  if (document.getElementById('d1-banner')) return;
+  const b = document.createElement('div');
+  b.id = 'd1-banner';
+  b.style.cssText = 'position:sticky;top:0;z-index:500;background:#fffaf0;border-bottom:2px solid #dd6b20;color:#7b341e;font-size:13px;padding:8px 16px;line-height:1.6';
+  b.innerHTML = '⚠ <strong>バックアップから表示しています。</strong>GAS（Googleスプレッドシート）に接続できませんでした。金額・小多機の要介護/要支援の区分・事業所の種別は正しく表示されず、加算判定も正確でない可能性があります。<strong>請求の判断には使わず</strong>、時間をおいて再読み込みしてください。';
+  document.body.insertBefore(b, document.body.firstChild);
 }
 
 async function loadAllData() {
@@ -1406,7 +1452,7 @@ function renderDashboard() {
     const ymCellKango = isStaleKango
       ? `<td style="font-size:12px;font-weight:bold;color:#c53030;background:#fff5f5;border-left:3px solid #fc8181;padding-left:8px" title="前月データ未連携">⚠ ${ymLabel(latestYm)}${reimpKango}</td>`
       : `<td style="font-size:12px;color:#718096">${ymLabel(latestYm)}${reimpKango}</td>`;
-    const facAlerts = buildFacAlerts(ctx.monthData[latestYm].users, { cur1ok, cur2ok, isStale: isStaleKango });
+    const facAlerts = buildFacAlerts(ctx.monthData[latestYm].users, { cur1ok, cur2ok, isStale: isStaleKango, gapMonths: curThreeM ? curThreeM.gapMonths : [] });
     return { f, row: `<tr${isStaleKango ? ' style="background:#fffafa"' : ''}>
       ${_facNameCell(f.id, f.name, facAlerts)}
       <td>${_svcTypeBadge(f.id)}</td>
@@ -1652,6 +1698,7 @@ function monthParserVersion(monthEntry) {
 
 // 指定月が「要再取込」か。直近3ヶ月以外は対象外
 function needsReimport(ctx, ym) {
+  if (loadedFromD1) return false; // D1 には取込版数が残らないため判定できない
   if (!ctx || !ctx.monthData || !ctx.monthData[ym]) return false;
   const now = new Date();
   const cur = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}`;
@@ -1668,6 +1715,11 @@ function hasReimportMonth(ctx) {
 
 function evalReqs(threeM, termValid, ishaVal, katsudanRegistered) {
   if (!threeM) return { r1ok: false, r2ok: false, noData: true };
+  // 前3ヶ月に取り込み漏れの月があると割合が正しく出せない。残りの月だけで
+  // 「可」と出すと要件未達のまま請求するおそれがあるため、可・不可とも要確認にする
+  if (threeM.gapMonths && threeM.gapMonths.length > 0) {
+    return { r1ok: null, r2ok: null, gap: true };
+  }
   const ishaPct = parseFloat(ishaVal);
   const ishaEntered = !isNaN(ishaPct);
   const ishaOk = ishaEntered && ishaPct >= 80;
@@ -2327,15 +2379,16 @@ function addTerminal() {
 function removeTerminal(ym) {
   const ctx = getFacCtx(currentFacilityId);
   ctx.terminalEntries = ctx.terminalEntries.filter(t => t.ym !== ym);
-  saveTerminalToGas();
+  saveTerminalToGas([ym]);
   renderFacilitySidebar();
   renderFacilityAll();
 }
-async function saveTerminalToGas() {
+async function saveTerminalToGas(removedYms) {
   if (!hasGasUrl() || !currentFacilityId) return;
   const ctx = getFacCtx(currentFacilityId);
   try {
-    await gasPost({ action: 'saveTerminal', facilityId: currentFacilityId, entries: ctx.terminalEntries });
+    // _d1Removed は D1 同期用（GAS 側は使わない）
+    await gasPost({ action: 'saveTerminal', facilityId: currentFacilityId, entries: ctx.terminalEntries, _d1Removed: removedYms || [] });
     renderDashboard();
   } catch(e) { console.error('GAS保存エラー:', e); }
 }
@@ -2393,9 +2446,13 @@ function calcThreeMonths(calcYm, facId) {
     });
   });
   const total = allUserIds.size;
+  // その事業所の最新取込月より前なのにデータが無い月 = 取り込み漏れ。
+  // 最新月より後の月（再来月予測で使う未来の月）はまだ存在しないのが正常なので含めない。
+  const latestYm = Object.keys(md).sort().pop() || '';
   return {
     months: available,
     missingMonths: prev3.filter(ym => !md[ym]),
+    gapMonths: prev3.filter(ym => !md[ym] && ym < latestYm),
     total,
     kinkyu:    { count: kinkyuIds.size, pct: pct(kinkyuIds.size, total) },
     tokubetsu: { count: tokIds.size,    pct: pct(tokIds.size, total) },
@@ -2940,11 +2997,16 @@ function renderScenarioPanel(p, ishaVal) {
   const tokGap      = threeM ? calcGap(tokCount, total, 20)    : null;
   const termOk      = terminalValid.length > 0;
   const katsudanReg = ctx?.katsudan?.registered; // null=未入力, true=届出済, false=未届出
-  const req2ok = !isNaN(ishaPct) && ishaOk && kinkyuGap?.met && tokGap?.met;
-  const req2ng = (!isNaN(ishaPct) && !ishaOk) || (kinkyuGap && !kinkyuGap.met) || (tokGap && !tokGap.met);
+  let req2ok = !isNaN(ishaPct) && ishaOk && kinkyuGap?.met && tokGap?.met;
+  let req2ng = (!isNaN(ishaPct) && !ishaOk) || (kinkyuGap && !kinkyuGap.met) || (tokGap && !tokGap.met);
+  // 取り込み漏れの月がある場合は可・不可とも出さず要確認にする（evalReqs と同じ扱い）
+  const gapMonths = threeM ? (threeM.gapMonths || []) : [];
+  const hasGap = gapMonths.length > 0;
+  if (hasGap) { req2ok = false; req2ng = false; }
   // 加算Ⅰ: req2ok + エ(ターミナル) + オ(喀痰吸引届出)
-  const req1ok = req2ok && termOk && katsudanReg === true;
-  const req1ng = req2ng || !termOk || katsudanReg === false;
+  let req1ok = req2ok && termOk && katsudanReg === true;
+  let req1ng = req2ng || !termOk || katsudanReg === false;
+  if (hasGap) { req1ok = false; req1ng = false; }
   const stColor = (ok, ng) => ok ? '#276749' : ng ? '#c53030' : '#975a16';
   const stLabel = (ok, ng) => ok ? '✓ 充足' : ng ? '✗ 不足' : '△ 要確認';
   const borderColor = tag === 'next' ? '#3182ce' : tag === 'future' ? '#d69e2e' : '#a0aec0';
@@ -2976,7 +3038,9 @@ function renderScenarioPanel(p, ishaVal) {
       <div class="grade-badge"><div class="gb-label">加算Ⅱ</div><div class="gb-status" style="color:${stColor(req2ok,req2ng)}">${stLabel(req2ok,req2ng)}</div></div>
     </div>
     ${ishaRow}${kinkyuRow}${tokRow}${termRow}
-    ${missing.length>0?`<div style="font-size:10px;color:#a0aec0;margin-top:5px">※未読込: ${missing.map(m=>ymLabel(m)).join('・')}</div>`:''}
+    ${hasGap
+      ? `<div style="font-size:11px;color:#9c4221;background:#fffaf0;border:1px solid #f6ad55;border-radius:4px;padding:5px 8px;margin-top:6px;line-height:1.5">⚠ ${gapMonths.map(m=>ymLabel(m)).join('・')} のCSVが未取込のため判定できません。取り込むと判定されます。</div>`
+      : missing.length>0?`<div style="font-size:10px;color:#a0aec0;margin-top:5px">※未読込: ${missing.map(m=>ymLabel(m)).join('・')}</div>`:''}
   </div>`;
 }
 
@@ -3714,6 +3778,16 @@ function renderAddonChecklist(users) {
 // 修正ログモーダル
 // ============================================================
 const CHANGELOG_DATA = [
+  {
+    version: 'v1.6.25', date: '2026-10-06', label: 'バグ修正',
+    labelColor: '#9b2c2c', labelBg: '#fed7d7',
+    items: [
+      { tag: 'バグ修正', tagColor: '#9b2c2c', tagBg: '#fed7d7', text: '前3ヶ月のうち取り込み漏れの月があっても、残りの月だけで看護体制強化加算を「可」と判定していた問題を修正。欠けている月がある場合は「要確認」とし、一覧に「前3ヶ月のデータ不足」の警告、詳細画面にどの月が足りないかを表示する（要件未達のまま請求するのを防ぐ）' },
+      { tag: 'バグ修正', tagColor: '#9b2c2c', tagBg: '#fed7d7', text: 'ターミナルケア記録が「2026-06-30T15:00:00.000Z」のように表示され、7月の記録が6月に見えていた問題を修正（スプレッドシートの日付自動変換が原因）。年月から表示を作り直すようにした' },
+      { tag: 'バグ修正', tagColor: '#9b2c2c', tagBg: '#fed7d7', text: 'D1バックアップへの送信名がGAS側と食い違い、事業所追加・ターミナル・医師指示割合が一度もバックアップされていなかった問題を修正。喀痰吸引の職員名、月次データの利用者ID（配列の番号で保存されていた）も正しく送るようにした' },
+      { tag: '改善', tagColor: '#2b6cb0', tagBg: '#bee3f8', text: 'GAS障害時にバックアップ（D1）から表示している間は画面上部に注意表示を出し、請求判断に使わないよう案内する。バックアップには取込版数が残らないため、その間は「要再取込」マークを出さない' },
+    ]
+  },
   {
     version: 'v1.6.24', date: '2026-10-06', label: 'バグ修正',
     labelColor: '#9b2c2c', labelBg: '#fed7d7',

@@ -57,7 +57,11 @@ RMシステムのSEI_RM CSV（Shift-JIS）：
 
 → 月フィルターは `col[2] + col[3].padStart(2,'0')` で6桁を構成して比較すること（`col[3]`だけでは2桁になりlength===6が常にfalse）
 
-短期看護小規模の除外: `itemName.includes('短期')` で判定。baseCodeが null になる利用者を filteredUsers でフィルタ。
+短期看護小規模の除外: `svcType=37`（小多機は34/35）の行をスキップし、`baseCode` が null の利用者を `filteredUsers` で除外する。
+
+**GASへ保存するのは必ず `filteredUsers`**。v1.6.22 まで除外前の `users` を保存していたため、取込直後は正しく見えても再読み込みで短期利用者が復活していた（短期混入が何度直しても再発した真因）。古い保存データ向けに `_applyRawData` の読み込み時にも除外している（v1.6.24）。
+
+**`parseCSV` の集計ロジックを変えたら `PARSER_VERSION` を必ず上げる**。保存データに刻まれた版数が古い直近3ヶ月の月に「要再取込」マークが出る。
 
 日割請求: 同一利用者が複数行に分かれるため、加算は `u.items.some(i => i.name === itemName)` で重複チェック。
 
@@ -77,17 +81,22 @@ RMシステムのSEI_RM CSV（Shift-JIS）：
 
 ## GAS側アクション一覧
 
+**`kangosmall_gas.js` の `doPost` の switch が正。名前を推測で書かないこと**（以前この表が誤っていて、それを元に書かれた D1 同期が一部一度も動いていなかった）。
+
 | action | 処理 |
 |--------|------|
-| `getAllData` | 全シートのデータをJSONで返す |
-| `saveMonthlyData` | facilityId+ymの既存行削除→新データappend |
-| `deleteMonth` | facilityId+ymの行削除 |
-| `saveTerminalEntry` | ターミナルケア加算の登録 |
-| `deleteTerminalEntry` | ターミナルケア加算の削除 |
-| `saveIshaValue` | 医師指示割合の保存 |
-| `saveKatsudan` | 喀痰吸引届出状況の保存 |
-| `createFacility` | 事業所の新規作成 |
+| （GET `doGet`） | `getAllData()` で全シートのデータをJSONで返す |
+| `addFacility` | 事業所の新規作成。IDはGASが採番し戻り値 `{ success, id, name }` で返す |
+| `saveServiceType` | サービス種別変更 |
 | `renameFacility` | 事業所名変更 |
+| `deleteFacility` | 事業所と関連データを削除 |
+| `saveMonthlyData` | facilityId+ymの既存行削除→新データappend（再アップロードで上書きされる） |
+| `deleteMonth` | facilityId+ymの行削除 |
+| `saveTerminal` | ターミナルケア実績を事業所単位で丸ごと置き換え（`entries` 配列） |
+| `saveIsha` | 医師指示割合の保存 |
+| `saveKatsudan` | 喀痰吸引届出状況の保存（職員名は `staffJson` 文字列） |
+
+D1（Cloudflare Worker `shift-worker`、シフト作成アプリと共用）へは `gasPost` 後に `d1KangoSync` で非同期コピーする。`saveServiceType` / `deleteFacility` は Worker に受け口が無く未同期。D1 の `kango_monthly_users` には金額・区分・取込版数の列が無いため、D1 から復元した表示は不完全（画面上部に注意表示が出る）。
 
 ## データ構造（メモリ）
 
@@ -101,8 +110,10 @@ facilityData = {
         users: {
           [userId]: {
             name: string,
-            baseCode: string | null,  // 短期は null
-            items: [{ name, tanka, kaisu }]
+            baseCode: string | null,  // 短期は null（保存時に除外済み）
+            items: [{ name, tanka, kaisu }],
+            totalRec, insuranceTotal, userSvcType,
+            _pv: number               // 取込時のパーサ版数（PARSER_VERSION）
           }
         }
       }
@@ -122,6 +133,8 @@ facilityData = {
    - **過去月の混入** → 保存データに月の情報が残らないため**自動検出は不可能**。再アップロードでしか直らない（旧版の月フィルタバグ `col[3]` のみで6桁判定していた時期の取り込みが原因）
    - 見分け方: 登録利用者数がRM側の実数より多い／身に覚えのない利用者が明細に出ている
 3. **型変換**: GASから返ってくる `registered` は文字列の場合があるため `=== true || === 'true'` の両方をチェックすること
+4. **スプレッドシートの日付自動変換**: 「2026年7月」「2026-07」は日付に変換され、世界標準時の `"2026-06-30T15:00:00.000Z"` で返る（日本時間では7月1日）。年月は必ず `toYm()` で正規化し、ラベルは保存値を使わず `ymLabel(ym)` で作り直す
+5. **前3ヶ月の取り込み漏れ**: 欠けている月がある場合、`calcThreeMonths` の `gapMonths` に入り、`evalReqs` と詳細画面は可・不可とも「要確認」にする。残りの月だけで判定すると要件未達のまま請求するおそれがあるため
 
 ## デプロイコマンド
 
