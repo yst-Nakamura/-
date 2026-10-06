@@ -916,7 +916,18 @@ function _applyRawData(raw) {
     const ym = String(row.ym || '').replace(/[^0-9]/g, '').slice(0, 6);
     if (ym.length !== 6) return;
     let users = {};
-    try { const arr = JSON.parse(row.usersJson || '[]'); arr.forEach(u => { users[u.userId] = u; }); } catch(e) {}
+    // 保存済みデータにも parseCSV と同じ除外ルールを適用する。
+    // 旧版のコードで保存された短期利用者（baseCode なし）が残っているため、
+    // 再アップロードしなくても表示・集計時に除外されるようにする。
+    const svcT = (newFacilities.find(f => f.id === facId) || {}).serviceType || getFacServiceType(facId);
+    const keepUser = u => {
+      if (!u) return false;
+      if (u.baseCode !== null && u.baseCode !== undefined) return true;
+      // 訪問看護のみ: baseCode 未マッチでも実績があれば有効利用者として扱う
+      if (svcT === 'houmon') return (u.items || []).length > 0 || (u.totalRec || 0) > 0;
+      return false;
+    };
+    try { const arr = JSON.parse(row.usersJson || '[]'); arr.forEach(u => { if (keepUser(u)) users[u.userId] = u; }); } catch(e) {}
     const label = (row.label && String(row.label).includes('年')) ? String(row.label) : ymLabel(ym);
     newData[facId].monthData[ym] = { ym, label, users };
   });
@@ -3639,6 +3650,13 @@ function renderAddonChecklist(users) {
 // 修正ログモーダル
 // ============================================================
 const CHANGELOG_DATA = [
+  {
+    version: 'v1.6.21', date: '2026-10-06', label: 'バグ修正',
+    labelColor: '#9b2c2c', labelBg: '#fed7d7',
+    items: [
+      { tag: 'バグ修正', tagColor: '#9b2c2c', tagBg: '#fed7d7', text: '旧バージョンのコードで保存された短期利用者が、再アップロードするまで利用者総数・平均介護度・加算判定に残り続ける問題を修正。_applyRawData の読み込み時にも parseCSV と同じ除外ルールを適用し、保存済みの全事業所・全月が再アップロード不要で是正されるようにした（訪問看護は従来どおり baseCode なしでも実績があれば有効扱い）' },
+    ]
+  },
   {
     version: 'v1.6.20', date: '2026-09-07', label: 'バグ修正',
     labelColor: '#9b2c2c', labelBg: '#fed7d7',
