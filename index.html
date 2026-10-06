@@ -602,7 +602,9 @@ const SESSION_KEY  = 'kango_authed';
 const GAS_URL_DEFAULT = 'https://script.google.com/macros/s/AKfycbw5vg_DYk2oMifFJmkPng6ms8-9BbN-JykrVbqYGu9MBJsDU73c58cNVX8Q3Gfb0no6/exec';
 
 // D1バックアップ設定
-const KANGO_WORKER_URL = 'https://shift-app-worker.tetsuya-nakamura-y.workers.dev';
+// D1 バックアップ用 Worker（看護専用。ソース: D:\Claude-Projects\kango-dashboard-worker）。
+// 2026-10-06 までは shift-app-worker（シフト作成アプリと共用）を使っていた
+const KANGO_WORKER_URL = 'https://kango-dashboard-worker.tetsuya-nakamura-y.workers.dev';
 const KANGO_D1_KEY = 'f7c1128a02cc5027d369a76cf2e1060a991e88bb17f77196';
 
 const AREA_DEFS = [
@@ -3854,6 +3856,13 @@ function renderAddonChecklist(users) {
 // 修正ログモーダル
 // ============================================================
 const CHANGELOG_DATA = [
+  {
+    version: 'v1.6.27', date: '2026-10-06', label: '改善',
+    labelColor: '#2b6cb0', labelBg: '#bee3f8',
+    items: [
+      { tag: '改善', tagColor: '#2b6cb0', tagBg: '#bee3f8', text: 'バックアップ（D1）の送信先を、看護専用の Worker（kango-dashboard-worker）に切り替えた。シフト作成アプリと共用だった Worker から独立し、看護側の修正でシフトアプリに影響が出なくなった。切り替え後に設定（⚙️）の「バックアップを作り直す」を1回実行すると、既存のバックアップが正しい内容に入れ替わる' },
+    ]
+  },
   {
     version: 'v1.6.26', date: '2026-10-06', label: '改善',
     labelColor: '#2b6cb0', labelBg: '#bee3f8',
