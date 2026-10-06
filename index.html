@@ -360,6 +360,12 @@ input[type=file] { display: none; }
     </div>
     <label>GAS Web App URL</label>
     <input type="url" id="inp-gas-url" placeholder="https://script.google.com/macros/s/...">
+    <div style="margin-top:20px;padding-top:16px;border-top:1px solid #e2e8f0;margin-bottom:16px">
+      <label>バックアップ（GAS に接続できないとき用）</label>
+      <div class="modal-sub" style="margin-bottom:10px">いま表示している全事業所のデータで、バックアップを作り直します。普段は自動で更新されるため、操作する必要はありません。</div>
+      <button class="btn-secondary" onclick="resyncD1()">バックアップを作り直す</button>
+      <div id="d1-resync-status" style="font-size:12px;color:#4a5568;margin-top:8px;line-height:1.6"></div>
+    </div>
     <div class="modal-btns">
       <button class="btn-secondary" onclick="closeGasModal()">キャンセル</button>
       <button class="btn-primary" onclick="saveGasUrl()">保存して再読込</button>
@@ -853,7 +859,7 @@ async function gasPost(payload) {
 
 // action 名は GAS（kangosmall_gas.js の doPost）と必ず一致させること。
 // 以前は名前が食い違っていて、事業所追加・ターミナル・医師指示割合が D1 に届いていなかった。
-// ※ saveServiceType / deleteFacility は Worker 側に受け口が無いため未対応
+// ※ saveServiceType / deleteFacility は kango-dashboard-worker のみ対応（旧 shift-app-worker では 404 になるが無害）
 async function d1KangoSync(payload, result) {
   const { action } = payload;
   const post = (endpoint, body) => fetch(KANGO_WORKER_URL + endpoint, {
@@ -865,8 +871,12 @@ async function d1KangoSync(payload, result) {
     case 'addFacility': {
       const id = result && result.id;
       if (!id) return; // GAS 側で作成に失敗した
-      return post('/api/kango/facility', { id: String(id), name: payload.name });
+      return post('/api/kango/facility', { id: String(id), name: payload.name, serviceType: payload.serviceType });
     }
+    case 'saveServiceType':
+      return post('/api/kango/facility/service-type', { id: String(payload.facilityId), serviceType: payload.serviceType });
+    case 'deleteFacility':
+      return post('/api/kango/facility/delete', { id: String(payload.facilityId) });
     case 'renameFacility':
       return post('/api/kango/facility', { id: String(payload.facilityId), name: payload.name });
     case 'saveMonthlyData': {
@@ -896,7 +906,7 @@ async function d1KangoSync(payload, result) {
       return post('/api/kango/katsudan', { facilityId: payload.facilityId, registered: payload.registered, staff });
     }
     default:
-      return; // saveServiceType / deleteFacility は Worker 未対応
+      return;
   }
 }
 
@@ -923,6 +933,12 @@ function toYm(v) {
 // D1（バックアップ）から読み込んで表示しているか。true の間は保存データの一部
 // （金額・区分・取込版数）が欠けているため、それに依存する表示を抑える
 let loadedFromD1 = false;
+// D1 から復元したデータに利用者まるごと（user_json）が入っていたか。
+// 入っていれば金額・区分・取込版数まで復元できている
+let loadedFromD1Full = false;
+// GAS（または D1）に明示的に保存されているサービス種別。不明な事業所は入らない。
+// allFacilities 側は不明時に既定値 'kango' を入れてしまうため、D1 への書き込みにはこちらを使う
+let facExplicitSvcType = {};
 
 // GASから返ってきた raw データを facilityData / allFacilities に反映する共通処理
 function _applyRawData(raw) {
@@ -944,6 +960,7 @@ function _applyRawData(raw) {
     const t = String(f.serviceType);
     if (['kango', 'shotaki', 'houmon'].includes(t)) explicitSvcType[String(f.id)] = t;
   });
+  facExplicitSvcType = explicitSvcType;
 
   const newData = {};
   newFacilities.forEach(f => {
@@ -1028,12 +1045,17 @@ async function loadFromD1() {
     if (!d.ok || !d.facilities || d.facilities.length === 0) return false;
     // D1データをGAS形式に変換して _applyRawData に渡す
     const raw = {
-      facilities: d.facilities.map(f => ({ id: f.id, name: f.name, serviceType: null })),
-      monthlyData: d.monthlyUsers.map(u => ({
-        facilityId: u.facility_id, ym: u.ym,
-        usersJson: JSON.stringify([{ userId: u.user_id, name: u.user_name, baseCode: u.base_code, items: (() => { try { return JSON.parse(u.items_json || '[]'); } catch(e) { return []; } })() }]),
-        label: ymLabel(u.ym)
-      })).reduce((acc, cur) => {
+      // service_type 列は kango-dashboard-worker で追加。無ければ不明（null）のまま
+      facilities: d.facilities.map(f => ({ id: f.id, name: f.name, serviceType: f.service_type || null })),
+      monthlyData: d.monthlyUsers.map(u => {
+        // user_json があれば利用者をまるごと復元（金額・区分・取込版数を含む）。
+        // 無い古い行は、基本コードと加算だけの最低限の形に組み立てる
+        let full = null;
+        if (u.user_json) { try { full = JSON.parse(u.user_json); } catch(e) {} }
+        if (full) { full.userId = String(full.userId || u.user_id); loadedFromD1Full = true; }
+        const user = full || { userId: u.user_id, name: u.user_name, baseCode: u.base_code, items: (() => { try { return JSON.parse(u.items_json || '[]'); } catch(e) { return []; } })() };
+        return { facilityId: u.facility_id, ym: u.ym, usersJson: JSON.stringify([user]), label: ymLabel(u.ym) };
+      }).reduce((acc, cur) => {
         // 同じfacilityId+ymをまとめる
         const key = cur.facilityId + '_' + cur.ym;
         if (!acc._map) acc._map = {};
@@ -1065,13 +1087,67 @@ async function loadFromD1() {
   }
 }
 
+// いま画面に読み込んでいる GAS のデータで、D1 バックアップを全件作り直す。
+// 1事業所1ヶ月ずつ置き換えるので、配列の番号で保存されていた古い行も正しい利用者IDに直る。
+function resyncD1() {
+  const status = document.getElementById('d1-resync-status');
+  const say = msg => { if (status) status.textContent = msg; };
+  if (loadedFromD1) { say('バックアップから表示中のため実行できません。GAS に接続できる状態で再読み込みしてから実行してください。'); return; }
+  if (!allFacilities.length) { say('データが読み込まれていません。'); return; }
+  if (!confirm('いま表示している全事業所のデータで、バックアップ（D1）を作り直します。\n数分かかることがあります。よろしいですか？')) return;
+
+  const post = async (endpoint, body) => {
+    const res = await fetch(KANGO_WORKER_URL + endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-API-Key': KANGO_D1_KEY },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) throw new Error(endpoint + ' ' + res.status);
+  };
+  const jobs = [];
+  allFacilities.forEach(f => {
+    const ctx = facilityData[f.id];
+    // 種別は GAS に明示されているものだけ送る（不明な事業所に既定値の看多機を入れない）
+    jobs.push(['事業所', () => post('/api/kango/facility', { id: f.id, name: f.name, serviceType: facExplicitSvcType[f.id] || null })]);
+    if (!ctx) return;
+    Object.keys(ctx.monthData || {}).forEach(ym => {
+      const users = {};
+      Object.values(ctx.monthData[ym].users || {}).forEach(u => { if (u && u.userId) users[String(u.userId)] = u; });
+      jobs.push(['月次', () => post('/api/kango/monthly', { facilityId: f.id, ym, users })]);
+    });
+    (ctx.terminalEntries || []).forEach(t =>
+      jobs.push(['ターミナル', () => post('/api/kango/terminal', { facilityId: f.id, ym: t.ym, label: t.label })]));
+    Object.keys(ctx.manualIsha || {}).forEach(ym =>
+      jobs.push(['医師指示割合', () => post('/api/kango/isha', { facilityId: f.id, ym, value: ctx.manualIsha[ym] === '' ? null : ctx.manualIsha[ym] })]));
+    if (ctx.katsudan) {
+      jobs.push(['喀痰吸引', () => post('/api/kango/katsudan', { facilityId: f.id, registered: ctx.katsudan.registered, staff: ctx.katsudan.staff || [] })]);
+    }
+  });
+
+  (async () => {
+    let ok = 0, ng = 0;
+    const errs = [];
+    for (let i = 0; i < jobs.length; i++) {
+      const [kind, run] = jobs[i];
+      say(`作り直しています… ${i + 1} / ${jobs.length}`);
+      try { await run(); ok++; }
+      catch (e) { ng++; if (errs.length < 3) errs.push(kind + ': ' + e.message); }
+    }
+    say(ng === 0
+      ? `完了しました（${ok}件）。`
+      : `完了しましたが ${ng}件 失敗しました（成功 ${ok}件）。${errs.join(' / ')}`);
+  })();
+}
+
 // D1（バックアップ）表示中であることを画面上部に出す
 function showD1Banner() {
   if (document.getElementById('d1-banner')) return;
   const b = document.createElement('div');
   b.id = 'd1-banner';
   b.style.cssText = 'position:sticky;top:0;z-index:500;background:#fffaf0;border-bottom:2px solid #dd6b20;color:#7b341e;font-size:13px;padding:8px 16px;line-height:1.6';
-  b.innerHTML = '⚠ <strong>バックアップから表示しています。</strong>GAS（Googleスプレッドシート）に接続できませんでした。金額・小多機の要介護/要支援の区分・事業所の種別は正しく表示されず、加算判定も正確でない可能性があります。<strong>請求の判断には使わず</strong>、時間をおいて再読み込みしてください。';
+  b.innerHTML = loadedFromD1Full
+    ? '⚠ <strong>バックアップから表示しています。</strong>GAS（Googleスプレッドシート）に接続できませんでした。最後にバックアップされた時点の内容のため、最新の変更が反映されていない可能性があります。<strong>請求の判断には使わず</strong>、時間をおいて再読み込みしてください。'
+    : '⚠ <strong>バックアップから表示しています。</strong>GAS（Googleスプレッドシート）に接続できませんでした。金額・小多機の要介護/要支援の区分・事業所の種別は正しく表示されず、加算判定も正確でない可能性があります。<strong>請求の判断には使わず</strong>、時間をおいて再読み込みしてください。';
   document.body.insertBefore(b, document.body.firstChild);
 }
 
@@ -3778,6 +3854,15 @@ function renderAddonChecklist(users) {
 // 修正ログモーダル
 // ============================================================
 const CHANGELOG_DATA = [
+  {
+    version: 'v1.6.26', date: '2026-10-06', label: '改善',
+    labelColor: '#2b6cb0', labelBg: '#bee3f8',
+    items: [
+      { tag: '改善', tagColor: '#2b6cb0', tagBg: '#bee3f8', text: 'バックアップ（D1）を、シフト作成アプリと共用の Worker から看護専用の Worker（kango-dashboard-worker）へ移すための準備。新しい Worker では利用者をまるごと保存するため、GAS に接続できないときも金額・小多機の要介護/要支援の区分・事業所の種別・取込版数まで復元できる。旧 Worker のままでも従来どおり動く' },
+      { tag: '改善', tagColor: '#2b6cb0', tagBg: '#bee3f8', text: '事業所の種別変更・削除もバックアップへ反映するようにした。種別は GAS に明示されている事業所だけを送り、種別が不明な事業所に既定値の看多機を入れない（復元時に利用者が消えるのを防ぐ）' },
+      { tag: '新機能', tagColor: '#276749', tagBg: '#c6f6d5', text: '設定（⚙️）に「バックアップを作り直す」を追加。いま表示している全事業所のデータでバックアップを1事業所1ヶ月ずつ置き換える' },
+    ]
+  },
   {
     version: 'v1.6.25', date: '2026-10-06', label: 'バグ修正',
     labelColor: '#9b2c2c', labelBg: '#fed7d7',
