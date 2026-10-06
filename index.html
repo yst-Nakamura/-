@@ -844,9 +844,22 @@ function hasGasUrl() {
   return url && url !== 'YOUR_GAS_URL_HERE' && url.startsWith('http');
 }
 
+// GAS の読み込み。Google 側が結果を渡す段階（script.googleusercontent.com）で
+// ときどき「404：現在、ファイルを開くことができません」の HTML を返すため、
+// 状態コードと JSON を確認して失敗を確実に検出する。応答に最大90秒ほどかかるため時間切れは長めにとる
+const GAS_LOAD_TIMEOUT_MS = 150000;
 async function gasGet() {
-  const res = await fetch(getGasUrl() + '?t=' + Date.now());
-  return res.json();
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), GAS_LOAD_TIMEOUT_MS);
+  try {
+    const res = await fetch(getGasUrl() + '?t=' + Date.now(), { signal: ctrl.signal });
+    if (!res.ok) throw new Error('GAS が HTTP ' + res.status + ' を返しました');
+    const data = await res.json();
+    if (!data || typeof data !== 'object' || !Array.isArray(data.facilities)) throw new Error('GAS の応答の形が不正です');
+    return data;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 async function gasPost(payload) {
@@ -1037,7 +1050,7 @@ function _applyRawData(raw) {
 }
 
 // D1から高速ロード（初期表示用）
-async function loadFromD1() {
+async function loadFromD1(reason) {
   try {
     const res = await fetch(KANGO_WORKER_URL + '/api/kango/all', {
       headers: { 'X-API-Key': KANGO_D1_KEY }
@@ -1045,8 +1058,11 @@ async function loadFromD1() {
     if (!res.ok) return false;
     const d = await res.json();
     if (!d.ok || !d.facilities || d.facilities.length === 0) return false;
+    let fullRows = 0;
     // D1データをGAS形式に変換して _applyRawData に渡す
     const raw = {
+      // user_json が全行にそろっているときだけ「完全に復元できた」とみなす
+      // （新しい形式で保存されたのが一部の月だけなら、残りは金額・区分などが欠けている）
       // service_type 列は kango-dashboard-worker で追加。無ければ不明（null）のまま
       facilities: d.facilities.map(f => ({ id: f.id, name: f.name, serviceType: f.service_type || null })),
       monthlyData: d.monthlyUsers.map(u => {
@@ -1054,7 +1070,7 @@ async function loadFromD1() {
         // 無い古い行は、基本コードと加算だけの最低限の形に組み立てる
         let full = null;
         if (u.user_json) { try { full = JSON.parse(u.user_json); } catch(e) {} }
-        if (full) { full.userId = String(full.userId || u.user_id); loadedFromD1Full = true; }
+        if (full) { full.userId = String(full.userId || u.user_id); fullRows++; }
         const user = full || { userId: u.user_id, name: u.user_name, baseCode: u.base_code, items: (() => { try { return JSON.parse(u.items_json || '[]'); } catch(e) { return []; } })() };
         return { facilityId: u.facility_id, ym: u.ym, usersJson: JSON.stringify([user]), label: ymLabel(u.ym) };
       }).reduce((acc, cur) => {
@@ -1081,7 +1097,8 @@ async function loadFromD1() {
     delete raw.monthlyData._map;
     _applyRawData(raw);
     loadedFromD1 = true;
-    showD1Banner();
+    loadedFromD1Full = (d.monthlyUsers || []).length > 0 && fullRows === d.monthlyUsers.length;
+    showD1Banner(reason);
     return true;
   } catch(e) {
     console.warn('D1ロードエラー（無視）:', e);
@@ -1142,34 +1159,99 @@ function resyncD1() {
 }
 
 // D1（バックアップ）表示中であることを画面上部に出す
-function showD1Banner() {
+function showD1Banner(reason) {
   if (document.getElementById('d1-banner')) return;
+  const cause = reason === 'apply'
+    ? 'GAS（Googleスプレッドシート）のデータを読み込む途中でエラーが起きました。'
+    : 'GAS（Googleスプレッドシート）に接続できませんでした。Google 側の一時的な不調のことが多く、<strong>つながり次第、自動で最新のデータに切り替わります</strong>。';
   const b = document.createElement('div');
   b.id = 'd1-banner';
   b.style.cssText = 'position:sticky;top:0;z-index:500;background:#fffaf0;border-bottom:2px solid #dd6b20;color:#7b341e;font-size:13px;padding:8px 16px;line-height:1.6';
   b.innerHTML = loadedFromD1Full
-    ? '⚠ <strong>バックアップから表示しています。</strong>GAS（Googleスプレッドシート）に接続できませんでした。最後にバックアップされた時点の内容のため、最新の変更が反映されていない可能性があります。<strong>請求の判断には使わず</strong>、時間をおいて再読み込みしてください。'
-    : '⚠ <strong>バックアップから表示しています。</strong>GAS（Googleスプレッドシート）に接続できませんでした。金額・小多機の要介護/要支援の区分・事業所の種別は正しく表示されず、加算判定も正確でない可能性があります。<strong>請求の判断には使わず</strong>、時間をおいて再読み込みしてください。';
+    ? '⚠ <strong>バックアップから表示しています。</strong>' + cause + '最後にバックアップされた時点の内容のため、最新の変更が反映されていない可能性があります。<strong>請求の判断には使わないでください</strong>。'
+    : '⚠ <strong>バックアップから表示しています。</strong>' + cause + '金額・小多機の要介護/要支援の区分・事業所の種別は正しく表示されず、加算判定も正確でない可能性があります。<strong>請求の判断には使わないでください</strong>。';
   document.body.insertBefore(b, document.body.firstChild);
 }
+
+// GAS の一時的な失敗はすぐ読み直すと成功することが多いので、数回試してからバックアップに切り替える
+const GAS_LOAD_ATTEMPTS = 3;
+// バックアップ表示中に、裏で GAS を試し直す間隔
+const GAS_RECOVER_INTERVAL_MS = 60000;
+let gasRecoverTimer = null;
+let gasRecoverBusy = false;
 
 async function loadAllData() {
   if (!hasGasUrl()) return;
   showLoading('データを読み込み中...');
-  // GASから最新データを取得（成功時のみ反映）
-  try {
-    const raw = await gasGet();
-    _applyRawData(raw);
-  } catch(e) {
-    console.error('GAS通信エラー:', e);
-    // GAS失敗時はD1フォールバック
-    const d1ok = await loadFromD1();
+  let raw = null;
+  for (let attempt = 1; attempt <= GAS_LOAD_ATTEMPTS && !raw; attempt++) {
+    if (attempt > 1) {
+      showLoading(`データを読み込み中...（つながりにくいため再試行しています ${attempt}/${GAS_LOAD_ATTEMPTS}）`);
+      await new Promise(r => setTimeout(r, 3000));
+    }
+    try { raw = await gasGet(); }
+    catch (e) { console.warn(`GAS 読み込み失敗（${attempt}/${GAS_LOAD_ATTEMPTS}）:`, e); }
+  }
+
+  let applied = false;
+  if (raw) {
+    // 展開処理の不具合を「GAS につながらない」と取り違えないよう、通信とは分けて扱う
+    try { _applyRawData(raw); applied = true; }
+    catch (e) { console.error('GAS のデータの展開でエラー:', e); }
+  }
+
+  if (!applied) {
+    const d1ok = await loadFromD1(raw ? 'apply' : 'gas');
     if (!d1ok) {
       alert('データの読み込みに失敗しました。ページを再読み込みしてください。');
+    } else if (!raw) {
+      startGasRecovery(); // GAS が戻ったら自動で本体のデータに切り替える
     }
   }
   hideLoading();
   renderDashboard();
+}
+
+// バックアップ表示中、GAS が復旧したら本体のデータに切り替えてバナーを消す
+function startGasRecovery() {
+  if (gasRecoverTimer) return;
+  gasRecoverTimer = setInterval(tryRecoverFromGas, GAS_RECOVER_INTERVAL_MS);
+}
+async function tryRecoverFromGas() {
+  if (gasRecoverBusy || !loadedFromD1) return;
+  // 入力中・ダイアログ表示中に画面を描き直すと入力が消えるので、その間は見送る
+  const a = document.activeElement;
+  const typing = a && ['INPUT', 'TEXTAREA', 'SELECT'].includes(a.tagName);
+  const modalOpen = [...document.querySelectorAll('.modal-overlay')].some(m => !m.classList.contains('hidden'));
+  if (typing || modalOpen) return;
+  gasRecoverBusy = true;
+  try {
+    const raw = await gasGet();
+    _applyRawData(raw);
+    loadedFromD1 = false;
+    loadedFromD1Full = false;
+    clearInterval(gasRecoverTimer);
+    gasRecoverTimer = null;
+    const banner = document.getElementById('d1-banner');
+    if (banner) banner.remove();
+    renderFacilityDropdown();
+    const onFacility = document.getElementById('page-facility').style.display !== 'none'
+      && currentFacilityId && allFacilities.some(f => f.id === currentFacilityId);
+    if (onFacility) renderFacilityAll(); else showDashboard();
+    showRecoveredNotice();
+  } catch (e) {
+    console.warn('GAS はまだつながりません:', e);
+  } finally {
+    gasRecoverBusy = false;
+  }
+}
+function showRecoveredNotice() {
+  const n = document.createElement('div');
+  n.setAttribute('role', 'status');
+  n.style.cssText = 'position:fixed;left:50%;bottom:24px;transform:translateX(-50%);z-index:9000;background:#276749;color:#fff;font-size:13px;padding:10px 18px;border-radius:8px;box-shadow:0 4px 14px rgba(0,0,0,.2)';
+  n.textContent = 'GAS（Googleスプレッドシート）につながりました。最新のデータに切り替えました。';
+  document.body.appendChild(n);
+  setTimeout(() => n.remove(), 6000);
 }
 
 // ============================================================
@@ -3856,6 +3938,15 @@ function renderAddonChecklist(users) {
 // 修正ログモーダル
 // ============================================================
 const CHANGELOG_DATA = [
+  {
+    version: 'v1.6.28', date: '2026-10-06', label: '改善',
+    labelColor: '#2b6cb0', labelBg: '#bee3f8',
+    items: [
+      { tag: '改善', tagColor: '#2b6cb0', tagBg: '#bee3f8', text: 'GAS（Googleスプレッドシート）が一時的につながらないとき、すぐにバックアップへ切り替えず最大3回まで読み直すようにした。Google 側が結果を渡す段階でときどき「404：現在、ファイルを開くことができません」を返すことがあり、読み直すと成功することが多いため' },
+      { tag: '改善', tagColor: '#2b6cb0', tagBg: '#bee3f8', text: 'それでもつながらずバックアップで表示しているときは、裏で1分ごとに GAS を試し、つながったら自動で最新のデータに切り替えてバナーを消すようにした（入力中・ダイアログ表示中は見送る）' },
+      { tag: 'バグ修正', tagColor: '#9b2c2c', tagBg: '#fed7d7', text: 'バックアップの一部の月しか新しい形式で保存されていないのに、バナーが「完全に復元できた」ときの文言になっていた問題を修正。全行がそろっているときだけその文言にする。データの展開でのエラーを「GASにつながらない」と取り違えないようにもした' },
+    ]
+  },
   {
     version: 'v1.6.27', date: '2026-10-06', label: '改善',
     labelColor: '#2b6cb0', labelBg: '#bee3f8',
