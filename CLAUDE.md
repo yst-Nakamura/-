@@ -96,7 +96,8 @@ RMシステムのSEI_RM CSV（Shift-JIS）：
 | `saveIsha` | 医師指示割合の保存 |
 | `saveKatsudan` | 喀痰吸引届出状況の保存（職員名は `staffJson` 文字列） |
 
-D1（Cloudflare Worker `shift-worker`、シフト作成アプリと共用）へは `gasPost` 後に `d1KangoSync` で非同期コピーする。`saveServiceType` / `deleteFacility` は Worker に受け口が無く未同期。D1 の `kango_monthly_users` には金額・区分・取込版数の列が無いため、D1 から復元した表示は不完全（画面上部に注意表示が出る）。
+D1 バックアップ（`kango-dashboard-db`）へは `gasPost` 後に `d1KangoSync` で非同期コピーする。送信先は**看護専用 Worker `kango-dashboard-worker`**（ソース `D:\Claude-Projects\kango-dashboard-worker`、git 管理、公開は同フォルダの `deploy.ps1`、詳細は `手順書.md`）。2026-10-06 まではシフト作成アプリと共用の `shift-app-worker` を使っていたが独立させた。**`shift-app-worker` は触らないこと**（シフトアプリ・看護ポータル・毎朝の勤務集計が乗っている）。そこに残る `/api/kango/*` は未使用。
+`kango_monthly_users.user_json` に利用者をまるごと保存するので、D1 からでも金額・区分・取込版数まで復元できる。D1 の中身を GAS に合わせ直すには設定（⚙️）の「バックアップを作り直す」。
 
 ## データ構造（メモリ）
 
