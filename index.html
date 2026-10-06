@@ -919,13 +919,16 @@ function _applyRawData(raw) {
     // 保存済みデータにも parseCSV と同じ除外ルールを適用する。
     // 旧版のコードで保存された短期利用者（baseCode なし）が残っているため、
     // 再アップロードしなくても表示・集計時に除外されるようにする。
-    const svcT = (newFacilities.find(f => f.id === facId) || {}).serviceType || getFacServiceType(facId);
+    // 短期と「積極的に判定できるもの」だけを除外する。
+    // baseCode が無いだけで落とすと、サービス種別が解決できない事業所の
+    // 利用者を巻き込んで消してしまうため、必ず短期コードを根拠に判定する。
     const keepUser = u => {
       if (!u) return false;
-      if (u.baseCode !== null && u.baseCode !== undefined) return true;
-      // 訪問看護のみ: baseCode 未マッチでも実績があれば有効利用者として扱う
-      if (svcT === 'houmon') return (u.items || []).length > 0 || (u.totalRec || 0) > 0;
-      return false;
+      const bc = u.baseCode;
+      if (typeof bc === 'string' && bc.includes('短期')) return false;
+      if (Array.isArray(u.items) && u.items.length > 0 &&
+          u.items.every(i => i && typeof i.name === 'string' && i.name.includes('短期'))) return false;
+      return true;
     };
     try { const arr = JSON.parse(row.usersJson || '[]'); arr.forEach(u => { if (keepUser(u)) users[u.userId] = u; }); } catch(e) {}
     const label = (row.label && String(row.label).includes('年')) ? String(row.label) : ymLabel(ym);
@@ -3650,6 +3653,13 @@ function renderAddonChecklist(users) {
 // 修正ログモーダル
 // ============================================================
 const CHANGELOG_DATA = [
+  {
+    version: 'v1.6.22', date: '2026-10-06', label: 'バグ修正',
+    labelColor: '#9b2c2c', labelBg: '#fed7d7',
+    items: [
+      { tag: 'バグ修正', tagColor: '#9b2c2c', tagBg: '#fed7d7', text: 'v1.6.21 の読み込み時フィルタが厳しすぎ、サービス種別を解決できない事業所（訪問看護など）の利用者が全て消えて事業所が表示されなくなる不具合を修正。baseCode の有無ではなく「加算名・基本コードに短期が含まれる」ことを根拠にした判定へ変更し、判定できないものは必ず残すようにした' },
+    ]
+  },
   {
     version: 'v1.6.21', date: '2026-10-06', label: 'バグ修正',
     labelColor: '#9b2c2c', labelBg: '#fed7d7',
