@@ -1126,9 +1126,12 @@ function renderShotakiDashboard() {
     const levels = users.map(u => getLevel(u.baseCode)).filter(l => l !== null);
     const avgLevel = levels.length ? (levels.reduce((s, l) => s + l, 0) / levels.length).toFixed(2) : null;
     const avgColor = !avgLevel ? '#a0aec0' : avgLevel >= 4 ? '#c53030' : avgLevel >= 3 ? '#c05621' : '#2b6cb0';
+    const reimpS = needsReimport(ctx, latestYm)
+      ? `<br><span style="display:inline-block;margin-top:3px;background:#fefcbf;color:#744210;border:1px solid #d69e2e;border-radius:3px;font-size:9px;font-weight:bold;padding:0 4px" title="古いバージョンで取り込まれたデータです。同じCSVを再アップロードすると最新の集計に更新されます">要再取込</span>`
+      : '';
     const ymCellS = isStaleS
-      ? `<td style="font-size:12px;font-weight:bold;color:#c53030;background:#fff5f5;border-left:3px solid #fc8181;padding-left:8px" title="前月データ未連携">⚠ ${ymLabel(latestYm)}</td>`
-      : `<td style="font-size:12px;color:#718096">${ymLabel(latestYm)}</td>`;
+      ? `<td style="font-size:12px;font-weight:bold;color:#c53030;background:#fff5f5;border-left:3px solid #fc8181;padding-left:8px" title="前月データ未連携">⚠ ${ymLabel(latestYm)}${reimpS}</td>`
+      : `<td style="font-size:12px;color:#718096">${ymLabel(latestYm)}${reimpS}</td>`;
     const facAlertsS = buildFacAlerts(ctx.monthData[latestYm].users);
     return `<tr${isStaleS ? ' style="background:#fffafa"' : ''}>
       ${_facNameCell(f.id, f.name, facAlertsS)}
@@ -1376,9 +1379,12 @@ function renderDashboard() {
       : `<span style="color:#a0aec0;font-size:12px">—</span>`;
 
     const isStaleKango = latestYm < prevYm;
+    const reimpKango = needsReimport(ctx, latestYm)
+      ? `<br><span style="display:inline-block;margin-top:3px;background:#fefcbf;color:#744210;border:1px solid #d69e2e;border-radius:3px;font-size:9px;font-weight:bold;padding:0 4px" title="古いバージョンで取り込まれたデータです。同じCSVを再アップロードすると最新の集計に更新されます">要再取込</span>`
+      : '';
     const ymCellKango = isStaleKango
-      ? `<td style="font-size:12px;font-weight:bold;color:#c53030;background:#fff5f5;border-left:3px solid #fc8181;padding-left:8px" title="前月データ未連携">⚠ ${ymLabel(latestYm)}</td>`
-      : `<td style="font-size:12px;color:#718096">${ymLabel(latestYm)}</td>`;
+      ? `<td style="font-size:12px;font-weight:bold;color:#c53030;background:#fff5f5;border-left:3px solid #fc8181;padding-left:8px" title="前月データ未連携">⚠ ${ymLabel(latestYm)}${reimpKango}</td>`
+      : `<td style="font-size:12px;color:#718096">${ymLabel(latestYm)}${reimpKango}</td>`;
     const facAlerts = buildFacAlerts(ctx.monthData[latestYm].users, { cur1ok, cur2ok, isStale: isStaleKango });
     return { f, row: `<tr${isStaleKango ? ' style="background:#fffafa"' : ''}>
       ${_facNameCell(f.id, f.name, facAlerts)}
@@ -1608,6 +1614,35 @@ function getTerminalStatus(refYm, facId) {
   if (minRemain === Infinity) return `<span class="status-badge sb-ng">期限切れ</span>`;
   if (minRemain <= 3) return `<span class="status-badge sb-warn">⚠️ 残${minRemain}ヶ月</span>`;
   return `<span class="status-badge sb-ok">残${minRemain}ヶ月</span>`;
+}
+
+// 取り込みパーサの版数。parseCSV の集計ロジックを変えたら必ずインクリメントする。
+// 保存データにこの版数を刻み、古い版で取り込まれた月を「要再取込」として表示する。
+const PARSER_VERSION = 1;
+// 「要再取込」を出す対象は直近3ヶ月のみ（加算判定に実際に使われる範囲）
+const RECHECK_MONTHS = 3;
+
+// その月の保存データが取り込まれたパーサ版数を返す（印が無ければ 0 = 旧版）
+function monthParserVersion(monthEntry) {
+  const arr = Object.values((monthEntry && monthEntry.users) || {});
+  if (!arr.length) return PARSER_VERSION; // 利用者0名は判定不能なので警告しない
+  return arr.reduce((mx, u) => Math.max(mx, (u && u._pv) || 0), 0);
+}
+
+// 指定月が「要再取込」か。直近3ヶ月以外は対象外
+function needsReimport(ctx, ym) {
+  if (!ctx || !ctx.monthData || !ctx.monthData[ym]) return false;
+  const now = new Date();
+  const cur = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}`;
+  for (let i = 0; i < RECHECK_MONTHS; i++) {
+    if (ym === addMonths(cur, -i)) return monthParserVersion(ctx.monthData[ym]) < PARSER_VERSION;
+  }
+  return false;
+}
+
+// 事業所内に「要再取込」の月があるか
+function hasReimportMonth(ctx) {
+  return Object.keys((ctx && ctx.monthData) || {}).some(ym => needsReimport(ctx, ym));
 }
 
 function evalReqs(threeM, termValid, ishaVal, katsudanRegistered) {
@@ -2135,7 +2170,9 @@ function parseCSV(text, facilityServiceType) {
     }
   }
 
-  saveMonthlyDataToGas(ym, label, Object.values(users));
+  // 取り込んだパーサ版数を各利用者に刻む（古い取り込みの検出に使う）
+  Object.values(filteredUsers).forEach(u => { u._pv = PARSER_VERSION; });
+  saveMonthlyDataToGas(ym, label, Object.values(filteredUsers));
   renderFacilityAll();
   setActiveTab(ym);
 }
@@ -2424,9 +2461,12 @@ function renderTabs(keys) {
   document.getElementById('nav-tabs').innerHTML = [...keys].reverse().map(ym => {
     const dupes = getChuiyoKaizenDupes(ctx.monthData[ym].users);
     const badge = dupes.length >= 2 ? ' <span style="color:#c53030;font-weight:bold;font-size:12px" title="処遇改善加算 重複算定の疑い">🚨</span>' : '';
+    const reimp = needsReimport(ctx, ym)
+      ? ' <span style="display:inline-block;background:#fefcbf;color:#744210;border:1px solid #d69e2e;border-radius:3px;font-size:9px;font-weight:bold;padding:0 4px;vertical-align:middle" title="古いバージョンで取り込まれたデータです。同じCSVを再アップロードすると最新の集計に更新されます">要再取込</span>'
+      : '';
     return `<div class="nav-tab ${ym === activeTab ? 'active' : ''}" onclick="setActiveTab('${ym}')">
       <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${monthColor(ym)};margin-right:5px"></span>
-      ${ctx.monthData[ym].label}${badge}
+      ${ctx.monthData[ym].label}${badge}${reimp}
     </div>`;
   }).join('');
 }
@@ -3653,6 +3693,14 @@ function renderAddonChecklist(users) {
 // 修正ログモーダル
 // ============================================================
 const CHANGELOG_DATA = [
+  {
+    version: 'v1.6.23', date: '2026-10-06', label: '新機能',
+    labelColor: '#276749', labelBg: '#c6f6d5',
+    items: [
+      { tag: '新機能', tagColor: '#276749', tagBg: '#c6f6d5', text: '「要再取込」マークを追加。CSV取込時にパーサ版数を保存データへ記録し、古いバージョンで取り込まれた月を月タブと一覧の最終連携月に黄色いマークで表示する。対象は加算判定に使われる直近3ヶ月のみ。同じCSVを再アップロードすればマークは消える（事前の月削除は不要）' },
+      { tag: '改善', tagColor: '#2b6cb0', tagBg: '#bee3f8', text: 'CSV取込時にGASへ保存するデータを、除外後の利用者のみに変更。短期利用者が保存データに混入しなくなった' },
+    ]
+  },
   {
     version: 'v1.6.22', date: '2026-10-06', label: 'バグ修正',
     labelColor: '#9b2c2c', labelBg: '#fed7d7',
