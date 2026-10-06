@@ -90,11 +90,13 @@ RMシステムのSEI_RM CSV（Shift-JIS）：
 | `saveServiceType` | サービス種別変更 |
 | `renameFacility` | 事業所名変更 |
 | `deleteFacility` | 事業所と関連データを削除 |
-| `saveMonthlyData` | facilityId+ymの既存行削除→新データappend（再アップロードで上書きされる） |
+| `saveMonthlyData` | facilityId+ymの既存行削除→新データappend（再アップロードで上書きされる）。**取込版数（`parserVersion` または利用者の `_pv`）が `MIN_PARSER_VERSION` 未満の保存は断る**（古い版のダッシュボードからの上書き防止、2026-10-06〜） |
 | `deleteMonth` | facilityId+ymの行削除 |
 | `saveTerminal` | ターミナルケア実績を事業所単位で丸ごと置き換え（`entries` 配列） |
 | `saveIsha` | 医師指示割合の保存 |
 | `saveKatsudan` | 喀痰吸引届出状況の保存（職員名は `staffJson` 文字列） |
+
+**GAS の更新手順**: `Documents\kangosmall_gas.js` を Apps Script（プロジェクト名「加算管理アプリ」）に全文貼り付けて保存 →「デプロイを管理」で**既存のデプロイ（ID が `AKfycbw5vg_DYk2o…Gfb0no6`）を編集して「新バージョン」**でデプロイ。「新しいデプロイ」は URL が変わるので使わない。反映確認は GET の応答の `gasVersion`（`GAS_CODE_VERSION`）。2026-10-06 時点はバージョン6（`gasVersion: 2026-10-06`）。トリガーは無し。**`kangosmall_gas.js` は git 管理外**なので、編集したら Dropbox の開発バックアップにもコピーする。
 
 D1 バックアップ（`kango-dashboard-db`）へは `gasPost` 後に `d1KangoSync` で非同期コピーする。送信先は**看護専用 Worker `kango-dashboard-worker`**（ソース `D:\Claude-Projects\kango-dashboard-worker`、git 管理、公開は同フォルダの `deploy.ps1`、詳細は `手順書.md`）。2026-10-06 まではシフト作成アプリと共用の `shift-app-worker` を使っていたが独立させた。**`shift-app-worker` は触らないこと**（シフトアプリ・看護ポータル・毎朝の勤務集計が乗っている）。そこに残る `/api/kango/*` は未使用。
 `kango_monthly_users.user_json` に利用者をまるごと保存するので、D1 からでも金額・区分・取込版数まで復元できる。D1 の中身を GAS に合わせ直すには設定（⚙️）の「バックアップを作り直す」。
