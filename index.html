@@ -906,6 +906,14 @@ function _applyRawData(raw) {
       f.serviceType = getFacServiceType(f.id);
     }
   });
+  // GAS に明示的に保存されているサービス種別だけを信頼する。
+  // newFacilities 側は不明時に既定値 'kango' へフォールバックするため利用しない。
+  const explicitSvcType = {};
+  (raw.facilities || []).forEach(f => {
+    const t = String(f.serviceType);
+    if (['kango', 'shotaki', 'houmon'].includes(t)) explicitSvcType[String(f.id)] = t;
+  });
+
   const newData = {};
   newFacilities.forEach(f => {
     newData[f.id] = { monthData: {}, terminalEntries: [], manualIsha: {}, katsudan: { registered: null, staff: [] }, iryoMonthData: {} };
@@ -919,15 +927,28 @@ function _applyRawData(raw) {
     // 保存済みデータにも parseCSV と同じ除外ルールを適用する。
     // 旧版のコードで保存された短期利用者（baseCode なし）が残っているため、
     // 再アップロードしなくても表示・集計時に除外されるようにする。
-    // 短期と「積極的に判定できるもの」だけを除外する。
-    // baseCode が無いだけで落とすと、サービス種別が解決できない事業所の
-    // 利用者を巻き込んで消してしまうため、必ず短期コードを根拠に判定する。
+    // 旧版のコードで保存された短期利用者を除外する。
+    // サービス種別の既定値（不明時は 'kango'）を根拠にすると、種別が未設定の
+    // 訪問看護事業所の利用者まで巻き込んで消してしまうため、
+    //   (a) GAS に明示的に保存された種別
+    //   (b) その月の実データが看多機/小多機の形をしているか
+    // のいずれかで「基本コードが必須の月」と確信できる場合だけ厳しく判定する。
+    const svcT = explicitSvcType[facId];               // 不明なら undefined
+    const savedArr = (() => {
+      try { return JSON.parse(row.usersJson || '[]'); } catch(e) { return []; }
+    })();
+    const isKangoStyleMonth = savedArr.some(u =>
+      u && typeof u.baseCode === 'string' && /看護小規模|小規模多機能/.test(u.baseCode));
+    const baseCodeRequired = svcT === 'kango' || svcT === 'shotaki' || isKangoStyleMonth;
     const keepUser = u => {
       if (!u) return false;
       const bc = u.baseCode;
+      // 短期と明示的に判定できるもの
       if (typeof bc === 'string' && bc.includes('短期')) return false;
       if (Array.isArray(u.items) && u.items.length > 0 &&
           u.items.every(i => i && typeof i.name === 'string' && i.name.includes('短期'))) return false;
+      // 看多機/小多機と確信できる月のみ、基本コードが無い利用者を除外する
+      if (baseCodeRequired && (bc === null || bc === undefined || bc === '')) return false;
       return true;
     };
     try { const arr = JSON.parse(row.usersJson || '[]'); arr.forEach(u => { if (keepUser(u)) users[u.userId] = u; }); } catch(e) {}
@@ -3693,6 +3714,13 @@ function renderAddonChecklist(users) {
 // 修正ログモーダル
 // ============================================================
 const CHANGELOG_DATA = [
+  {
+    version: 'v1.6.24', date: '2026-10-06', label: 'バグ修正',
+    labelColor: '#9b2c2c', labelBg: '#fed7d7',
+    items: [
+      { tag: 'バグ修正', tagColor: '#9b2c2c', tagBg: '#fed7d7', text: '旧版で保存された短期利用者のうち、基本コードも加算名も残っていないもの（「要介護?」と金額だけ表示される）が除外できていなかった問題を修正。GASに明示保存された種別、またはその月の実データが看多機/小多機の形をしている場合に限り、基本コードを持たない利用者を除外するようにした。種別が未設定の事業所を巻き込まない設計を維持している' },
+    ]
+  },
   {
     version: 'v1.6.23', date: '2026-10-06', label: '新機能',
     labelColor: '#276749', labelBg: '#c6f6d5',
